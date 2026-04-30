@@ -1,0 +1,53 @@
+# Secrets — never commit
+*.env
+.env.*
+*.key
+*.pem
+*credentials*.json
+*secret*
+*token*
+vault.db
+vault.db.*
+**/oauth_*.json
+**/refresh_token*
+.bot-cred-cache
+
+# Conductor workspace state
+.context/
+
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+venv/
+.venv/
+
+# Node
+node_modules/
+package-lock.json
+
+# Build/test output
+dist/
+build/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Logs go to Axiom + /var/log on VPS, never in repo
+*.log
+logs/
+
+# Local-only files
+TODO.local.md
+NOTES.local.md

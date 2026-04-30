@@ -1,0 +1,158 @@
+# Retrieval eval set
+#
+# Tests whether the brain returns the RIGHT pages for a given query. Distinct
+# from injection-fixture (refusal of malicious input) and behavioral-eval
+# (overall response quality). This one is narrowly about retrieval ranking.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Schema (per entry)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#   id:                  unique, intent-prefixed (person-prep-001, recall-001, etc.)
+#   query:               the literal text the user / agent submits
+#   intent:              one of:
+#                          person_prep    — "prep me for X"
+#                          recall         — "what did I say about X"
+#                          recent         — "what happened today / this week"
+#                          conceptual     — "how do I think about X"
+#                          temporal       — "what was on Tuesday"
+#   expected_top3:       list of 3 page IDs that SHOULD appear in the top 3 results
+#   acceptable_top10:    list of additional page IDs that are fine in the top 10
+#   recency_decay:       expected setting for this query type (e.g. "30d half-life")
+#   entity_boost_for:    list of entity names the KG-traversal should boost
+#   notes:               operator context
+#
+# Pass thresholds (eng plan §A1): nDCG@3 ≥ 0.7, MRR ≥ 0.8 across the suite.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Day-1 entries (2026-04-30) — authored against real brain state from Phase 4.5
+# bootstrap. Brain content: 9 people, 11 companies, 10 meetings, antriksh self-page,
+# personal-ai-assistant project page.
+# ─────────────────────────────────────────────────────────────────────────────
+
+- id: person-prep-001
+  query: "prep me for Kaushik"
+  intent: person_prep
+  expected_top3:
+    - people/kaushik-immadisetty
+    - companies/armoriq
+    - meetings/2026-04-23-kaushik-antriksh-pilot-discussion-and-ne
+  acceptable_top10: []
+  recency_decay: "30d half-life"
+  entity_boost_for: [Kaushik, ArmorIQ]
+  notes: |
+    Real upcoming-followup case. The meeting page + person + company should
+    all surface so the agent can construct a full prep dossier.
+
+- id: person-prep-002
+  query: "tell me about Mel from Komodor"
+  intent: person_prep
+  expected_top3:
+    - people/mel
+    - companies/komodor
+    - meetings/2026-03-11-mel-antriksh-arete-discussion
+  acceptable_top10: []
+  recency_decay: "60d half-life"
+  entity_boost_for: [Mel, Komodor]
+  notes: |
+    Older meeting (2026-03-11). Tests that older entities still surface
+    when the query is precise.
+
+- id: person-prep-003
+  query: "what should I know about Sai Vishwak"
+  intent: person_prep
+  expected_top3:
+    - people/sai-vishwak-korimerla
+    - companies/liquidos
+    - meetings/2026-04-07-vishwak-antriksh
+  acceptable_top10: []
+  recency_decay: "30d half-life"
+  entity_boost_for: [Sai Vishwak, Liquidos]
+  notes: First-name-only query; tests alias resolution.
+
+- id: recall-001
+  query: "what's the ArmorIQ pilot about"
+  intent: recall
+  expected_top3:
+    - companies/armoriq
+    - people/kaushik-immadisetty
+    - meetings/2026-04-23-kaushik-antriksh-pilot-discussion-and-ne
+  acceptable_top10: []
+  recency_decay: "60d half-life"
+  entity_boost_for: [ArmorIQ]
+  notes: Concept-driven query; should resolve to company first, then linked people/meetings.
+
+- id: recall-002
+  query: "what's pending with Kaushik"
+  intent: recall
+  expected_top3:
+    - people/kaushik-immadisetty
+    - meetings/2026-04-23-kaushik-antriksh-pilot-discussion-and-ne
+    - companies/armoriq
+  acceptable_top10: []
+  recency_decay: "14d half-life"
+  entity_boost_for: [Kaushik]
+  notes: |
+    Open-threads query. People page has the "follow-up promised week of Apr 28"
+    open thread — that's the right answer.
+
+- id: recall-003
+  query: "Reddit monitoring discussions"
+  intent: recall
+  expected_top3:
+    - meetings/2026-04-23-kaushik-antriksh-pilot-discussion-and-ne
+    - meetings/2026-03-18-vithika-antriksh-reddit-marketing-discus
+    - meetings/2026-04-06-bhramari-antriksh-reddit-discussion
+  acceptable_top10:
+    - companies/armoriq
+  recency_decay: "60d half-life"
+  entity_boost_for: []
+  notes: Topic-driven query across multiple meetings — pure semantic retrieval.
+
+- id: conceptual-001
+  query: "what are my 2026 goals"
+  intent: conceptual
+  expected_top3:
+    - people/antriksh
+  acceptable_top10:
+    - projects/personal-ai-assistant
+  recency_decay: none
+  entity_boost_for: [Antriksh]
+  notes: |
+    Self-recall. The 8 goals are explicitly enumerated in people/antriksh.md.
+    Top-1 should be the antriksh page.
+
+- id: conceptual-002
+  query: "what am I working on"
+  intent: conceptual
+  expected_top3:
+    - projects/personal-ai-assistant
+    - people/antriksh
+  acceptable_top10: []
+  recency_decay: "30d half-life"
+  entity_boost_for: []
+  notes: Project-level conceptual query.
+
+- id: conceptual-003
+  query: "who do I know at Y Combinator"
+  intent: conceptual
+  expected_top3:
+    - companies/ycombinator
+  acceptable_top10: []
+  recency_decay: none
+  entity_boost_for: [Y Combinator]
+  notes: |
+    Reverse lookup — start from company, traverse to people. Tests
+    KG traversal alongside vector retrieval.
+
+- id: temporal-001
+  query: "what was on March 11"
+  intent: temporal
+  expected_top3:
+    - meetings/2026-03-11-mel-antriksh-arete-discussion
+  acceptable_top10: []
+  recency_decay: none
+  entity_boost_for: []
+  notes: |
+    Date-precise query. Tests whether retrieval can match on dates baked
+    into meeting page slugs and frontmatter.

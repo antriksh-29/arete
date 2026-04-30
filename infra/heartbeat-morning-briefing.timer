@@ -1,0 +1,10 @@
+[Unit]
+Description=Trigger morning briefing at 8am IST
+
+[Timer]
+OnCalendar=*-*-* 08:00:00 Asia/Kolkata
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

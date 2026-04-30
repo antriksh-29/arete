@@ -1,0 +1,20 @@
+# GBrain version pin
+# Decision E1 (eng review): pin to a SHA, never use "latest from garrytan/gbrain"
+#
+# To bump: update SHA below, commit with message "chore: bump gbrain pin to <sha> — <reason>"
+# To check: `git -C ~/.brain-tools/gbrain rev-parse HEAD` should match the SHA below.
+#
+# Phase 0: SHA TBD — to be set during Phase 4 install. Use `git ls-remote https://github.com/garrytan/gbrain.git HEAD`
+# at install time and pin that. Avoid bumping during the 6-week keystone window unless a fix is required.
+
+GBRAIN_REPO=https://github.com/garrytan/gbrain.git
+GBRAIN_SHA=0fb0c83
+GBRAIN_VERSION=v0.22.14
+PINNED_AT=2026-04-30
+PINNED_REASON="reinstalled via Garry's literal command (bun add -g github:garrytan/gbrain) with postinstall trust to ensure migrations run"
+INSTALL_METHOD=bun_add_with_trust
+INSTALL_PATH=/home/botuser/.bun/install/global/node_modules/gbrain
+
+# To upgrade: cd ~/gbrain && git fetch && git checkout <new-sha> && bun install
+# Then update SHA + VERSION + PINNED_AT here and commit with reason.
+# Avoid bumping during the 6-week keystone window unless a fix is required.

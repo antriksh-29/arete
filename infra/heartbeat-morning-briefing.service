@@ -1,0 +1,9 @@
+[Unit]
+Description=Morning briefing — 8am IST daily
+After=openclaw-gateway.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/mkdir -p /home/botuser/.brain-bootstrap-raw/logs
+ExecStart=/home/botuser/bin/heartbeat-morning-briefing.sh
+TimeoutStartSec=300

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run brain backup daily at 3am IST (off-hours)
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 Asia/Kolkata
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

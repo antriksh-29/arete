@@ -1,0 +1,11 @@
+[Unit]
+Description=Run brain collectors daily at 7am IST
+
+[Timer]
+# 7am IST = 01:30 UTC. Use IST directly via the localtime calendar spec.
+OnCalendar=*-*-* 07:00:00 Asia/Kolkata
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

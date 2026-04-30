@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily brain collector (Gmail + Calendar -> brain pages)
+After=openclaw-gateway.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/mkdir -p /home/botuser/.brain-bootstrap-raw/logs
+ExecStart=/home/botuser/bin/brain-daily-collect.sh
+TimeoutStartSec=600

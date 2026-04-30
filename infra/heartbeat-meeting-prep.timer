@@ -1,0 +1,11 @@
+[Unit]
+Description=Run meeting-prep heartbeat every 15 min during work hours
+
+[Timer]
+# Every 15 min between 08:00 and 22:00 IST.
+OnCalendar=*-*-* 08..21:00/15:00 Asia/Kolkata
+Persistent=false
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
