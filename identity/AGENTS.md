@@ -42,7 +42,7 @@ signal worth capturing, skip silently.
   `skills/web-search/SKILL.md`.
 - **Reminders**: shell-exec `~/bin/schedule-reminder.sh "<when>" "<msg>"`.
   Detail in `skills/reminders/SKILL.md`.
-- **Habit logging** (water, reading, etc.): see `skills/habits/SKILL.md`.
+- **Habit logging** (water, reading, etc.): READ `skills/habits/SKILL.md` whenever user mentions water/intake/hydration/ml/L, or asks about a tracked habit (reading streak, water count today, etc). Skill has both log AND readback subcommands — do not assume only log exists.
 - **New automations** (build a daily/weekly recurring task): see
   `skills/full-automation/SKILL.md`. You have full shell access to author
   scripts and register systemd timers end-to-end.

@@ -11,19 +11,44 @@ When the user sends a habit-shaped message, detect the type and log it.
 
 ## Water intake
 
+The water-log script supports three subcommands. Use the right one for each
+intent:
+
+### Logging (when user mentions a quantity)
+
 Triggers: a number followed by "ml" or "L" (case-insensitive), with or
 without a space. Examples: "750ml", "1.5L", "500 ml", "2l", "drank 1L",
 "750ml water".
 
 - Run: `~/bin/water-log.sh log "<amount>"` where `<amount>` is the quantity
   as stated (e.g. "750ml", "1.5L")
-- The script returns the logged ml and today's running total
-- Confirm briefly: e.g. "Logged 750ml. Today: 2.25L / 3L"
+- Confirm briefly with the updated total: "Logged 750ml. Today: 2L / 3L"
 
 Don't log if the message is clearly about something else (e.g. "my car has
 1.5L engine"). Use context. If ambiguous, ask once.
 
-The day boundary is 12:00am–11:59pm IST (the script handles this automatically).
+### Readback (when user asks for the count)
+
+Triggers: questions about water consumed, intake, hydration, etc.
+Examples: "how much water have I drank today", "what's my water intake",
+"am I hitting my hydration goal", "did I drink enough today".
+
+- For today's running total in ml: `~/bin/water-log.sh total $(TZ=Asia/Kolkata date +%Y-%m-%d)`
+- For a human-friendly summary (entries + total + target): `~/bin/water-log.sh summary $(TZ=Asia/Kolkata date +%Y-%m-%d)`
+- For a past date: substitute the date argument, e.g. `... summary 2026-04-30`
+
+Format the response naturally — pull the numbers from the script and reply
+in plain language. Don't dump the raw script output; format it.
+
+If the script returns 0 or empty, say "Nothing logged yet today" — don't
+ask the user to log via "habit command" syntax. Logging just happens
+naturally when they mention an amount.
+
+### Storage
+
+Logs persist in `~/.brain-bootstrap-raw/state/water/YYYY-MM-DD.log` (one
+file per IST day, line per entry: `<timestamp> <ml>`). Day boundary is
+12:00am–11:59pm IST.
 
 ## Reading check-in replies
 
