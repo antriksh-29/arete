@@ -44,11 +44,20 @@ If the script returns 0 or empty, say "Nothing logged yet today" — don't
 ask the user to log via "habit command" syntax. Logging just happens
 naturally when they mention an amount.
 
-### Storage
+### Storage (dual-layer)
 
-Logs persist in `~/.brain-bootstrap-raw/state/water/YYYY-MM-DD.log` (one
-file per IST day, line per entry: `<timestamp> <ml>`). Day boundary is
-12:00am–11:59pm IST.
+- **Brain page** (compiled view): `~/.brain/habits/water-intake.md` —
+  recomputed on every log call. Has todays entries, last 7 days table,
+  and stats. This is what `gbrain__query` finds when user asks
+  questions like "how am I doing on hydration" or "what habits am I tracking".
+- **Filesystem** (raw events): `~/.brain-bootstrap-raw/state/water/YYYY-MM-DD.log` —
+  one file per IST day, one line per entry. Used by the script for cheap
+  total/summary computation. Day boundary 12:00am-11:59pm IST.
+
+For a brain-first lookup question, you can ALSO call `gbrain__query "water intake"`
+to get the compiled brain page back. The script readback (`total` /
+`summary`) is faster for precise numeric questions; the brain page is
+better for narrative "how am I doing" framing.
 
 ## Reading check-in replies
 

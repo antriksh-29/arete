@@ -1,0 +1,251 @@
+#!/bin/bash
+# Water intake logger
+#
+# Subcommands:
+#   log <amount>         — parse and append amount to today's IST log
+#   summary [YYYY-MM-DD] — Telegram-formatted summary for a date (default: yesterday IST)
+#   total [YYYY-MM-DD]   — total ml for a date to stdout (default: today IST)
+#
+# Storage (dual):
+#   - Filesystem (raw events): ~/.brain-bootstrap-raw/state/water/YYYY-MM-DD.log
+#     Each line: "<YYYY-MM-DD HH:MM IST> <ml>"
+#   - Brain (compiled view): ~/.brain/habits/water-intake.md
+#     Updated on every log call; queryable by brain-first lookups.
+
+set -euo pipefail
+
+STATE_DIR="$HOME/.brain-bootstrap-raw/state/water"
+BRAIN_PAGE="$HOME/.brain/habits/water-intake.md"
+TARGET_ML=3000
+
+now_ist() { TZ=Asia/Kolkata date "+$1"; }
+yesterday_ist() { TZ=Asia/Kolkata date -d 'yesterday' "+$1"; }
+
+mkdir -p "$STATE_DIR" "$(dirname "$BRAIN_PAGE")"
+
+parse_ml() {
+  local raw="$1"
+  local norm
+  norm=$(echo "$raw" | tr '[:upper:]' '[:lower:]' | sed 's/ //g')
+  if [[ "$norm" =~ ^([0-9]+\.?[0-9]*)l$ ]]; then
+    echo "$(python3 -c "print(int(float('${BASH_REMATCH[1]}') * 1000))")"
+  elif [[ "$norm" =~ ^([0-9]+\.?[0-9]*)ml$ ]]; then
+    echo "${BASH_REMATCH[1]%.*}"
+  else
+    echo ""
+  fi
+}
+
+log_intake() {
+  local raw="$1"
+  local ML
+  ML=$(parse_ml "$raw")
+  if [ -z "$ML" ] || [ "$ML" -le 0 ] 2>/dev/null; then
+    echo "Could not parse amount: $raw" >&2
+    exit 1
+  fi
+  local DATE TS LOG_FILE
+  DATE=$(now_ist '%Y-%m-%d')
+  TS=$(now_ist '%Y-%m-%d %H:%M IST')
+  LOG_FILE="$STATE_DIR/$DATE.log"
+  echo "$TS $ML" >> "$LOG_FILE"
+  echo "$ML"
+}
+
+total_for_date() {
+  local DATE="$1"
+  local LOG_FILE="$STATE_DIR/$DATE.log"
+  if [ ! -f "$LOG_FILE" ]; then
+    echo 0; return
+  fi
+  awk '{sum += $4} END {print sum+0}' "$LOG_FILE"
+}
+
+entries_for_date() {
+  local DATE="$1"
+  local LOG_FILE="$STATE_DIR/$DATE.log"
+  if [ ! -f "$LOG_FILE" ]; then echo ""; return; fi
+  awk '{
+    ml = $4
+    if (ml >= 1000 && ml % 1000 == 0) printf "%dL ", ml/1000
+    else if (ml >= 1000) printf "%.1fL ", ml/1000
+    else printf "%dml ", ml
+  }' "$LOG_FILE" | sed "s/ $//"
+}
+
+# Recompute the brain page from filesystem state. Idempotent — safe to call
+# repeatedly. Reads up to last 30 days, computes 7-day and overall stats,
+# stamps full markdown back to ~/.brain/habits/water-intake.md.
+rebuild_brain_page() {
+  python3 - "$STATE_DIR" "$BRAIN_PAGE" "$TARGET_ML" <<'PYEOF'
+import os, sys, datetime, re
+state_dir, page_path, target_ml_str = sys.argv[1], sys.argv[2], sys.argv[3]
+target_ml = int(target_ml_str)
+
+today = datetime.date.today()
+# Build dict of date -> (entries, total_ml)
+day_data = {}
+for fname in sorted(os.listdir(state_dir)) if os.path.isdir(state_dir) else []:
+    if not fname.endswith('.log'): continue
+    date_str = fname[:-4]
+    try:
+        d = datetime.date.fromisoformat(date_str)
+    except ValueError:
+        continue
+    entries = []
+    total = 0
+    with open(os.path.join(state_dir, fname)) as f:
+        for line in f:
+            parts = line.split()
+            # Format: "YYYY-MM-DD HH:MM IST <ml>"
+            if len(parts) >= 4:
+                try:
+                    ml = int(parts[3])
+                    entries.append({'time': parts[1], 'ml': ml})
+                    total += ml
+                except ValueError:
+                    continue
+    day_data[d] = {'entries': entries, 'total': total}
+
+def fmt_ml(ml):
+    if ml >= 1000 and ml % 1000 == 0: return f"{ml//1000}L"
+    if ml >= 1000: return f"{ml/1000:.2f}L"
+    return f"{ml}ml"
+
+# Stats
+last_7_days = sorted([d for d in day_data if (today - d).days < 7], reverse=True)
+hit_target_7 = sum(1 for d in last_7_days if day_data[d]['total'] >= target_ml)
+total_7 = sum(day_data[d]['total'] for d in last_7_days)
+all_days = sorted(day_data.keys(), reverse=True)
+hit_target_all = sum(1 for d in all_days if day_data[d]['total'] >= target_ml)
+total_all = sum(day_data[d]['total'] for d in all_days)
+
+today_total = day_data.get(today, {}).get('total', 0)
+today_entries = day_data.get(today, {}).get('entries', [])
+
+# Compose markdown
+lines = [
+    "---",
+    "type: habit",
+    "name: Water intake",
+    "aliases: [hydration, water-log]",
+    f"created: {min(all_days).isoformat() if all_days else today.isoformat()}",
+    f"updated: {today.isoformat()}",
+    "tags: [habits, hydration, daily]",
+    "---",
+    "",
+    "# Water intake",
+    "",
+    "Daily water intake tracking. Target: 3L/day. Tracker: `~/bin/water-log.sh`.",
+    "Logs accrue throughout the day; this page is recomputed on every log.",
+    "",
+    "## Today",
+    "",
+    f"**Total:** {fmt_ml(today_total)} / 3L target ({round(100*today_total/target_ml)}%)",
+    "",
+]
+if today_entries:
+    lines.append("Entries:")
+    for e in today_entries:
+        lines.append(f"- {e['time']} — {fmt_ml(e['ml'])}")
+else:
+    lines.append("No entries yet today.")
+lines.append("")
+
+# Last 7 days table
+lines.append("## Last 7 days")
+lines.append("")
+lines.append("| Date | Total | % of target | Hit |")
+lines.append("|------|-------|-------------|-----|")
+for d in last_7_days:
+    t = day_data[d]['total']
+    pct = round(100 * t / target_ml)
+    hit = "✅" if t >= target_ml else "—"
+    lines.append(f"| {d.isoformat()} | {fmt_ml(t)} | {pct}% | {hit} |")
+lines.append("")
+
+# Stats
+days_logged = len(all_days)
+days_logged_7 = len(last_7_days)
+lines.append("## Stats")
+lines.append("")
+lines.append(f"- **Last 7 days:** hit target {hit_target_7}/{days_logged_7 or 0} days · total {fmt_ml(total_7)} consumed")
+lines.append(f"- **Overall (since start):** hit target {hit_target_all}/{days_logged} days · total {fmt_ml(total_all)} consumed")
+lines.append(f"- **Days tracked:** {days_logged}")
+lines.append(f"- **Last updated:** {today.isoformat()}")
+
+with open(page_path, "w") as f:
+    f.write("\n".join(lines) + "\n")
+PYEOF
+}
+
+commit_brain() {
+  cd "$HOME/.brain" 2>/dev/null || return 0
+  if [ -n "$(git status --porcelain habits/water-intake.md 2>/dev/null)" ]; then
+    git add habits/water-intake.md
+    git -c user.email='antriksh.bot@getarete.co' -c user.name='Alfred' \
+      commit -m "habit: water-intake update $(now_ist '%Y-%m-%d %H:%M')" >/dev/null 2>&1 || true
+  fi
+}
+
+send_summary() {
+  local DATE="$1"
+  local DISPLAY_DATE TOTAL_ML ENTRIES TOTAL_L SHORT_ML SHORT_L STATUS MSG
+  DISPLAY_DATE=$(TZ=Asia/Kolkata date -d "$DATE" '+%a %d %b')
+  TOTAL_ML=$(total_for_date "$DATE")
+  ENTRIES=$(entries_for_date "$DATE")
+  TOTAL_L=$(python3 -c "t=$TOTAL_ML; print(f'{t/1000:.2f}L' if t%1000 else f'{t//1000}L')")
+  if [ "$TOTAL_ML" -ge "$TARGET_ML" ]; then
+    STATUS="✅ Target met!"
+  else
+    SHORT_ML=$(( TARGET_ML - TOTAL_ML ))
+    SHORT_L=$(python3 -c "s=$SHORT_ML; print(f'{s/1000:.2f}L' if s%1000 else f'{s//1000}L')")
+    STATUS="❌ Target not met (${SHORT_L} short)"
+  fi
+  if [ -z "$ENTRIES" ]; then
+    MSG="💧 Water log — $DISPLAY_DATE
+
+No entries recorded.
+
+Target: 3L — ❌ Not met"
+  else
+    MSG="💧 Water log — $DISPLAY_DATE
+
+Total: $TOTAL_L / 3L target
+$STATUS
+
+Entries: $ENTRIES"
+  fi
+  /home/botuser/bin/send-telegram.sh "$MSG"
+}
+
+case "${1:-}" in
+  log)
+    ML=$(log_intake "$2")
+    TOTAL=$(total_for_date "$(now_ist '%Y-%m-%d')")
+    TOTAL_L=$(python3 -c "t=$TOTAL; print(f'{t/1000:.2f}L' if t%1000 else f'{t//1000}L')")
+    rebuild_brain_page
+    commit_brain
+    echo "Logged ${ML}ml. Today so far: $TOTAL_L / 3L"
+    ;;
+  summary)
+    DATE="${2:-$(yesterday_ist '%Y-%m-%d')}"
+    rebuild_brain_page
+    commit_brain
+    send_summary "$DATE"
+    ;;
+  total)
+    DATE="${2:-$(now_ist '%Y-%m-%d')}"
+    total_for_date "$DATE"
+    ;;
+  rebuild-brain)
+    # Manual rebuild (also useful for backfill / migration)
+    rebuild_brain_page
+    commit_brain
+    echo "Rebuilt $BRAIN_PAGE"
+    ;;
+  *)
+    echo "Usage: water-log.sh {log <amount>|summary [date]|total [date]|rebuild-brain}" >&2
+    exit 1
+    ;;
+esac

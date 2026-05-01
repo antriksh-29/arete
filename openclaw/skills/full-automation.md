@@ -53,6 +53,76 @@ When the user describes a recurring or scheduled automation:
 Don't ask the user to paste shell commands. Full shell access exists
 specifically so you can do the whole thing yourself.
 
+
+## Pre-ship checklist (MANDATORY — every automation must pass)
+
+Before you tell the user "shipped", verify all 6 items below. Skipping any
+of these is the bug pattern that hit us with water-log readback (logging
+worked, readback failed because the skill only documented write).
+
+### 1. Brain page exists (compiled / narrative view)
+
+Every automation gets a brain page at `~/.brain/<type>/<slug>.md`. The
+page has:
+- Frontmatter (`type`, `name`, `created`, `updated`, `tags`)
+- Summary paragraph
+- Recent activity / log table (depending on data shape)
+- Stats / current state (computed by the script, stamped into the page)
+
+This is the surface the agent finds when doing brain-first lookups
+("how am I doing on X", "what habits do I track"). Never skip the brain
+page even if filesystem state already exists — the brain page is what
+makes the data discoverable.
+
+### 2. Filesystem state for high-frequency events (only when needed)
+
+If the automation logs >1 event per day (water intake, exercise reps,
+expense entries), keep the raw audit trail at
+`~/.brain-bootstrap-raw/state/<feature>/`. The brain page summarizes;
+the filesystem holds the raw.
+
+For low-frequency automations (one event per day or less, e.g. reading
+check-in), filesystem state is optional — the brain page can hold both
+log table and stats directly.
+
+### 3. Script has BOTH write AND read subcommands
+
+Every habit/log script MUST expose at least:
+- `<script> log <args>` — record an event
+- `<script> total [date]` (or `summary`, `stats`) — read back the count / state
+
+If the user asks "how much / how many / how am I doing on X" and the
+script only has `log`, the agent will fail (no path to readback). This
+is the water-log bug verbatim. Don't ship a write-only automation.
+
+### 4. Skill documents BOTH paths
+
+`skills/<skill-name>/SKILL.md` (or `skills/habits/SKILL.md` if it's a
+habit) MUST document both the write trigger AND the readback trigger,
+with example commands. The agent only knows what the skill tells it.
+
+Self-check: read your own skill file. Could a fresh agent answer "how am
+I doing on X today" using only what's documented? If no, add the
+readback section.
+
+### 5. AGENTS.md capability hint is directive
+
+If the automation introduces a new natural-language pattern, add or
+update the "Capabilities you have" line in AGENTS.md to be DIRECTIVE,
+not passive. Use "READ skills/<x>/SKILL.md when user asks about Y" not
+"see skills/<x>/SKILL.md". Passive verbs don't make Haiku/Sonnet
+proactively load the skill file.
+
+### 6. Real-world verification (at least one of each path)
+
+Before declaring shipped:
+- Trigger the WRITE path with a realistic message and confirm side-effect
+  (filesystem entry, brain page update, Telegram confirmation)
+- Trigger the READ path with a realistic question and confirm the agent
+  returns the right number with the right citation
+
+If either fails, the automation isn't ready. Do not ship.
+
 ## Safety limits
 
 Rule 1 destructive list (email send, calendar mutate, vault edits, page
