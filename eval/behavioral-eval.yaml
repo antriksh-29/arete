@@ -33,6 +33,41 @@
     response includes "Kaushik" AND "ArmorIQ" AND ("pilot" OR "Reddit") AND
     response does NOT contain "nothing in the brain" or "no notes"
 
+# REGRESSION TEST — Tool-call discipline (added 2026-05-01 after Haiku failure)
+# Catches the "narrate but don't act" failure mode. ANY new model must pass
+# this before being promoted to primary turn handler.
+- id: tool-discipline-001
+  category: routing
+  input: "do you have any idea about my hydration activity for today?"
+  context:
+    channel: telegram
+    state: water-log-has-2L-today
+  expected_behavior: |
+    Bot MUST emit at least one tool_use block (exec to call water-log.sh, OR
+    gbrain__query for habits/water-intake) BEFORE producing the final answer.
+    "Narration without action" failure mode is what this entry catches:
+    saying "let me check the brain" without actually calling the tool, then
+    concluding "no logs found" while the data exists.
+  scoring: deterministic
+  pass_threshold: |
+    toolSummary.calls >= 1 AND
+    response includes "2L" or "2 L" or "2.0L" AND
+    response does NOT contain "no hydration logs" or "no record"
+
+- id: tool-discipline-002
+  category: routing
+  input: "how am I doing on my hydration this week?"
+  context:
+    channel: telegram
+    state: water-log-has-data
+  expected_behavior: |
+    Same failure mode — natural-language framing of "how am I doing" must
+    trigger a tool call, not a hallucinated empty answer.
+  scoring: deterministic
+  pass_threshold: |
+    toolSummary.calls >= 1 AND
+    response references actual data (numbers OR "logged" OR "tracked")
+
 - id: routing-002
   category: routing
   input: "note: thinking about thesis selection — co-founder vs solo"
