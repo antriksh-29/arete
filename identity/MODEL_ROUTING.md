@@ -15,9 +15,53 @@ narrow classification work, GPT-5.4-nano).
 
 | Task | Model | Why |
 |---|---|---|
-| Telegram main turn (every conversation reply) | **Sonnet 4.6** (Haiku 4.5 fallback) | Tried Haiku 4.5 on 2026-05-01 evening, **reverted same day** after a real-world failure: user asked "do you have any idea about my hydration activity for today" — Haiku narrated "I'll check your hydration logs… let me check the brain" but emitted ZERO tool calls, then concluded "no hydration logs recorded" (incorrect — 2L was logged on filesystem AND in `habits/water-intake.md` brain page). CLI test on the SAME prompt with SAME agent yielded 2 tool calls and the right answer. **The model's tool-call discipline differs between turns**, and Haiku is not reliable enough for production user-facing turns. Lesson: cheaper model only saves money if it actually executes tools. Cost reverts to ~$2.25/day on this line; structural savings (AGENTS.md trim, gbrain filter) still hold. |
-| Daily morning briefing (8am IST cron) | **Sonnet 4.6** (inherited from main) | Same reasoning. Bounded volume — ~1 fire/day. |
-| Meeting prep (every 15min poll, fires when meeting in 25-40min window) | **Sonnet 4.6** | Same. |
+| Telegram main turn (every conversation reply) | **Haiku 4.5** (Sonnet 4.6 fallback) | Switched 2026-05-01. Re-verified same evening after a misdiagnosis (see lesson below). Haiku is reliable when AGENTS.md is precise. |
+| Daily morning briefing (8am IST cron) | **Haiku 4.5** (inherited from main) | Same path. ~3× cheaper than Sonnet for the daily briefing. |
+| Meeting prep (every 15min poll, fires when meeting in 25-40min window) | **Haiku 4.5** | Same. |
+
+### Lesson: I misdiagnosed Haiku once. Capturing it so we don't repeat.
+
+On 2026-05-01 21:00 IST, a real Telegram failure happened: user asked
+"do you have any idea about my hydration activity for today?" and the
+bot replied "no hydration logs recorded" while 2L was logged. My first
+instinct was to blame Haiku ("narrating without acting") and revert to
+Sonnet. **That was wrong.** When I dug into the trajectory file (the
+`.trajectory.jsonl` artifact for that turn — read it from
+`~/.openclaw/agents/main/sessions/<uuid>.trajectory.jsonl`), I saw:
+
+- Haiku DID emit two tool calls
+- Tool 1: `exec ~/bin/habit-log.sh readback water` → exit 127 (file not
+  found). Agent guessed the wrong script name based on the skill folder
+  name "habits"; the actual script is `~/bin/water-log.sh`.
+- Tool 2: `gbrain__search "hydration water today 2026-05-01"` → empty.
+  Agent picked `__search` (keyword tsvector) instead of `__query`
+  (hybrid vector + keyword + RRF). The brain page is found by `__query`
+  at 0.84; not found by `__search` on those tokens.
+- Both tools failed → agent honestly concluded "no logs."
+
+The root cause was **AGENTS.md ambiguity**, not the model:
+1. The "Capabilities" line said "READ skills/habits/SKILL.md" — too soft.
+   Agent skipped reading and guessed a script name.
+2. Brain capability didn't disambiguate `gbrain__query` (hybrid, content
+   lookup) vs `gbrain__search` (keyword, exact match). Agent picked the
+   weaker tool.
+
+Both fixed: inlined exact script paths + tool-selection disambiguation
+in AGENTS.md. After fix, 4 tests on the Telegram channel path with
+Haiku → 4 successes (hydration, brain query, multi-tool briefing,
+reminder), 0 failures.
+
+**General lesson:** when an agent fails, READ the trajectory file before
+attributing the failure to a model. The trajectory shows EXACTLY what
+the model emitted — text blocks, tool calls, tool results. If the model
+emitted tool calls but they failed/empty, the bug is in your tool
+definitions / scripts / skill instructions, not the model. If the model
+emitted no tool calls at all, then question the model — but only after
+ruling out documentation gaps.
+
+Trajectory file path:
+`~/.openclaw/agents/main/sessions/<sessionId>.trajectory.jsonl`. Find
+the session ID in `sessions.json` under the appropriate session key.
 | Web search (`~/bin/web-search.sh`) | **GPT-5.4-mini** | Search + synthesis are both well in mini's ability. Per-call cost ~$0.003 vs ~$0.05 if Sonnet did it. |
 | Bootstrap enrichment (one-time, Phase 4.5) | **Sonnet 4.6** | One-shot foundational generation; structural quality of seed pages matters. Done. |
 | ClawVisor's intent verifier | **claude-haiku-4-5** | ClawVisor's internal choice (their service, their model). Out of our control. |

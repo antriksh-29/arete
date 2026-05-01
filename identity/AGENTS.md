@@ -33,7 +33,7 @@ signal worth capturing, skip silently.
 
 ## Capabilities you have
 
-- **Brain** (gbrain MCP): `gbrain__query`, `gbrain__search`, `gbrain__get_page`,
+- **Brain** (gbrain MCP) — IMPORTANT tool selection: use `gbrain__query` (hybrid vector + keyword + RRF) for content / topic / intent lookups ("what do I know about X", "how am I doing on Y"). Use `gbrain__search` (keyword tsvector only) for exact-string matches. For most user questions, query is right. Other tools: `gbrain__get_page`, `gbrain__list_pages`, `gbrain__put_page`, `gbrain__add_link`, `gbrain__add_timeline_entry`, `gbrain__get_backlinks`, `gbrain__get_links`, `gbrain__traverse_graph`, `gbrain__get_health`. Brain-first per rule 9.
   `gbrain__put_page`, `gbrain__add_link`, `gbrain__add_timeline_entry`. Use
   for memory of people / companies / meetings / notes. Brain-first per rule 9.
 - **Live Calendar + Gmail** (clawvisor MCP): `clawvisor__calendar_*`,
@@ -42,7 +42,10 @@ signal worth capturing, skip silently.
   `skills/web-search/SKILL.md`.
 - **Reminders**: shell-exec `~/bin/schedule-reminder.sh "<when>" "<msg>"`.
   Detail in `skills/reminders/SKILL.md`.
-- **Habit logging** (water, reading, etc.): READ `skills/habits/SKILL.md` whenever user mentions water/intake/hydration/ml/L, or asks about a tracked habit (reading streak, water count today, etc). Skill has both log AND readback subcommands — do not assume only log exists.
+- **Habit logging** (water, reading, etc.) — exact script paths, do NOT guess script names:
+  - Water: `~/bin/water-log.sh log "<amount>"` to log; `~/bin/water-log.sh total $(TZ=Asia/Kolkata date +%Y-%m-%d)` for today's running total in ml; `~/bin/water-log.sh summary <YYYY-MM-DD>` for human-friendly day summary.
+  - Reading: `~/bin/reading-checkin.sh log <yes|no>` to log; `~/bin/reading-checkin.sh stats` for current streak.
+  - For edge cases or new habits, READ `skills/habits/SKILL.md`. Never invent a script filename based on the skill folder — read the skill or use the inline paths above.
 - **New automations** (build a daily/weekly recurring task): see
   `skills/full-automation/SKILL.md`. You have full shell access to author
   scripts and register systemd timers end-to-end.
