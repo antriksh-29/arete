@@ -150,7 +150,14 @@ function buildMeetings(calendarRaw) {
   return list;
 }
 
-async function callClaude(systemPrompt, userPrompt) {
+// Provider detection: route to OpenAI for gpt-* models, Anthropic for everything else.
+// Both APIs return text; we normalize to a single string.
+async function callLLM(systemPrompt, userPrompt) {
+  if (MODEL.startsWith('gpt-')) return callOpenAI(systemPrompt, userPrompt);
+  return callAnthropic(systemPrompt, userPrompt);
+}
+
+async function callAnthropic(systemPrompt, userPrompt) {
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -165,9 +172,33 @@ async function callClaude(systemPrompt, userPrompt) {
       messages: [{ role: 'user', content: userPrompt }],
     }),
   });
-  if (!r.ok) throw new Error(`Claude API ${r.status}: ${await r.text()}`);
+  if (!r.ok) throw new Error(`Anthropic ${r.status}: ${await r.text()}`);
   const json = await r.json();
   return json.content?.[0]?.text || '';
+}
+
+async function callOpenAI(systemPrompt, userPrompt) {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY missing — required when ENRICH_MODEL is gpt-*');
+  }
+  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      max_completion_tokens: 1500,
+    }),
+  });
+  if (!r.ok) throw new Error(`OpenAI ${r.status}: ${await r.text()}`);
+  const json = await r.json();
+  return json.choices?.[0]?.message?.content || '';
 }
 
 const SYSTEM_PROMPT = `You generate compiled-truth brain pages for Antriksh's personal assistant. Follow this schema EXACTLY.
@@ -327,7 +358,7 @@ async function enrichPeople(peopleMap) {
     console.log(`  enrich ${slug} <- ${p.email} (${p.email_count}e/${p.meeting_count}m)`);
     if (DRY_RUN) continue;
     try {
-      const md = clean(await callClaude(SYSTEM_PROMPT, personPrompt(p)));
+      const md = clean(await callLLM(SYSTEM_PROMPT, personPrompt(p)));
       mkdirSync(join(BRAIN_DIR, 'people'), { recursive: true });
       writeFileSync(path, md);
     } catch (e) { console.error(`  ERROR ${slug}: ${e.message}`); }
@@ -345,7 +376,7 @@ async function enrichCompanies(companyMap) {
     console.log(`  enrich ${slug} <- ${c.domain} (${c.people.length} people)`);
     if (DRY_RUN) continue;
     try {
-      const md = clean(await callClaude(SYSTEM_PROMPT, companyPrompt(c)));
+      const md = clean(await callLLM(SYSTEM_PROMPT, companyPrompt(c)));
       mkdirSync(join(BRAIN_DIR, 'companies'), { recursive: true });
       writeFileSync(path, md);
     } catch (e) { console.error(`  ERROR ${slug}: ${e.message}`); }
@@ -372,7 +403,7 @@ async function enrichMeetings(meetings) {
     console.log(`  enrich ${slug}`);
     if (DRY_RUN) continue;
     try {
-      const md = clean(await callClaude(SYSTEM_PROMPT, meetingPrompt(m)));
+      const md = clean(await callLLM(SYSTEM_PROMPT, meetingPrompt(m)));
       mkdirSync(join(BRAIN_DIR, 'meetings'), { recursive: true });
       writeFileSync(path, md);
     } catch (e) { console.error(`  ERROR ${slug}: ${e.message}`); }

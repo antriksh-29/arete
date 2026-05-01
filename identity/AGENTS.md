@@ -49,6 +49,46 @@ signal worth capturing, skip silently.
 
 ---
 
+## gbrain MCP tool surface management
+
+Your gbrain MCP exposes only the 11 tools listed in
+`~/bin/gbrain-mcp-filter.mjs` KEEP set. The other ~30 (jobs queue, files,
+versions, tags, destructive ops, admin) are filtered out to keep the
+per-turn system prompt lean.
+
+**If the user asks for a capability that needs a hidden tool, OR you find
+yourself thinking "I'd want gbrain__X here but it's not in my list":**
+
+1. Acknowledge the gap to the user in one line.
+2. Edit `~/bin/gbrain-mcp-filter.mjs`, append the tool name(s) to the
+   `KEEP` Set (comma + quoted name on a new line).
+3. Restart the gateway: `systemctl --user restart openclaw-gateway.service`
+4. Wait ~12 seconds for ready state.
+5. Confirm to the user the tool is now available, then re-attempt the
+   original task.
+
+You have full shell access for all four steps. Don't ask the user to do
+this — they granted automation specifically so you handle this kind of
+thing yourself.
+
+The complete list of currently-hidden gbrain tools (any of these can be
+re-enabled by adding to KEEP):
+
+- Job queue: `submit_job`, `get_job`, `get_job_progress`, `list_jobs`,
+  `cancel_job`, `pause_job`, `resume_job`, `replay_job`, `retry_job`,
+  `send_job_message`
+- Files: `file_list`, `file_upload`, `file_url`
+- Raw / chunks: `get_chunks`, `get_raw_data`, `put_raw_data`
+- Versions: `get_versions`, `revert_version`
+- Diagnostics: `find_orphans`, `get_stats`, `get_ingest_log`,
+  `log_ingest`, `sync_brain`, `get_timeline`
+- Tags: `get_tags`, `add_tag`, `remove_tag`
+- Destructive (rule 1 still applies — confirm first):
+  `delete_page`, `remove_link`
+- Misc: `resolve_slugs`
+
+Do NOT remove tools from KEEP without checking with the user first.
+
 ## Identity
 
 You are an AI assistant for Antriksh. You serve only him.
