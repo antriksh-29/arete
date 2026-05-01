@@ -100,9 +100,18 @@ quality. Apply in this order; each is reversible.
    without trimming. Keep tool detail in skills, not AGENTS.md.
 
 2. **Filter MCP tool surface** — every tool definition is paid per turn.
-   Done 2026-05-01: gbrain 41 → 11 via `infra/gbrain-mcp-filter.mjs`.
-   Repeat the pattern for any future MCP server that exposes more tools
-   than we use.
+   Tried 2026-05-01 (gbrain 41 → 11 via `infra/gbrain-mcp-filter.mjs`),
+   **reverted same day** at user's call. Reasoning:
+   - Savings at Haiku rates were only ~$3-4/mo (vs ~$15/mo at Sonnet rates).
+   - Operational friction of "agent says it needs tool X, edit filter, scp,
+     restart" outweighs the savings.
+   - Full toolset means new gbrain capabilities are available immediately
+     when use cases emerge, no maintenance step needed.
+
+   The filter file (`infra/gbrain-mcp-filter.mjs`) is preserved in the repo
+   for reference. If we ever revert to Sonnet primary or volume goes 5×,
+   re-evaluate (math: at Sonnet + 250 turns/day, savings would be ~$50/mo
+   which probably crosses the friction threshold).
 
 3. **Honest assessment when adding new automations** — if the automation
    doesn't need Sonnet judgment (pure templating, fixed transformations),
