@@ -43,7 +43,10 @@ OUT_DIR="$RAW_DIR/email" node "$COLLECTORS_DIR/email-collector.mjs" 2 2>&1 | tee
 OUT_DIR="$RAW_DIR/calendar" node "$COLLECTORS_DIR/calendar-collector.mjs" 14 2>&1 | tee -a "$LOG"
 
 log "collectors finished — running enrichment for new entities (LIMIT=10 per type)"
-ENRICH_LIMIT=10 RAW_EMAIL_DIR="$RAW_DIR/email" RAW_CAL_DIR="$RAW_DIR/calendar" \
+# Daily incremental enrichment uses Haiku 4.5 — smaller deltas than the
+# original Phase 4.5 one-shot, schema is well-trodden. ~3× cheaper than Sonnet.
+ENRICH_LIMIT=10 ENRICH_MODEL=claude-haiku-4-5 \
+  RAW_EMAIL_DIR="$RAW_DIR/email" RAW_CAL_DIR="$RAW_DIR/calendar" \
   BRAIN_DIR="$HOME/.brain" \
   node "$COLLECTORS_DIR/bootstrap-enrich.mjs" 2>&1 | tee -a "$LOG"
 

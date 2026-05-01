@@ -15,9 +15,9 @@ narrow classification work, GPT-5.4-nano).
 
 | Task | Model | Why |
 |---|---|---|
-| Telegram main turn (every conversation reply) | **Sonnet 4.6** | Multi-step skill-following, brain-first reasoning, tool composition. Quality matters; Haiku regression-tested poorly on multi-MCP-tool turns. |
-| Daily morning briefing (8am IST cron) | **Sonnet 4.6** (inherited from main) | Synthesis-heavy single-fire. Cost is bounded (~1 call/day). Worth Sonnet. |
-| Meeting prep (every 15min poll, fires when meeting in 25-40min window) | **Sonnet 4.6** | Same reasoning — quality of prep notes matters; volume is bounded. |
+| Telegram main turn (every conversation reply) | **Haiku 4.5** (Sonnet 4.6 fallback) | Switched 2026-05-01 after testing. 3× cheaper than Sonnet, quality holds on multi-tool turns (verified: 3 tool calls, 0 failures on full briefing; 2 calls 0 failures on reminder; brain query + calendar query both pass). Sonnet 4.6 is registered as fallback if Haiku rate-limits or fails. |
+| Daily morning briefing (8am IST cron) | **Haiku 4.5** (inherited from main) | Same path — `openclaw agent --channel telegram --deliver` invokes the configured primary. ~3× cheaper than running Sonnet for the daily briefing. |
+| Meeting prep (every 15min poll, fires when meeting in 25-40min window) | **Haiku 4.5** | Same. Bounded volume, multi-tool synthesis well within Haiku's range. |
 | Web search (`~/bin/web-search.sh`) | **GPT-5.4-mini** | Search + synthesis are both well in mini's ability. Per-call cost ~$0.003 vs ~$0.05 if Sonnet did it. |
 | Bootstrap enrichment (one-time, Phase 4.5) | **Sonnet 4.6** | One-shot foundational generation; structural quality of seed pages matters. Done. |
 | ClawVisor's intent verifier | **claude-haiku-4-5** | ClawVisor's internal choice (their service, their model). Out of our control. |
