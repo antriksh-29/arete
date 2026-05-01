@@ -1,0 +1,10 @@
+[Unit]
+Description=Trigger reading check-in at 10am IST daily
+
+[Timer]
+OnCalendar=*-*-* 10:00:00 Asia/Kolkata
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

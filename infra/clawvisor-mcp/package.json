@@ -1,0 +1,10 @@
+{
+  "name": "clawvisor-mcp",
+  "version": "0.1.0",
+  "description": "MCP server exposing ClawVisor's Gmail + Calendar gateway as typed agent tools.",
+  "type": "module",
+  "main": "server.mjs",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  }
+}

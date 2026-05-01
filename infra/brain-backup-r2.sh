@@ -49,11 +49,11 @@ tar -czf "$WORK/config-$STAMP.tar.gz" -C "$HOME" \
 echo "  config tarball: $(stat -c %s $WORK/config-$STAMP.tar.gz) bytes" >> "$LOG"
 
 # Upload to R2 under daily/ prefix
-rclone copy "$WORK/" R2:bot-backups/daily/ --include "*-$STAMP.tar.gz" 2>>"$LOG"
-echo "[$(date -Iseconds)] uploaded to R2:bot-backups/daily/" >> "$LOG"
+rclone copy "$WORK/" R2:personal-assistant-backups/daily/ --include "*-$STAMP.tar.gz" 2>>"$LOG"
+echo "[$(date -Iseconds)] uploaded to R2:personal-assistant-backups/daily/" >> "$LOG"
 
 # Retention: delete daily/ files older than 30 days
-rclone delete R2:bot-backups/daily/ --min-age 30d 2>>"$LOG" || true
+rclone delete R2:personal-assistant-backups/daily/ --min-age 30d 2>>"$LOG" || true
 echo "[$(date -Iseconds)] retention sweep done" >> "$LOG"
 
 # Local log retention: keep last 14
