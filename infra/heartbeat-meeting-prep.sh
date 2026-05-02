@@ -13,9 +13,10 @@ export PATH="/home/botuser/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 STATE_DIR="${STATE_DIR:-$HOME/.brain-bootstrap-raw/state}"
 LOG_DIR="${LOG_DIR:-$HOME/.brain-bootstrap-raw/logs}"
 mkdir -p "$STATE_DIR" "$LOG_DIR"
-SENT_FILE="$STATE_DIR/meeting-prep-sent-$(date +%Y-%m-%d).txt"
+TODAY_IST=$(TZ=Asia/Kolkata date +%Y-%m-%d)
+SENT_FILE="$STATE_DIR/meeting-prep-sent-$TODAY_IST.txt"
 touch "$SENT_FILE"
-LOG="$LOG_DIR/heartbeat-$(date +%Y-%m-%d).log"
+LOG="$LOG_DIR/heartbeat-$TODAY_IST.log"
 
 CLAWVISOR_URL=$(/usr/local/bin/bot-cred get CLAWVISOR_URL)
 TOKEN=$(/usr/local/bin/bot-cred get CLAWVISOR_AGENT_TOKEN)
@@ -48,7 +49,7 @@ for ev in events:
     if 25 <= minutes_out <= 40:
         print(f'{ev[\"id\"]}|{minutes_out}|{ev.get(\"summary\",\"(untitled)\")}|$ACCOUNT')
 " 2>>"$LOG" | while IFS='|' read -r EVID MIN SUMMARY ACCT; do
-    if grep -q "^$EVID\$" "$SENT_FILE"; then
+    if grep -qxF -- "$EVID" "$SENT_FILE"; then
       continue
     fi
     echo "[$(date -Iseconds)] sending prep for: $SUMMARY (in ${MIN}min, $ACCT, id=$EVID)" >> "$LOG"
