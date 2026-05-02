@@ -50,11 +50,10 @@ async function gatewayCall({ account, action, params, reason, sessionId }) {
   return json.result;
 }
 
-async function collectAccount(account) {
-  const sessionId = randomUUID();
+async function collectFolder(account, folder, sessionId) {
   const all = [];
   let pageToken;
-  const query = `newer_than:${DAYS}d in:inbox`;
+  const query = `newer_than:${DAYS}d in:${folder}`;
   for (let page = 1; page <= MAX_PAGES; page++) {
     const params = { max_results: 100, query };
     if (pageToken) params.page_token = pageToken;
@@ -62,14 +61,33 @@ async function collectAccount(account) {
       account,
       action: 'list_messages',
       params,
-      reason: `Phase 4.5 bootstrap: paginating last ${DAYS}d inbox from ${account} (page ${page}) to extract people, companies, and meetings into brain pages`,
+      reason: `Phase 4.5 bootstrap: paginating last ${DAYS}d ${folder} from ${account} (page ${page}) to extract people, companies, and meetings into brain pages with both inbound and outbound activity`,
       sessionId,
     });
     const messages = result?.data?.messages || [];
+    // Tag each message with folder so enrichment knows direction
+    for (const m of messages) m._folder = folder;
     all.push(...messages);
     pageToken = result?.meta?.next_page_token;
-    process.stdout.write(`  ${account} page ${page}: +${messages.length} (total ${all.length})\n`);
+    process.stdout.write(`  ${account} ${folder} page ${page}: +${messages.length} (total ${all.length})\n`);
     if (!pageToken) break;
+  }
+  return all;
+}
+
+async function collectAccount(account) {
+  const sessionId = randomUUID();
+  // Pull both inbox (inbound) and sent (outbound). Outbound activity is what
+  // catches user-initiated follow-ups for the morning briefing.
+  const inbox = await collectFolder(account, 'inbox', sessionId);
+  const sent = await collectFolder(account, 'sent', sessionId);
+  // Dedup by message id (sent + reply could appear in both views in edge cases)
+  const seen = new Set();
+  const all = [];
+  for (const m of [...inbox, ...sent]) {
+    if (m.id && seen.has(m.id)) continue;
+    if (m.id) seen.add(m.id);
+    all.push(m);
   }
   return all;
 }
@@ -78,6 +96,12 @@ function classify(messages) {
   const keep = [];
   const noise = [];
   for (const m of messages) {
+    // SENT folder messages: keep all (user explicitly composed/sent these — high signal by definition).
+    if (m._folder === 'sent') {
+      keep.push(m);
+      continue;
+    }
+    // INBOX: signal-label gating + noise-sender filter.
     const senderNoise = NOISE_SENDER_RE.test(m.from || '');
     const hasSignal = (m.labels || []).some(l => SIGNAL_LABELS.has(l));
     if (hasSignal && !senderNoise) keep.push(m);

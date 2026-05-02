@@ -51,6 +51,22 @@ function parseFromHeader(from) {
   return { name: '', email: '' };
 }
 
+// Parse a `to:` header which may have multiple comma-separated recipients.
+function parseRecipients(to) {
+  if (!to) return [];
+  // Split by comma, but preserve quoted names with commas (e.g. "Last, First" <email>)
+  const parts = [];
+  let depth = 0, buf = '';
+  for (const c of to) {
+    if (c === '<') depth++;
+    else if (c === '>') depth--;
+    if (c === ',' && depth === 0) { parts.push(buf); buf = ''; }
+    else buf += c;
+  }
+  if (buf.trim()) parts.push(buf);
+  return parts.map(p => parseFromHeader(p.trim())).filter(r => r.email);
+}
+
 function loadRaw(dir) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
@@ -76,17 +92,40 @@ function buildPeopleMap(emailRaw, calendarRaw) {
 
   for (const acct of emailRaw) {
     for (const m of (acct.kept || [])) {
-      const { name, email } = parseFromHeader(m.from);
-      const entry = upsert(email, name);
-      if (entry) {
-        entry.email_count += 1;
-        entry.emails.push({
-          subject: m.subject,
-          snippet: m.snippet,
-          timestamp: m.timestamp,
-          labels: m.labels,
-          to_account: acct.account,
-        });
+      // SENT messages: the user is the FROM; entities are the recipients (TO).
+      // INBOX messages: entity is the FROM (counterparty).
+      if (m._folder === 'sent') {
+        const recipients = parseRecipients(m.to);
+        for (const r of recipients) {
+          const entry = upsert(r.email, r.name);
+          if (entry) {
+            entry.email_count += 1;
+            entry.emails.push({
+              subject: m.subject,
+              snippet: m.snippet,
+              timestamp: m.timestamp,
+              labels: m.labels,
+              from_account: acct.account,
+              direction: 'outbound',
+              message_id: m.id,
+            });
+          }
+        }
+      } else {
+        const { name, email } = parseFromHeader(m.from);
+        const entry = upsert(email, name);
+        if (entry) {
+          entry.email_count += 1;
+          entry.emails.push({
+            subject: m.subject,
+            snippet: m.snippet,
+            timestamp: m.timestamp,
+            labels: m.labels,
+            to_account: acct.account,
+            direction: 'inbound',
+            message_id: m.id,
+          });
+        }
       }
     }
   }
@@ -313,6 +352,93 @@ function clean(md) {
   return md.replace(/^```(?:markdown|md)?\n?/i, '').replace(/\n?```\s*$/i, '').trim() + '\n';
 }
 
+// Find the brain-page filepath that mentions a given email address.
+function findPageByEmail(dir, email) {
+  if (!existsSync(dir)) return null;
+  const target = email.toLowerCase();
+  for (const f of readdirSync(dir).filter(f => f.endsWith('.md'))) {
+    const fp = join(dir, f);
+    const body = readFileSync(fp, 'utf-8').toLowerCase();
+    if (body.includes(target)) return fp;
+  }
+  return null;
+}
+
+// Append new timeline entries to an existing entity page.
+// Idempotent: dedups by message_id (or date+subject hash if no message_id).
+// Returns the number of entries added.
+function appendTimelineEntries(pagePath, person) {
+  const body = readFileSync(pagePath, 'utf-8');
+
+  // Collect candidate entries from the new email + meeting batch
+  const candidates = [];
+  for (const e of (person.emails || [])) {
+    if (!e.timestamp) continue;
+    const date = new Date(e.timestamp).toISOString().slice(0, 10);
+    if (Number.isNaN(new Date(e.timestamp).getTime())) continue;
+    const direction = e.direction === 'outbound' ? 'sent' : 'received';
+    const subject = (e.subject || '(no subject)').replace(/[\[\]]/g, '');
+    const key = e.message_id || `${date}::${subject}`;
+    candidates.push({
+      key,
+      date,
+      timestamp: e.timestamp,
+      bullet: `- **${date}** — ${direction}: ${subject} [Source: Gmail msg ${e.message_id || '(no id)'}, ${date}]`,
+    });
+  }
+  for (const m of (person.meetings || [])) {
+    if (!m.start) continue;
+    const date = new Date(m.start).toISOString().slice(0, 10);
+    if (Number.isNaN(new Date(m.start).getTime())) continue;
+    const summary = (m.summary || '(untitled meeting)').replace(/[\[\]]/g, '');
+    const key = m.id || `${date}::${summary}`;
+    candidates.push({
+      key,
+      date,
+      timestamp: m.start,
+      bullet: `- **${date}** — meeting: ${summary} [Source: Calendar event ${m.id || '(no id)'}, ${date}]`,
+    });
+  }
+
+  if (candidates.length === 0) return 0;
+
+  // Dedup: skip any candidate whose key/message_id/start_date+summary already
+  // appears anywhere in the existing page body.
+  const fresh = candidates.filter(c => {
+    if (c.key && body.includes(c.key)) return false;
+    // also skip if a bullet with the same date and exact subject/summary text is already there
+    const m = c.bullet.match(/— \w+: (.+?) \[Source/);
+    if (m) {
+      const subj = m[1];
+      if (body.includes(subj) && body.includes(c.date)) return false;
+    }
+    return true;
+  });
+
+  if (fresh.length === 0) return 0;
+
+  // Sort by timestamp ascending, then prepend the bullets to the start of
+  // ## Recent activity (newest at top).
+  fresh.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  const newBullets = fresh.map(c => c.bullet).join('\n');
+
+  let updated;
+  const recentMatch = body.match(/(## Recent activity\s*\n)/);
+  if (recentMatch) {
+    // Insert new bullets immediately after the section header, before existing entries.
+    updated = body.replace(recentMatch[1], `${recentMatch[1]}\n${newBullets}\n`);
+  } else {
+    // No Recent activity section — append one at the end.
+    updated = body.replace(/\s*$/, `\n\n## Recent activity\n\n${newBullets}\n`);
+  }
+
+  // Bump frontmatter `updated:` field if present.
+  updated = updated.replace(/^updated:\s*\d{4}-\d{2}-\d{2}/m, `updated: ${TODAY}`);
+
+  writeFileSync(pagePath, updated);
+  return fresh.length;
+}
+
 async function enrichPeople(peopleMap) {
   // Threshold: must either have a meeting (real human you sat with) OR multiple
   // emails plus a real-looking name. This filters one-shot newsletters/transactional
@@ -340,7 +466,20 @@ async function enrichPeople(peopleMap) {
   }
 
   for (const p of slice) {
-    if (existingEmails.has(p.email)) { console.log(`  skip ${p.email} (already on existing page)`); continue; }
+    // EXISTING ENTITY: append new timeline entries deterministically (no LLM).
+    // This is the fix for "brain page goes stale once it exists" — daily collector
+    // now keeps existing pages fresh with each new email/meeting.
+    if (existingEmails.has(p.email)) {
+      const existingPath = findPageByEmail(peopleDir, p.email);
+      if (existingPath) {
+        const added = appendTimelineEntries(existingPath, p);
+        if (added > 0) console.log(`  update ${existingPath.replace(BRAIN_DIR + '/', '')} (+${added} timeline entries)`);
+        else console.log(`  skip ${p.email} (no new activity)`);
+      } else {
+        console.log(`  skip ${p.email} (page exists but couldn't locate file)`);
+      }
+      continue;
+    }
     // Prefer longest name (most specific) for stable slugging across runs.
     const sortedNames = [...p.names].sort((a, b) => b.length - a.length);
     const primaryName = sortedNames[0] || p.email.split('@')[0];
