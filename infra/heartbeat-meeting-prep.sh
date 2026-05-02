@@ -52,7 +52,11 @@ for ev in events:
       continue
     fi
     echo "[$(date -Iseconds)] sending prep for: $SUMMARY (in ${MIN}min, $ACCT, id=$EVID)" >> "$LOG"
-    PROMPT="A meeting starts in ${MIN} minutes: \"$SUMMARY\" (calendar account: $ACCT, event id: $EVID). Pull the event details and attendees via ClawVisor. For the non-self attendees, query the brain for context — recent threads, open follow-ups, what we last talked about. Compose a short prep message (under 8 lines). Land it on my Telegram now."
+    PROMPT="A meeting starts in ${MIN} minutes: \"$SUMMARY\" (calendar account: $ACCT, event id: $EVID). Pull the event details and attendees via clawvisor MCP. For the non-self attendees, query the brain (gbrain__query) for context — recent threads, open follow-ups, what we last talked about. Compose a short prep message (under 8 lines).
+
+MANDATORY brain write-back (per identity/BRAIN_PROPAGATION.md): for EVERY new insight you derive about an attendee from live data (e.g. recent Gmail thread you found, schedule conflict you noticed), call gbrain__add_timeline_entry on that person's brain page BEFORE sending the prep. This keeps the brain fresh so future preps and briefings build on it instead of rediscovering.
+
+Land the user-facing prep message on Telegram. Do brain writes silently."
     openclaw agent \
       --agent main \
       --channel telegram \

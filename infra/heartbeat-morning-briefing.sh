@@ -23,7 +23,17 @@ PROMPT="Run my morning briefing. Compose this as ONE final reply, not multiple i
    IMPORTANT: For each such person, BEFORE declaring them stalled, run clawvisor__gmail_search with query 'from:<their_email> OR to:<their_email> newer_than:3d' to check for fresh activity. If you find a recent email (sent or received), surface it instead of saying stalled. The brain may be a day or two stale — live Gmail is ground truth for very recent activity.
 4. Anything urgent in the inbox this week (from clawvisor__gmail_search 'newer_than:7d category:primary' if useful — focus on actionable items, not noise).
 
-Keep it tight, structured, lands on my phone first thing. One final assistant reply, not a stream of 'let me check' narrations."
+5. **MANDATORY brain write-back** (per identity/BRAIN_PROPAGATION.md):
+   For EVERY entity-specific insight you derive in steps 1-4 from live data
+   (Gmail/Calendar) that's NOT already on the relevant brain page,
+   call gbrain__add_timeline_entry on that person's or company's page BEFORE
+   sending the briefing. Examples: 'Kaushik OOO till Monday' → write to
+   people/kaushik-immadisetty. 'Tracy followed up about MicroConf renewal' →
+   write to people/tracy-osborn. This closes the loop so tomorrow's briefing
+   doesn't rediscover the same fact. The write is fast (one tool call per
+   insight); skipping it costs the system its memory hygiene.
+
+Keep the user-facing reply tight, structured, lands on my phone first thing. One final assistant reply, not a stream of 'let me check' narrations. Do the brain writes silently — they don't appear in the user-facing message."
 
 openclaw agent \
   --agent main \

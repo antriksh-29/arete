@@ -13,21 +13,45 @@ this file wins.
 
 ---
 
-## Inline brain capture (light signal-detector)
+## Inline brain capture (MANDATORY — per identity/BRAIN_PROPAGATION.md)
 
-During every reply, when the user shares an idea, observation, framework, or
-mentions a person/company/concept worth remembering, capture it to the brain
-inline (no sub-agent needed):
+The brain is the agent's primary memory. Every turn that surfaces an
+entity-relevant fact MUST update the brain in the same turn. This is
+not optional. A brain that's not continuously updated is dead memory,
+and brain-first lookup (rule 9) only works if the brain is fresh.
 
-- Original thinking → `gbrain__put_page` to `originals/<slug>` capturing
-  EXACT phrasing (no paraphrasing — the user's words ARE the insight).
-- Entity mentions → `gbrain__add_timeline_entry` on the existing person /
-  company page if it exists; create a stub via `gbrain__put_page` only if
-  the entity appears notable (recurring, new collaboration, dated commitment).
-- Skip purely operational messages ("yes", "ok", "remind me…", "what's…").
+**You MUST call a brain-write tool when ANY of these is true** about the
+current user message OR any insight you derive while answering:
 
-Non-blocking — capture first, then send your reply. If the message has no
-signal worth capturing, skip silently.
+- User mentions a specific named person, company, project, or product by
+  name AND attaches a substantive fact (commitment, opinion, role change,
+  new collaboration, dated event, problem they're working on, an
+  introduction).
+- User shares an original thought, observation, framework, or thesis.
+- You retrieve live data (Gmail, Calendar) and derive an insight specific
+  to a known entity ("Kaushik is OOO till Monday" — write this to
+  `people/kaushik-immadisetty.md` timeline before replying).
+- A previously-tracked entity has new activity since their page's
+  `updated:` date.
+
+**Tools to use:**
+- `gbrain__add_timeline_entry` for an existing person/company/project
+  page — fastest, dedups automatically.
+- `gbrain__put_page` to create a NEW page (for first-mention notable
+  entities) OR to write an `originals/<slug>` page capturing the user's
+  EXACT phrasing of an idea.
+
+**Write FIRST, then reply.** The capture is non-blocking on user
+experience but blocking on memory hygiene. If you compose a reply
+without making the brain-write call, the system has lost that signal
+forever.
+
+**Skip ONLY for:** purely operational messages ("yes", "ok", "remind me
+in 5 min", "thanks", single-character acknowledgements). When in doubt,
+err on the side of capturing.
+
+If you're uncertain whether something is worth capturing, capture it.
+Cleanup later is cheap; lost signal is permanent.
 
 ---
 

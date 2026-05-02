@@ -81,6 +81,29 @@ async function collectAccount(account) {
   // catches user-initiated follow-ups for the morning briefing.
   const inbox = await collectFolder(account, 'inbox', sessionId);
   const sent = await collectFolder(account, 'sent', sessionId);
+
+  // ClawVisor's list_messages omits the `to:` field for sent folder, so we
+  // need a follow-up get_message call per sent message to extract recipients.
+  // Bounded to avoid runaway cost (typical day: 0-5 sent emails per account).
+  for (const m of sent) {
+    if (!m.id) continue;
+    if (m.to) continue; // Already populated (defensive)
+    try {
+      const result = await gatewayCall({
+        account,
+        action: 'get_message',
+        params: { message_id: m.id },
+        reason: `Daily digest collection: read full headers (to, cc, subject) for sent message ${m.id} on ${account}. The list_messages action does not return the to: field for sent folder, so a follow-up get_message read is required to know which counterparty this thread relates to. Read-only — same intent as the daily digest scope (bulk ingestion + ongoing daily digest collection).`,
+        sessionId,
+      });
+      const data = Array.isArray(result?.data) ? result.data[0] : result?.data;
+      if (data?.to) m.to = data.to;
+      if (data?.cc) m.cc = data.cc;
+    } catch (e) {
+      process.stderr.write(`  ${account} get_message ${m.id} failed: ${e.message}\n`);
+    }
+  }
+
   // Dedup by message id (sent + reply could appear in both views in edge cases)
   const seen = new Set();
   const all = [];

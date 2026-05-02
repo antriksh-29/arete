@@ -402,16 +402,14 @@ function appendTimelineEntries(pagePath, person) {
 
   if (candidates.length === 0) return 0;
 
-  // Dedup: skip any candidate whose key/message_id/start_date+summary already
-  // appears anywhere in the existing page body.
+  // Dedup: skip any candidate whose message_id already appears in the page.
+  // We previously had a "subject substring + date" fallback but it was too
+  // aggressive — when an OOO reply ("Slow to Respond Re: X") was on the page
+  // already, the user's outbound follow-up ("Re: X") looked like a substring
+  // duplicate even though it's a different message. Trust message_id only.
+  // For entries without a message_id (rare), use exact key match.
   const fresh = candidates.filter(c => {
     if (c.key && body.includes(c.key)) return false;
-    // also skip if a bullet with the same date and exact subject/summary text is already there
-    const m = c.bullet.match(/— \w+: (.+?) \[Source/);
-    if (m) {
-      const subj = m[1];
-      if (body.includes(subj) && body.includes(c.date)) return false;
-    }
     return true;
   });
 
