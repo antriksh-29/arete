@@ -119,6 +119,78 @@ doc extends that to every component:
 
 ---
 
+## The full daily Gmail workflow (canonical)
+
+This is the user-defined ideal workflow for daily Gmail. Every layer must
+participate; skipping any layer breaks the loop.
+
+```
+1. PULL — last 24h sent + received emails (live, plus the 7am collector's
+   2-day overlap window which writes to brain for any new signal-grade message).
+
+2. TRIAGE — for each non-noise email:
+   a) classify importance: high / medium / low
+   b) extract structured facts:
+      - OOO_UNTIL: <date> — person away till date
+      - DEADLINE: <date> — something expected by date
+      - COMMITMENT: <party> promised <thing> by <date>
+      - SCHEDULED_ACTION: check-in / follow-up on <date>
+      - STATE_CHANGE: role change, joined/left company, new collaboration
+
+3. WRITE — propagate triage results:
+   a) gbrain__add_timeline_entry on the relevant entity page, formatted
+      with the ALL_CAPS prefix so future briefings can grep for them
+   b) for each future-dated action that requires the user to do something
+      on a specific day, schedule a one-shot reminder via
+      `~/bin/schedule-reminder.sh "@YYYY-MM-DD 09:00:00" "<text>"` to fire
+      that morning
+
+4. SURFACE — compose the briefing:
+   a) calendar today
+   b) FORWARD-LOOKING brain query: any entity timeline entry mentioning
+      today's date? (catches "Kaushik back from OOO today" without needing
+      a reminder to fire)
+   c) high-importance new emails (from step 2)
+   d) open threads still stalled (cross-checked via live Gmail)
+   e) FYI / lower priority — one-liner each
+```
+
+### The Kaushik-OOO worked example
+
+May 1: Kaushik replies with OOO "I'll be back May 4."
+
+May 2 morning briefing:
+- Step 2: triage classifies as OOO_UNTIL: 2026-05-04
+- Step 3a: writes to people/kaushik-immadisetty.md timeline:
+  `**2026-05-02** — OOO_UNTIL: 2026-05-04 — Kaushik away till May 4; return action: follow up on Reddit pilot proposal [Source: Gmail msg <id>, 2026-05-02]`
+- Step 3b: schedules `~/bin/schedule-reminder.sh "@2026-05-04 09:00:00" "Kaushik back from OOO — follow up on Reddit pilot proposal"`
+- Step 4c: today's briefing surfaces "Kaushik OOO till May 4 — pilot follow-up parked till then."
+
+May 4 morning:
+- Forward-looking brain query (step 4b) finds the May 2 timeline entry on
+  Kaushik's page mentioning 2026-05-04 → surfaces "Today (May 4): Kaushik
+  back from OOO, you wanted to follow up on Reddit pilot."
+- Scheduled reminder also fires at 9am as belt-and-suspenders.
+
+Two layers — brain-driven AND scheduled — converge on May 4. Robust.
+
+### Why both layers (brain-driven AND scheduled)
+
+The brain-driven approach (forward-looking query) is the primary
+mechanism. It's:
+- Self-healing: even if a reminder gets lost, the brain page still has
+  the entry, future briefings still surface it
+- Context-rich: includes the WHY (return action: pilot proposal), not
+  just a one-line ping
+- Composable: the agent can reason over it during conversations ("when
+  is Kaushik back?")
+
+The scheduled reminder is the failsafe. It guarantees a notification
+even if the briefing gets skipped (machine down, agent overloaded,
+etc.). One-shot, fires at 9am IST regardless of brain state.
+
+---
+
 ## When to revisit
 
 - A new external service is integrated (e.g., Slack, WhatsApp, voice

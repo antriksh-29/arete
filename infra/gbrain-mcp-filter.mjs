@@ -20,6 +20,11 @@ const KEEP = new Set([
   'put_page', 'add_timeline_entry', 'add_link',
   // Graph
   'get_backlinks', 'get_links', 'traverse_graph',
+  // Timeline (structured timeline entries — distinct from page-body markdown).
+  // Required for forward-looking briefing queries that check "any entity has
+  // a dated timeline entry for today?" — added to support the OOO_UNTIL /
+  // DEADLINE / SCHEDULED_ACTION daily Gmail workflow per BRAIN_PROPAGATION.md.
+  'get_timeline',
   // Diagnostics
   'get_health',
 ]);

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Morning briefing heartbeat — runs at 8am IST daily.
-# Triggers an agent turn that pulls today's calendar + open threads from the
-# brain, composes a briefing, and delivers it to Antriksh's Telegram.
+# Triggers an agent turn that runs the full triage + brain-write + briefing
+# workflow (per identity/BRAIN_PROPAGATION.md).
 
 set -e
 export PATH="/home/botuser/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
@@ -12,28 +12,62 @@ LOG="$LOG_DIR/heartbeat-$(date +%Y-%m-%d).log"
 
 echo "[$(date -Iseconds)] morning briefing start" >> "$LOG"
 
-# The agent has skills (briefing, daily-task-prep) and gbrain MCP. It will
-# query calendar via ClawVisor, query brain for context, compose, and the
-# --deliver flag pushes the reply through Telegram.
-PROMPT="Run my morning briefing. Compose this as ONE final reply, not multiple intermediate messages.
+TODAY_IST=$(TZ=Asia/Kolkata date +%Y-%m-%d)
 
-1. Today's calendar — pull from both my Google Calendar accounts via clawvisor MCP (clawvisor__calendar_list_events).
-2. For each meeting, do a brain lookup on the attendees (gbrain__query) and surface open threads / recent context.
-3. Open threads from the brain — find people I owe a follow-up to where the brain page says no movement for 3+ days.
-   IMPORTANT: For each such person, BEFORE declaring them stalled, run clawvisor__gmail_search with query 'from:<their_email> OR to:<their_email> newer_than:3d' to check for fresh activity. If you find a recent email (sent or received), surface it instead of saying stalled. The brain may be a day or two stale — live Gmail is ground truth for very recent activity.
-4. Anything urgent in the inbox this week (from clawvisor__gmail_search 'newer_than:7d category:primary' if useful — focus on actionable items, not noise).
+PROMPT="Run my morning briefing for today ($TODAY_IST IST). Compose ONE final reply at the end — no streamed 'let me check' narrations.
 
-5. **MANDATORY brain write-back** (per identity/BRAIN_PROPAGATION.md):
-   For EVERY entity-specific insight you derive in steps 1-4 from live data
-   (Gmail/Calendar) that's NOT already on the relevant brain page,
-   call gbrain__add_timeline_entry on that person's or company's page BEFORE
-   sending the briefing. Examples: 'Kaushik OOO till Monday' → write to
-   people/kaushik-immadisetty. 'Tracy followed up about MicroConf renewal' →
-   write to people/tracy-osborn. This closes the loop so tomorrow's briefing
-   doesn't rediscover the same fact. The write is fast (one tool call per
-   insight); skipping it costs the system its memory hygiene.
+Order of operations (do all of these BEFORE writing the user-facing briefing):
 
-Keep the user-facing reply tight, structured, lands on my phone first thing. One final assistant reply, not a stream of 'let me check' narrations. Do the brain writes silently — they don't appear in the user-facing message."
+1. **Calendar today + tomorrow** — pull from both Google Calendar accounts via clawvisor__calendar_list_events.
+
+2. **Live email triage** — pull last 24h via clawvisor__gmail_search 'newer_than:1d'. For each non-noise message (skip newsletters, transactional, automated, marketing), do all of the following:
+
+   a) **Classify importance:** high (action needed from me, response from a known counterparty, time-sensitive), medium (FYI but relevant to a tracked entity), low (catch-up reading, can defer).
+
+   b) **Extract structured facts.** Look for and capture:
+      - OOO / out-of-office windows: 'I'll be back on <DATE>', 'OOO till <DATE>', 'returning <DATE>'
+      - Specific commitments with deadlines: 'I'll send X by <DATE>', 'expect this by <DATE>'
+      - Scheduled actions: 'follow up with me on <DATE>', 'check back <DATE>'
+      - State changes: someone changed roles, joined/left a company, new collaboration kicked off
+
+   c) **Write structured facts to the brain** (per identity/BRAIN_PROPAGATION.md):
+      For each fact about a known entity, call gbrain__add_timeline_entry on that entity's brain page with the structured fact. Format the entry to make the structure greppable:
+      Examples:
+        '**$TODAY_IST** — OOO_UNTIL: 2026-05-04 — Kaushik away till May 4; return action: follow up on Reddit pilot proposal [Source: Gmail msg <id>, $TODAY_IST]'
+        '**$TODAY_IST** — DEADLINE: 2026-05-10 — Tracy expecting MicroConf renewal decision by May 10 [Source: Gmail msg <id>, $TODAY_IST]'
+        '**$TODAY_IST** — COMMITMENT: Antriksh promised pilot proposal to Kaushik by 2026-04-28 (overdue) [Source: Gmail msg <id>, $TODAY_IST]'
+      The ALL_CAPS prefix (OOO_UNTIL, DEADLINE, COMMITMENT) makes future brain queries easy.
+
+   d) **Schedule date-bound reminders.** For each future-dated action that needs ME to do something on a specific day, call exec ~/bin/schedule-reminder.sh '@YYYY-MM-DD 09:00:00' '<concise reminder text>' to fire that morning. Examples:
+      - Kaushik OOO till May 4 → schedule reminder for @2026-05-04 09:00:00 'Kaushik back from OOO — follow up on Reddit pilot proposal'
+      - You promised X by May 10 → schedule reminder for @2026-05-09 09:00:00 'Pre-deadline: send X to Y today (deadline tomorrow)'
+      Don't schedule duplicate reminders — if you already scheduled one for the same fact in a prior briefing, the brain page should show the prior entry, skip.
+
+3. **Forward-looking brain query (structured timeline).** Find any prior brain entries that point at today as the target date.
+
+   Strategy: gbrain__list_pages with type=person and type=company gives you the entity slugs. For each entity that's currently 'in flight' (recent activity in last 30 days, or matches a known open-thread label), call gbrain__get_timeline with that slug and scan the returned entries for any that mention today's date '$TODAY_IST' or any of the prefix tags (OOO_UNTIL, DEADLINE, SCHEDULED_ACTION) where the date matches today.
+
+   Cheap shortcut: for the most-active entities (those mentioned in the recent open-threads brain query in step 4 below), check timeline FIRST. If you find an entry whose date matches today, surface it in the briefing's '⏰ Today's check-ins' section.
+
+   Plus belt-and-suspenders: gbrain__search '$TODAY_IST' as a fallback in case any text-indexed entries match.
+
+4. **Open threads still stalled.** gbrain__query 'follow-up promised' — find entities with prior commitments that haven't moved in 3+ days. For each, run a quick clawvisor__gmail_search 'from:<email> OR to:<email> newer_than:3d' to confirm they're truly stalled (catches new activity the brain hasn't ingested yet).
+
+5. **Compose the user-facing briefing** as ONE structured Telegram message:
+
+   📅 **Calendar** — today's events with attendees (do brain lookup on each non-self attendee for context)
+   ⏰ **Today's check-ins from prior context** — items from step 3 (Kaushik back today, your promised X is due, etc.)
+   📥 **High-importance new emails** — from step 2(a), grouped by sender / topic
+   🔄 **Open threads worth your attention** — from step 4, only the ones that survived the live cross-check
+   📝 **FYI / lower priority** — one-line list, no detail
+
+   Keep tight. Skip sections that are empty.
+
+Side effects (silent — don't mention in user-facing reply):
+- Brain timeline entries written for every extracted fact (step 2c)
+- Date-bound reminders scheduled for every future action (step 2d)
+
+Tomorrow's briefing builds on what you wrote today. Skipping the brain writes / reminders breaks that compounding."
 
 openclaw agent \
   --agent main \
