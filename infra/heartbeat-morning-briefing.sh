@@ -16,6 +16,17 @@ TODAY_IST=$(TZ=Asia/Kolkata date +%Y-%m-%d)
 
 PROMPT="Run my morning briefing for today ($TODAY_IST IST). Compose ONE final reply at the end — no streamed 'let me check' narrations.
 
+**SCOPE: Gmail + Calendar + people/companies/projects open threads ONLY.**
+
+Do NOT include any of the following — they have their own dedicated briefing paths and don't belong here:
+- Habits (water intake, reading streaks, exercise, etc. — anything under habits/* in the brain)
+- Health / fitness / consumption metrics
+- The reading check-in (fires separately at 10am IST via reading-checkin.timer)
+- Water log status (separate path)
+- Any 'how am I doing on X habit' summary
+
+If a brain query returns habits/* pages, filter them out. The user explicitly does not want habit data in this briefing.
+
 Order of operations (do all of these BEFORE writing the user-facing briefing):
 
 1. **Calendar today + tomorrow** — pull from both Google Calendar accounts via clawvisor__calendar_list_events.
@@ -43,15 +54,15 @@ Order of operations (do all of these BEFORE writing the user-facing briefing):
       - You promised X by May 10 → schedule reminder for @2026-05-09 09:00:00 'Pre-deadline: send X to Y today (deadline tomorrow)'
       Don't schedule duplicate reminders — if you already scheduled one for the same fact in a prior briefing, the brain page should show the prior entry, skip.
 
-3. **Forward-looking brain query (structured timeline).** Find any prior brain entries that point at today as the target date.
+3. **Forward-looking brain query (structured timeline) — people/companies/projects only.** Find any prior brain entries that point at today as the target date.
 
-   Strategy: gbrain__list_pages with type=person and type=company gives you the entity slugs. For each entity that's currently 'in flight' (recent activity in last 30 days, or matches a known open-thread label), call gbrain__get_timeline with that slug and scan the returned entries for any that mention today's date '$TODAY_IST' or any of the prefix tags (OOO_UNTIL, DEADLINE, SCHEDULED_ACTION) where the date matches today.
+   Strategy: gbrain__list_pages with type=person, type=company, type=project. **EXCLUDE type=habit and any path under habits/*.** For each in-flight entity, call gbrain__get_timeline with that slug and scan the returned entries for any that mention today's date '$TODAY_IST' or any of the prefix tags (OOO_UNTIL, DEADLINE, SCHEDULED_ACTION) where the date matches today.
 
    Cheap shortcut: for the most-active entities (those mentioned in the recent open-threads brain query in step 4 below), check timeline FIRST. If you find an entry whose date matches today, surface it in the briefing's '⏰ Today's check-ins' section.
 
-   Plus belt-and-suspenders: gbrain__search '$TODAY_IST' as a fallback in case any text-indexed entries match.
+   Plus belt-and-suspenders: gbrain__search '$TODAY_IST' as a fallback in case any text-indexed entries match. **If the result is a habits/* page, drop it.**
 
-4. **Open threads still stalled.** gbrain__query 'follow-up promised' — find entities with prior commitments that haven't moved in 3+ days. For each, run a quick clawvisor__gmail_search 'from:<email> OR to:<email> newer_than:3d' to confirm they're truly stalled (catches new activity the brain hasn't ingested yet).
+4. **Open threads still stalled — people/companies/projects only.** gbrain__query 'follow-up promised' — find entities with prior commitments that haven't moved in 3+ days. **Skip any habits/* matches.** For each remaining entity, run a quick clawvisor__gmail_search 'from:<email> OR to:<email> newer_than:3d' to confirm they're truly stalled (catches new activity the brain hasn't ingested yet).
 
 5. **Compose the user-facing briefing** as ONE structured Telegram message:
 
