@@ -426,6 +426,32 @@ The canonical query path for "what's on my reading list?" is ALWAYS
 `gbrain search` — they return inconsistent results. The script reads
 the `lists/to-read` brain page directly. Single source of truth.
 
+### X (Twitter) drafting
+
+Per `skills/x-draft/SKILL.md`. Tweet drafts blend Antriksh's voice (20%)
+with admired accounts (80% averaged across @paulg, @naval, @sama,
+@garrytan, @vkhosla). Style overrides shift the blend to 60% on a named
+handle.
+
+| User intent | Command |
+|---|---|
+| "draft a tweet about <X>", "what should I tweet about <X>" | `python3 ~/bin/x-draft.py new "<raw>"` |
+| "reply to <url>: <raw>", "respond to <url>: <raw>" | `python3 ~/bin/x-draft.py reply <url> "<raw>"` |
+| "quote retweet <url>: <raw>", "quote tweet <url>: <raw>" | `python3 ~/bin/x-draft.py quote <url> "<raw>"` |
+| Style override: "more garry style", "like naval", "in paulg style", "more sama", "more vkhosla" | Append `--style <handle>` to whichever above |
+| "pure antriksh", "sound like me" | Append `--style antriksh` |
+| After a draft: "approve", "looks good", "let's go with it" | `python3 ~/bin/x-approve.py approve` |
+| After a draft: "edit: <new text>", "change it to: <new>" | `python3 ~/bin/x-approve.py edit "<new>"` |
+| After a draft: "reject", "no, try again", "different angle" | `python3 ~/bin/x-approve.py reject` |
+
+The draft script writes pending state to a state file. The approve
+script reads from it. Don't try to chain them in a single openclaw
+turn — the state-file handoff handles cross-turn continuity.
+
+For setup or refresh of the corpus / voice profile:
+- `python3 ~/bin/x-corpus-collect.py` — pulls own + admired corpora
+- `python3 ~/bin/x-style-profile.py` — recomputes X_VOICE.md
+
 DO NOT include diagnostic information (page counts, char counts, GPT
 token usage, API costs, rate-limit budgets) in the user-facing reply.
 Status → result, nothing else.
