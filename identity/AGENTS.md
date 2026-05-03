@@ -408,6 +408,24 @@ The two ingestion scripts are deterministic and write to brain
 themselves — your job is to invoke them and relay the JSON envelope to
 the user in the format specified in each SKILL.md.
 
+### Reading list is a separate intent
+
+Per `skills/reading-list/SKILL.md`. URLs paired with intent words go
+through the reading-list script — NOT the ingestion router above:
+
+| User intent | Command |
+|---|---|
+| URL + ("save this" / "read later" / "queue this" / "save for later") | `python3 ~/bin/reading-list.py add <url>` (shallow) |
+| URL + ("save deep" / "absorb it" / "save and ingest") | `python3 ~/bin/reading-list.py add <url> --deep` |
+| "show reading list" / "what's queued" / "what should I read next" | `python3 ~/bin/reading-list.py show` |
+| "I read #N" / "mark #N read" / "finished #N" / "I read <url>" | `python3 ~/bin/reading-list.py read <n|url>` |
+| "drop #N" / "remove from reading list" | `python3 ~/bin/reading-list.py drop <n|url>` |
+
+The canonical query path for "what's on my reading list?" is ALWAYS
+`reading-list.py show`. Never use `gbrain query "reading list"` or
+`gbrain search` — they return inconsistent results. The script reads
+the `lists/to-read` brain page directly. Single source of truth.
+
 DO NOT include diagnostic information (page counts, char counts, GPT
 token usage, API costs, rate-limit budgets) in the user-facing reply.
 Status → result, nothing else.

@@ -26,6 +26,10 @@ SOURCES_DIR = BRAIN_DIR / "sources"
 GBRAIN = "/home/botuser/.bun/bin/gbrain"
 TODAY = date.today().isoformat()
 
+# gbrain's shebang is `#!/usr/bin/env bun`. When openclaw invokes this script,
+# bun isn't on PATH and every gbrain call silently exits 127. Force PATH.
+os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+
 
 def log(msg):
     print(f"[ingest-pdf] {msg}", file=sys.stderr)
