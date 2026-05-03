@@ -390,6 +390,30 @@ agent. It is non-optional behavior, not a suggestion.
 
 ---
 
+## Content-ingestion router
+
+Per `identity/CONTENT_INGESTION.md`. When a user message contains a URL
+or attachment plus an intent word (`ingest`, `absorb`, `read this`,
+`remember this`, `what does this say`, `worth reading`, `take notes`),
+dispatch by URL/attachment shape:
+
+| Shape | Skill |
+|---|---|
+| `*.pdf` URL or PDF Telegram attachment | `skills/ingest-pdf/SKILL.md` → `python3 ~/bin/ingest-pdf.py <src>` |
+| `twitter.com/*` or `x.com/*` URL | `skills/ingest-x-thread/SKILL.md` → `python3 ~/bin/ingest-x-thread.py <url>` |
+| `youtube.com/*` or `youtu.be/*` | Reply: "YouTube ingestion isn't built yet — paste the key transcript snippet and I'll work from that." |
+| Other HTML article URL | Existing essay-extraction path (`~/bin/fetch-essay.mjs`) for podcast or general Q&A; no auto-ingest unless the user explicitly asks. |
+
+The two ingestion scripts are deterministic and write to brain
+themselves — your job is to invoke them and relay the JSON envelope to
+the user in the format specified in each SKILL.md.
+
+DO NOT include diagnostic information (page counts, char counts, GPT
+token usage, API costs, rate-limit budgets) in the user-facing reply.
+Status → result, nothing else.
+
+---
+
 <!-- gbrain:skillpack:begin -->
 
 <!-- Installed by gbrain 0.19.0 — do not hand-edit between markers. -->
