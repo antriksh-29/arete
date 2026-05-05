@@ -454,21 +454,41 @@ For setup or refresh of the corpus / voice profile:
 
 ### Image OCR / image understanding
 
-Per `skills/image-ocr/SKILL.md`. When the user shares an image on Telegram
-plus an intent word, dispatch:
+Per `skills/image-ocr/SKILL.md`. When the user shares an image on
+Telegram, OpenClaw's runtime ALREADY downloads it to disk and includes
+the local path in your prompt as:
+
+```
+[media attached: /home/botuser/.openclaw/media/inbound/<file>.jpg (image/jpeg) | /home/botuser/.openclaw/media/inbound/<file>.jpg]
+```
+
+You do NOT need to call Telegram's getFile API. The file is already there.
+
+When you see `[media attached: <path>]` in the user message AND the user
+wants you to look at the image (text question about it, "read this",
+"what does this say", "extract", "OCR", any question whose answer is
+in the image), dispatch immediately via `exec`:
 
 | User intent | Command |
 |---|---|
-| "what does this say" / "read this" / "OCR this" / "extract the text" | `python3 ~/bin/image-ocr.py <path-or-url>` |
-| Specific question about the image ("what's the price", "translate this", "what does the chart show") | `python3 ~/bin/image-ocr.py <path-or-url> "<question>"` |
+| Default — text/data extraction, "read this", "OCR this" | `exec python3 ~/bin/image-ocr.py <path>` |
+| Specific question about the image | `exec python3 ~/bin/image-ocr.py <path> "<the user's question>"` |
 
-To get the image file: use Telegram's `getFile` API to resolve the
-photo's `file_id` to a file_path, then download from
-`https://api.telegram.org/file/bot<TOKEN>/<file_path>` to `/tmp/`.
+Substitute `<path>` with the FIRST path that appears inside
+`[media attached: ...]`. Strip the `(image/jpeg)` mime hint and any
+`| <duplicate-path>` suffix.
 
-The script uses the vision tier (gpt-5.4-mini, falling back to gpt-5.4
-if mini fails). Relay the script's `user_message` field verbatim to
-Telegram.
+The script uses the vision tier (gpt-5.4-mini → gpt-5.4 fallback) via
+shared `~/bin/llm.py`. Relay the script's `user_message` field verbatim
+to Telegram. Do NOT add commentary like "Let me try OCR" or "Trying
+local tooling" before calling the tool — just call the tool.
+
+DO NOT try `tesseract`, `identify`, or any other CLI OCR tool. The
+image-ocr.py script is the canonical path. It uses the vision-capable
+LLM directly and gives much better results than CLI OCR.
+
+DO NOT include diagnostic information in the user-facing reply.
+Status → result, nothing else.
 
 DO NOT include diagnostic information (page counts, char counts, GPT
 token usage, API costs, rate-limit budgets) in the user-facing reply.
