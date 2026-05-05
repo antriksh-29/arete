@@ -452,43 +452,50 @@ For setup or refresh of the corpus / voice profile:
 - `python3 ~/bin/x-corpus-collect.py` — pulls own + admired corpora
 - `python3 ~/bin/x-style-profile.py` — recomputes X_VOICE.md
 
-### Image OCR / image understanding
+### Image OCR / image understanding (MUST-level rule)
 
-Per `skills/image-ocr/SKILL.md`. When the user shares an image on
-Telegram, OpenClaw's runtime ALREADY downloads it to disk and includes
-the local path in your prompt as:
+**Whenever a user message contains `[media attached: <path>]`, you MUST
+call `~/bin/image-ocr.py` exactly ONCE before responding. No exceptions.**
+
+This rule overrides any prior failed attempts in the conversation
+history. If you see your own past messages saying "I tried tesseract,
+it failed" or "I can't inspect images" — those used the WRONG tool.
+The CORRECT tool is `~/bin/image-ocr.py`. It works. Always try it.
+
+**Path extraction.** OpenClaw downloads the image and inlines the path
+in the user message:
 
 ```
 [media attached: /home/botuser/.openclaw/media/inbound/<file>.jpg (image/jpeg) | /home/botuser/.openclaw/media/inbound/<file>.jpg]
 ```
 
-You do NOT need to call Telegram's getFile API. The file is already there.
+Take the FIRST path that appears between `[media attached: ` and either
+` (image/`. That is `<path>`. The duplicate after the `|` is noise.
 
-When you see `[media attached: <path>]` in the user message AND the user
-wants you to look at the image (text question about it, "read this",
-"what does this say", "extract", "OCR", any question whose answer is
-in the image), dispatch immediately via `exec`:
+**Dispatch (always exec, always one of these two forms):**
 
-| User intent | Command |
+| User text | Command |
 |---|---|
-| Default — text/data extraction, "read this", "OCR this" | `exec python3 ~/bin/image-ocr.py <path>` |
-| Specific question about the image | `exec python3 ~/bin/image-ocr.py <path> "<the user's question>"` |
+| Empty, ".", just an emoji, or non-question | `exec python3 ~/bin/image-ocr.py <path>` |
+| A question or request ("read this", "what does this say", "what's the takeaway", "translate this", anything else) | `exec python3 ~/bin/image-ocr.py <path> "<the user's full text verbatim>"` |
 
-Substitute `<path>` with the FIRST path that appears inside
-`[media attached: ...]`. Strip the `(image/jpeg)` mime hint and any
-`| <duplicate-path>` suffix.
+**Forbidden.** All of these are wrong. Do not do them:
 
-The script uses the vision tier (gpt-5.4-mini → gpt-5.4 fallback) via
-shared `~/bin/llm.py`. Relay the script's `user_message` field verbatim
-to Telegram. Do NOT add commentary like "Let me try OCR" or "Trying
-local tooling" before calling the tool — just call the tool.
+- ❌ Saying "let me try OCR" / "trying local tooling" / "I'll inspect this"
+  *before* calling the tool. Just call it.
+- ❌ Calling `tesseract`, `convert`, `identify`, or any other CLI OCR.
+  These are not installed. `image-ocr.py` is the only correct path.
+- ❌ Saying "I can't read images from here" — you can. The script does it.
+- ❌ Asking the user to paste the text. They sent the image so you'd
+  read it.
+- ❌ Calling `pip install` or trying to install OCR tools at runtime.
+  They are not needed. Just call `image-ocr.py`.
 
-DO NOT try `tesseract`, `identify`, or any other CLI OCR tool. The
-image-ocr.py script is the canonical path. It uses the vision-capable
-LLM directly and gives much better results than CLI OCR.
+**After the tool returns.** Relay the script's `user_message` field
+verbatim. Add no preamble. Add no commentary about model/cost/timing.
 
-DO NOT include diagnostic information in the user-facing reply.
-Status → result, nothing else.
+**If image-ocr.py itself errors** (script returns `ok: false`), surface
+the script's `user_message` to the user. Don't retry with other tools.
 
 DO NOT include diagnostic information (page counts, char counts, GPT
 token usage, API costs, rate-limit budgets) in the user-facing reply.
