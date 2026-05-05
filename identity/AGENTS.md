@@ -452,6 +452,24 @@ For setup or refresh of the corpus / voice profile:
 - `python3 ~/bin/x-corpus-collect.py` — pulls own + admired corpora
 - `python3 ~/bin/x-style-profile.py` — recomputes X_VOICE.md
 
+### Image OCR / image understanding
+
+Per `skills/image-ocr/SKILL.md`. When the user shares an image on Telegram
+plus an intent word, dispatch:
+
+| User intent | Command |
+|---|---|
+| "what does this say" / "read this" / "OCR this" / "extract the text" | `python3 ~/bin/image-ocr.py <path-or-url>` |
+| Specific question about the image ("what's the price", "translate this", "what does the chart show") | `python3 ~/bin/image-ocr.py <path-or-url> "<question>"` |
+
+To get the image file: use Telegram's `getFile` API to resolve the
+photo's `file_id` to a file_path, then download from
+`https://api.telegram.org/file/bot<TOKEN>/<file_path>` to `/tmp/`.
+
+The script uses the vision tier (gpt-5.4-mini, falling back to gpt-5.4
+if mini fails). Relay the script's `user_message` field verbatim to
+Telegram.
+
 DO NOT include diagnostic information (page counts, char counts, GPT
 token usage, API costs, rate-limit budgets) in the user-facing reply.
 Status → result, nothing else.

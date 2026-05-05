@@ -148,29 +148,20 @@ Hard rules:
 6. If the raw thought has profanity or strong opinions, KEEP THEM — don't sanitize."""
 
 
-def generate(prompt_user_msg, openai_key):
-    payload = {
-        "model": "gpt-5.4-mini",
-        "input": prompt_user_msg,
-        "instructions": SYSTEM_PROMPT_BASE,
-        "max_output_tokens": 800,
-    }
-    req = urllib.request.Request(
-        "https://api.openai.com/v1/responses",
-        data=json.dumps(payload).encode(),
-        headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
+def generate(prompt_user_msg):
+    sys.path.insert(0, "/home/botuser/bin")
+    import llm  # type: ignore
+    text, provider = llm.call(
+        system_prompt=SYSTEM_PROMPT_BASE,
+        user_msg=prompt_user_msg,
+        tier="mini",
+        max_tokens=800,
     )
-    with urllib.request.urlopen(req, timeout=120) as r:
-        resp = json.loads(r.read())
-    for item in resp.get("output", []):
-        if item.get("type") == "message":
-            for c in item.get("content", []):
-                if c.get("type") == "output_text":
-                    return c["text"].strip()
-    return ""
+    log(f"generate provider={provider}")
+    return text
 
 
-def enforce_length(draft, prompt_user_msg, openai_key):
+def enforce_length(draft, prompt_user_msg):
     """If over 280 chars, retry once with explicit instruction."""
     if len(draft) <= MAX_CHARS:
         return draft, True
@@ -180,7 +171,7 @@ def enforce_length(draft, prompt_user_msg, openai_key):
         + f"\n\nYour previous draft was {len(draft)} characters, which exceeds the 280-char limit. "
         + f"Previous draft:\n\n{draft}\n\nTighten it to ≤ 280 characters. Output only the new tweet text."
     )
-    new_draft = generate(retry_msg, openai_key)
+    new_draft = generate(retry_msg)
     return new_draft, len(new_draft) <= MAX_CHARS
 
 
@@ -246,16 +237,15 @@ def main():
     else:
         sys.exit(f"Unknown mode: {mode}")
 
-    openai_key = vault_get("OPENAI_API_KEY")
     prompt = build_prompt(mode, raw, target, style_override)
     log(f"mode={mode} style={style_override or 'default'} prompt_chars={len(prompt)}")
 
-    draft = generate(prompt, openai_key)
+    draft = generate(prompt)
     if not draft:
         print(json.dumps({"ok": False, "reason": "empty_response", "user_message": "⚠️ Draft generator returned empty. Try again."}))
         return
 
-    draft, fits = enforce_length(draft, prompt, openai_key)
+    draft, fits = enforce_length(draft, prompt)
 
     pending = {
         "draft": draft,

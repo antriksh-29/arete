@@ -115,35 +115,22 @@ No preamble. No "this document discusses…" filler. No closing summary. Land th
 
 
 def analyze(title, author, source, body):
-    api_key = vault_get("OPENAI_API_KEY")
+    sys.path.insert(0, "/home/botuser/bin")
+    import llm  # type: ignore
     body_capped = body[:80000]
     user_msg = (
         f"Title: {title}\nAuthor: {author}\nSource: {source}\n\n"
         f"Document text below the line. Use only what's in this text — no outside knowledge or invented detail.\n\n"
         f"---\n{body_capped}\n---\n\nGenerate the brain page now."
     )
-    payload = {
-        "model": "gpt-5.4-mini",
-        "input": user_msg,
-        "instructions": SYSTEM_PROMPT,
-        "max_output_tokens": 4000,
-    }
-    req = urllib.request.Request(
-        "https://api.openai.com/v1/responses",
-        data=json.dumps(payload).encode(),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
+    text, provider = llm.call(
+        system_prompt=SYSTEM_PROMPT,
+        user_msg=user_msg,
+        tier="mini",
+        max_tokens=4000,
     )
-    with urllib.request.urlopen(req, timeout=180) as r:
-        resp = json.loads(r.read())
-    for item in resp.get("output", []):
-        if item.get("type") == "message":
-            for c in item.get("content", []):
-                if c.get("type") == "output_text":
-                    return c["text"].strip()
-    raise RuntimeError(f"no output_text in response: {json.dumps(resp)[:500]}")
+    log(f"analyze provider={provider}")
+    return text
 
 
 WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
