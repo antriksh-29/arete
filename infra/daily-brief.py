@@ -210,6 +210,10 @@ LOW / SKIP — do NOT surface these:
 - Calendar invite confirmations
 - Routine "your statement is ready" without a due date in the snippet
 - Auto-generated reports without an action item
+- Corporate-action / shareholder notices: e-voting, AGM, postal ballot,
+  dividend vouchers, book closure, record date, rights/bonus/buyback —
+  these never require same-day action from a retail investor and pollute
+  the briefing. Always SKIP regardless of sender
 
 Heuristic for transaction alerts: a UPI/card debit notification by itself is a receipt and goes to LOW. A monthly STATEMENT with a due date goes to HIGH only on the day before the due date or after.
 
@@ -237,10 +241,40 @@ TXN_NOISE_SUBJECT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Corporate-action / shareholder-notice noise: e-voting, AGM notices, postal
+# ballots, dividend vouchers from depositories and registrars. These don't
+# require action from a typical retail investor and pollute the briefing.
+CORP_ACTION_NOISE_RE = re.compile(
+    r"(evoting|e-voting|cdslindia|nsdlindia|kfintech|linkintime|cameoindia"
+    r"|computerage|integrated\s?registry|bigshare|skylineRTA|alankit"
+    r"|venturecaststor|maashitla)",
+    re.IGNORECASE,
+)
+CORP_ACTION_SUBJECT_RE = re.compile(
+    r"(e-?voting|postal\s+ballot|agm\s+notice|annual\s+general\s+meeting"
+    r"|dividend\s+(?:voucher|warrant|notice)|corporate\s+action"
+    r"|shareholder\s+notice|book\s+closure|record\s+date|rights\s+issue"
+    r"|bonus\s+issue|buy\s?back\s+offer)",
+    re.IGNORECASE,
+)
+
 
 def is_txn_noise(from_addr, subject):
     """Past-transaction confirmation emails: sender or subject screams 'this is a receipt'."""
     if TXN_NOISE_RE.search(from_addr) and TXN_NOISE_SUBJECT_RE.search(subject):
+        return True
+    return False
+
+
+def is_corp_action_noise(from_addr, subject):
+    """Corporate-action / shareholder-notice emails: never actionable by user.
+
+    Either sender is a depository/RTA (CDSL/NSDL/Kfintech/etc) OR subject
+    matches a known corporate-action pattern.
+    """
+    if CORP_ACTION_NOISE_RE.search(from_addr):
+        return True
+    if CORP_ACTION_SUBJECT_RE.search(subject):
         return True
     return False
 
@@ -265,6 +299,8 @@ def fetch_emails():
             from_addr = (m.get("from") or "").strip()
             subject = (m.get("subject") or "").strip()
             if is_txn_noise(from_addr, subject):
+                continue
+            if is_corp_action_noise(from_addr, subject):
                 continue
             raw_emails.append({
                 "account": account,
