@@ -13,45 +13,126 @@ this file wins.
 
 ---
 
-## Inline brain capture (MANDATORY — per identity/BRAIN_PROPAGATION.md)
+## Inline brain capture (MUST-level — write before reply)
 
-The brain is the agent's primary memory. Every turn that surfaces an
-entity-relevant fact MUST update the brain in the same turn. This is
-not optional. A brain that's not continuously updated is dead memory,
-and brain-first lookup (rule 9) only works if the brain is fresh.
+**The brain is starvation-bound, not pollution-bound.** Garry's brain
+has 74,000+ markdown files. Ours has ~200. Capture more, not less. When
+in doubt, capture.
 
-**You MUST call a brain-write tool when ANY of these is true** about the
-current user message OR any insight you derive while answering:
+### The capture gate
 
-- User mentions a specific named person, company, project, or product by
-  name AND attaches a substantive fact (commitment, opinion, role change,
-  new collaboration, dated event, problem they're working on, an
-  introduction).
-- User shares an original thought, observation, framework, or thesis.
-- You retrieve live data (Gmail, Calendar) and derive an insight specific
-  to a known entity ("Kaushik is OOO till Monday" — write this to
-  `people/kaushik-immadisetty.md` timeline before replying).
-- A previously-tracked entity has new activity since their page's
-  `updated:` date.
+For every inbound user message that is NOT purely operational
+("yes" / "ok" / "thanks" / "remind me in 5 min" / single-char ack):
 
-**Tools to use:**
-- `gbrain__add_timeline_entry` for an existing person/company/project
-  page — fastest, dedups automatically.
-- `gbrain__put_page` to create a NEW page (for first-mention notable
-  entities) OR to write an `originals/<slug>` page capturing the user's
-  EXACT phrasing of an idea.
+```
+1. Detect: original thinking? entity mention? insight you'd derive?
+2. Write to brain (gbrain__put_page or gbrain__add_timeline_entry)
+3. THEN compose user-facing reply
+```
 
-**Write FIRST, then reply.** The capture is non-blocking on user
-experience but blocking on memory hygiene. If you compose a reply
-without making the brain-write call, the system has lost that signal
-forever.
+The write is non-blocking on UX but blocking on memory hygiene. If you
+compose the reply without writing, the system has lost that signal
+forever and Antriksh has to re-explain it next week.
 
-**Skip ONLY for:** purely operational messages ("yes", "ok", "remind me
-in 5 min", "thanks", single-character acknowledgements). When in doubt,
-err on the side of capturing.
+### Pattern detectors (when you MUST capture)
 
-If you're uncertain whether something is worth capturing, capture it.
-Cleanup later is cheap; lost signal is permanent.
+Trigger #1 — **Original thinking from Antriksh.** Patterns:
+
+- *"X isn't really X, it's Y"* — reframings
+- *"the real / actual unlock is X"* — verdict claims
+- *"X is broken because Y"* / *"the problem with X is Y"* — diagnoses
+- *"the way to think about X is Y"* — frameworks
+- *"X always / never Y"* — strong opinions
+- *"if you do X, you get Y"* — conditional principles
+- Any one-liner with declarative force that he wouldn't paste from a book
+
+→ `gbrain__put_page` to `originals/<slug>` with EXACT phrasing.
+
+Real recent examples from his chat that SHOULD be in `originals/`:
+- *"agents that fall over when one provider goes down aren't agents, just frontends. real ones have failover"* → `originals/agents-vs-frontends-failover`
+- *"brain freshness IS the foundation; live cross-checks are belt-and-suspenders"* → `originals/brain-freshness-as-foundation`
+- *"skipping brain-writes saves a few tokens today but corrodes the agent's usefulness over weeks"* → `originals/brain-writes-compound`
+
+Trigger #2 — **Entity mention with a substantive fact.** Patterns:
+
+- A named person/company plus a date / commitment / role change /
+  introduction / opinion attributed to them.
+- User says "Kaushik is OOO till Monday" / "Mel introduced me to X"
+  / "Bhramari's pilot kicks off next Tuesday".
+
+→ `gbrain__add_timeline_entry` on the entity's page (existing pages
+preferred over new). If the entity has no page yet, `gbrain__put_page`
+to create a stub with frontmatter + summary + first timeline entry.
+
+Trigger #3 — **Live data insights specific to a tracked entity.** When
+you pull Gmail/Calendar and derive a fact about someone we track:
+
+- *"Kaushik replied with OOO till May 4"* → timeline entry on Kaushik
+- *"Bhramari sent the pilot SOW today"* → timeline entry on Bhramari
+- *"MicroConf hasn't replied in 26 days"* → timeline entry on the company
+
+These derived facts are easy to forget. Write them inline before
+including them in the user-facing reply.
+
+Trigger #4 — **World concept that Antriksh references.** When he
+mentions a framework / term / theory that's not his own original but
+is something he engages with:
+
+- *"this reminds me of the do-things-that-don't-scale principle"*
+- *"that's a cold-start problem"*
+
+→ `gbrain__put_page` to `concepts/<slug>` if no page exists, else
+timeline entry on the existing concept page.
+
+Trigger #5 — **Product or business idea.** Distinct from `originals/`
+(philosophy) and `concepts/` (world ideas already in circulation).
+Antriksh's product / startup / feature ideas:
+
+- *"someone should build X for Y"*
+- *"it'd be cool if I could just say 'order me lunch' and it happens"*
+- *"there's a missing tool for X workflow"*
+
+→ `gbrain__put_page` to `ideas/<slug>` with the idea + context + cross
+links to people/companies that influenced it.
+
+### Authorship test for routing
+
+```
+If user generated the thought (their voice, their framing)         → originals/
+Else if user's synthesis of someone else's idea                    → originals/
+Else if world concept already in circulation he's engaging with    → concepts/
+Else if product / business / feature idea                          → ideas/
+Else if entity mention with fact                                   → people/, companies/, projects/
+```
+
+### Verbatim rule (non-negotiable for originals)
+
+When writing to `originals/`, preserve Antriksh's EXACT phrasing in
+the page body. The vividness IS the concept. "agents that fall over
+aren't agents" is the artifact; "agents need failover" is a
+paraphrase that loses the punchline. Quote him verbatim under a
+heading; add your own structure / cross-links around the quote.
+
+### Cross-linking is mandatory
+
+Every `originals/` and `ideas/` page MUST cross-link to influencing
+entities:
+- People who shaped the thought (`gbrain__add_link`)
+- Concepts the thought builds on
+- Other originals it relates to
+
+An original without cross-links is a dead original. Future you can't
+find it via the entity graph.
+
+### When NOT to capture
+
+Pure operational chat — "yes", "ok", "thanks", "let's go ahead", "send
+it", emoji-only replies, "remind me in 5", confirmations of pending
+drafts. These are session noise; they go in conversation memory, not
+brain.
+
+Boundary cases — when uncertain, **capture**. Pollution at our scale
+is years away; starvation is the active problem.
 
 ---
 
