@@ -664,7 +664,7 @@ DO NOT also dump the list back; user can ask for it.
 
 | User intent | Command |
 |---|---|
-| "share today's task list" / "my tasks" / "what's on my plate" / "what am I working on" / "today's tasks" | `exec ~/bin/daily-tasks.sh show` |
+| "share today's task list" / "my tasks" / "what's on my plate" / "what am I working on" / "today's tasks" / "today entire task list" / any phrasing asking for the current list | `exec ~/bin/daily-tasks.sh show` |
 | "yesterday's tasks" / "what did I do yesterday" | `exec ~/bin/daily-tasks.sh show yesterday` |
 | "tasks for 04 May" / "tasks for 2026-05-04" / "list from May 4" | `exec ~/bin/daily-tasks.sh show 2026-05-04` |
 | "tasks 3 days ago" | `exec ~/bin/daily-tasks.sh show -3` |
@@ -672,6 +672,13 @@ DO NOT also dump the list back; user can ask for it.
 The script returns a Telegram-formatted bullet list with status emojis
 (✅ done, ➡️ tomorrow, ⏸️ later, 🗑️ deleted, • open). Relay output
 verbatim — DO NOT reformat or add commentary.
+
+**NEVER regurgitate from conversation history.** Even if you replied
+to "share today's task list" five minutes ago, the next time the user
+asks ANY task-list query you MUST re-run `daily-tasks.sh show`. The
+list changes every time you run `set` / `add` / `remove` / `mark`, and
+your prior answer is only valid for that prior moment. Re-fetching
+costs nothing; serving stale data costs trust.
 
 #### Forbidden
 
