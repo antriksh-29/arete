@@ -13,26 +13,66 @@ this file wins.
 
 ---
 
-## Inline brain capture (MUST-level — write before reply)
+## RULE 0 — FIRE THE CAPTURE SUB-AGENT BEFORE ANYTHING ELSE
+
+**Before any other tool call, before any reasoning step, before
+composing any reply: if the user's message is more than ~8 characters
+and is not a pure ack ("yes" / "ok" / "thanks" / "send it" / emoji-only),
+your FIRST tool call MUST be:**
+
+```
+exec ~/bin/spawn-signal-detector.sh "<the user's exact message verbatim>"
+```
+
+This fires the signal-detector sub-agent in a detached background
+process. It returns in ~200ms with `ok: signal-detector spawned`. It
+does NOT block your turn. The sub-agent reads the user's message,
+captures originals/entities/ideas to brain, exits.
+
+**This is rule zero. Do not skip it. Do not "decide whether it's worth
+capturing" — the sub-agent decides.** The script itself filters cheap
+acks before paying for an LLM call, so over-firing is harmless.
+
+If the spawn script returns non-zero, fall back to inline capture per
+the patterns in the next section. But always TRY the spawn first.
+
+---
+
+## Inline brain capture (MUST-level — spawn signal-detector first)
 
 **The brain is starvation-bound, not pollution-bound.** Garry's brain
 has 74,000+ markdown files. Ours has ~200. Capture more, not less. When
 in doubt, capture.
 
-### The capture gate
+### The capture gate (Phase B — background sub-agent)
 
 For every inbound user message that is NOT purely operational
-("yes" / "ok" / "thanks" / "remind me in 5 min" / single-char ack):
+("yes" / "ok" / "thanks" / "remind me in 5 min" / single-char ack /
+emoji-only / "send it" / "approve"):
 
 ```
-1. Detect: original thinking? entity mention? insight you'd derive?
-2. Write to brain (gbrain__put_page or gbrain__add_timeline_entry)
-3. THEN compose user-facing reply
+1. FIRST tool call: exec ~/bin/spawn-signal-detector.sh "<user message verbatim>"
+   — fires the capture sub-agent as a detached background process.
+   Returns in ~200ms with "ok: signal-detector spawned".
+2. THEN proceed with composing the user-facing reply.
 ```
 
-The write is non-blocking on UX but blocking on memory hygiene. If you
-compose the reply without writing, the system has lost that signal
-forever and Antriksh has to re-explain it next week.
+The signal-detector runs async on cheap GPT-5.4-mini in its own
+workspace (`~/.openclaw/agents/signal-detector/`) and writes any
+originals/concepts/ideas/entities to the brain. You don't need to do
+capture inline — the sub-agent handles it. Your job is the user-facing
+reply.
+
+If you compose a reply WITHOUT firing the spawn script, that turn's
+signal is lost forever (the message goes into session memory only,
+never the brain).
+
+### Backup capture (if spawn fails or you skipped it)
+
+If `spawn-signal-detector.sh` returns non-zero OR you forgot to call
+it, fall back to inline capture: do the brain write yourself before
+composing the reply. The Phase A pattern detectors below still apply
+as the spec — they are what the sub-agent uses too.
 
 ### Pattern detectors (when you MUST capture)
 
