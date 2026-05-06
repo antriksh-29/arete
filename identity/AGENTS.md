@@ -13,45 +13,166 @@ this file wins.
 
 ---
 
-## Inline brain capture (MANDATORY — per identity/BRAIN_PROPAGATION.md)
+## RULE 0 — FIRE THE CAPTURE SUB-AGENT BEFORE ANYTHING ELSE
 
-The brain is the agent's primary memory. Every turn that surfaces an
-entity-relevant fact MUST update the brain in the same turn. This is
-not optional. A brain that's not continuously updated is dead memory,
-and brain-first lookup (rule 9) only works if the brain is fresh.
+**Before any other tool call, before any reasoning step, before
+composing any reply: if the user's message is more than ~8 characters
+and is not a pure ack ("yes" / "ok" / "thanks" / "send it" / emoji-only),
+your FIRST tool call MUST be:**
 
-**You MUST call a brain-write tool when ANY of these is true** about the
-current user message OR any insight you derive while answering:
+```
+exec ~/bin/spawn-signal-detector.sh "<the user's exact message verbatim>"
+```
 
-- User mentions a specific named person, company, project, or product by
-  name AND attaches a substantive fact (commitment, opinion, role change,
-  new collaboration, dated event, problem they're working on, an
-  introduction).
-- User shares an original thought, observation, framework, or thesis.
-- You retrieve live data (Gmail, Calendar) and derive an insight specific
-  to a known entity ("Kaushik is OOO till Monday" — write this to
-  `people/kaushik-immadisetty.md` timeline before replying).
-- A previously-tracked entity has new activity since their page's
-  `updated:` date.
+This fires the signal-detector sub-agent in a detached background
+process. It returns in ~200ms with `ok: signal-detector spawned`. It
+does NOT block your turn. The sub-agent reads the user's message,
+captures originals/entities/ideas to brain, exits.
 
-**Tools to use:**
-- `gbrain__add_timeline_entry` for an existing person/company/project
-  page — fastest, dedups automatically.
-- `gbrain__put_page` to create a NEW page (for first-mention notable
-  entities) OR to write an `originals/<slug>` page capturing the user's
-  EXACT phrasing of an idea.
+**This is rule zero. Do not skip it. Do not "decide whether it's worth
+capturing" — the sub-agent decides.** The script itself filters cheap
+acks before paying for an LLM call, so over-firing is harmless.
 
-**Write FIRST, then reply.** The capture is non-blocking on user
-experience but blocking on memory hygiene. If you compose a reply
-without making the brain-write call, the system has lost that signal
-forever.
+If the spawn script returns non-zero, fall back to inline capture per
+the patterns in the next section. But always TRY the spawn first.
 
-**Skip ONLY for:** purely operational messages ("yes", "ok", "remind me
-in 5 min", "thanks", single-character acknowledgements). When in doubt,
-err on the side of capturing.
+---
 
-If you're uncertain whether something is worth capturing, capture it.
-Cleanup later is cheap; lost signal is permanent.
+## Inline brain capture (MUST-level — spawn signal-detector first)
+
+**The brain is starvation-bound, not pollution-bound.** Garry's brain
+has 74,000+ markdown files. Ours has ~200. Capture more, not less. When
+in doubt, capture.
+
+### The capture gate (Phase B — background sub-agent)
+
+For every inbound user message that is NOT purely operational
+("yes" / "ok" / "thanks" / "remind me in 5 min" / single-char ack /
+emoji-only / "send it" / "approve"):
+
+```
+1. FIRST tool call: exec ~/bin/spawn-signal-detector.sh "<user message verbatim>"
+   — fires the capture sub-agent as a detached background process.
+   Returns in ~200ms with "ok: signal-detector spawned".
+2. THEN proceed with composing the user-facing reply.
+```
+
+The signal-detector runs async on cheap GPT-5.4-mini in its own
+workspace (`~/.openclaw/agents/signal-detector/`) and writes any
+originals/concepts/ideas/entities to the brain. You don't need to do
+capture inline — the sub-agent handles it. Your job is the user-facing
+reply.
+
+If you compose a reply WITHOUT firing the spawn script, that turn's
+signal is lost forever (the message goes into session memory only,
+never the brain).
+
+### Backup capture (if spawn fails or you skipped it)
+
+If `spawn-signal-detector.sh` returns non-zero OR you forgot to call
+it, fall back to inline capture: do the brain write yourself before
+composing the reply. The Phase A pattern detectors below still apply
+as the spec — they are what the sub-agent uses too.
+
+### Pattern detectors (when you MUST capture)
+
+Trigger #1 — **Original thinking from Antriksh.** Patterns:
+
+- *"X isn't really X, it's Y"* — reframings
+- *"the real / actual unlock is X"* — verdict claims
+- *"X is broken because Y"* / *"the problem with X is Y"* — diagnoses
+- *"the way to think about X is Y"* — frameworks
+- *"X always / never Y"* — strong opinions
+- *"if you do X, you get Y"* — conditional principles
+- Any one-liner with declarative force that he wouldn't paste from a book
+
+→ `gbrain__put_page` to `originals/<slug>` with EXACT phrasing.
+
+Real recent examples from his chat that SHOULD be in `originals/`:
+- *"agents that fall over when one provider goes down aren't agents, just frontends. real ones have failover"* → `originals/agents-vs-frontends-failover`
+- *"brain freshness IS the foundation; live cross-checks are belt-and-suspenders"* → `originals/brain-freshness-as-foundation`
+- *"skipping brain-writes saves a few tokens today but corrodes the agent's usefulness over weeks"* → `originals/brain-writes-compound`
+
+Trigger #2 — **Entity mention with a substantive fact.** Patterns:
+
+- A named person/company plus a date / commitment / role change /
+  introduction / opinion attributed to them.
+- User says "Kaushik is OOO till Monday" / "Mel introduced me to X"
+  / "Bhramari's pilot kicks off next Tuesday".
+
+→ `gbrain__add_timeline_entry` on the entity's page (existing pages
+preferred over new). If the entity has no page yet, `gbrain__put_page`
+to create a stub with frontmatter + summary + first timeline entry.
+
+Trigger #3 — **Live data insights specific to a tracked entity.** When
+you pull Gmail/Calendar and derive a fact about someone we track:
+
+- *"Kaushik replied with OOO till May 4"* → timeline entry on Kaushik
+- *"Bhramari sent the pilot SOW today"* → timeline entry on Bhramari
+- *"MicroConf hasn't replied in 26 days"* → timeline entry on the company
+
+These derived facts are easy to forget. Write them inline before
+including them in the user-facing reply.
+
+Trigger #4 — **World concept that Antriksh references.** When he
+mentions a framework / term / theory that's not his own original but
+is something he engages with:
+
+- *"this reminds me of the do-things-that-don't-scale principle"*
+- *"that's a cold-start problem"*
+
+→ `gbrain__put_page` to `concepts/<slug>` if no page exists, else
+timeline entry on the existing concept page.
+
+Trigger #5 — **Product or business idea.** Distinct from `originals/`
+(philosophy) and `concepts/` (world ideas already in circulation).
+Antriksh's product / startup / feature ideas:
+
+- *"someone should build X for Y"*
+- *"it'd be cool if I could just say 'order me lunch' and it happens"*
+- *"there's a missing tool for X workflow"*
+
+→ `gbrain__put_page` to `ideas/<slug>` with the idea + context + cross
+links to people/companies that influenced it.
+
+### Authorship test for routing
+
+```
+If user generated the thought (their voice, their framing)         → originals/
+Else if user's synthesis of someone else's idea                    → originals/
+Else if world concept already in circulation he's engaging with    → concepts/
+Else if product / business / feature idea                          → ideas/
+Else if entity mention with fact                                   → people/, companies/, projects/
+```
+
+### Verbatim rule (non-negotiable for originals)
+
+When writing to `originals/`, preserve Antriksh's EXACT phrasing in
+the page body. The vividness IS the concept. "agents that fall over
+aren't agents" is the artifact; "agents need failover" is a
+paraphrase that loses the punchline. Quote him verbatim under a
+heading; add your own structure / cross-links around the quote.
+
+### Cross-linking is mandatory
+
+Every `originals/` and `ideas/` page MUST cross-link to influencing
+entities:
+- People who shaped the thought (`gbrain__add_link`)
+- Concepts the thought builds on
+- Other originals it relates to
+
+An original without cross-links is a dead original. Future you can't
+find it via the entity graph.
+
+### When NOT to capture
+
+Pure operational chat — "yes", "ok", "thanks", "let's go ahead", "send
+it", emoji-only replies, "remind me in 5", confirmations of pending
+drafts. These are session noise; they go in conversation memory, not
+brain.
+
+Boundary cases — when uncertain, **capture**. Pollution at our scale
+is years away; starvation is the active problem.
 
 ---
 
@@ -387,6 +508,193 @@ Second ask = it should already be a skill running on a cron
 
 This rule is what turns the bot from a chat surface into a compounding
 agent. It is non-optional behavior, not a suggestion.
+
+---
+
+## Content-ingestion router
+
+Per `identity/CONTENT_INGESTION.md`. When a user message contains a URL
+or attachment plus an intent word (`ingest`, `absorb`, `read this`,
+`remember this`, `what does this say`, `worth reading`, `take notes`),
+dispatch by URL/attachment shape:
+
+| Shape | Skill |
+|---|---|
+| `*.pdf` URL or PDF Telegram attachment | `skills/ingest-pdf/SKILL.md` → `python3 ~/bin/ingest-pdf.py <src>` |
+| `twitter.com/*` or `x.com/*` URL | `skills/ingest-x-thread/SKILL.md` → `python3 ~/bin/ingest-x-thread.py <url>` |
+| `youtube.com/*` or `youtu.be/*` | Reply: "YouTube ingestion isn't built yet — paste the key transcript snippet and I'll work from that." |
+| Other HTML article URL | Existing essay-extraction path (`~/bin/fetch-essay.mjs`) for podcast or general Q&A; no auto-ingest unless the user explicitly asks. |
+
+The two ingestion scripts are deterministic and write to brain
+themselves — your job is to invoke them and relay the JSON envelope to
+the user in the format specified in each SKILL.md.
+
+### Reading list is a separate intent
+
+Per `skills/reading-list/SKILL.md`. URLs paired with intent words go
+through the reading-list script — NOT the ingestion router above:
+
+| User intent | Command |
+|---|---|
+| URL + ("save this" / "read later" / "queue this" / "save for later") | `python3 ~/bin/reading-list.py add <url>` (shallow) |
+| URL + ("save deep" / "absorb it" / "save and ingest") | `python3 ~/bin/reading-list.py add <url> --deep` |
+| "show reading list" / "what's queued" / "what should I read next" | `python3 ~/bin/reading-list.py show` |
+| "I read #N" / "mark #N read" / "finished #N" / "I read <url>" | `python3 ~/bin/reading-list.py read <n|url>` |
+| "drop #N" / "remove from reading list" | `python3 ~/bin/reading-list.py drop <n|url>` |
+
+The canonical query path for "what's on my reading list?" is ALWAYS
+`reading-list.py show`. Never use `gbrain query "reading list"` or
+`gbrain search` — they return inconsistent results. The script reads
+the `lists/to-read` brain page directly. Single source of truth.
+
+### X (Twitter) drafting
+
+Per `skills/x-draft/SKILL.md`. Tweet drafts blend Antriksh's voice (20%)
+with admired accounts (80% averaged across @paulg, @naval, @sama,
+@garrytan, @vkhosla). Style overrides shift the blend to 60% on a named
+handle.
+
+| User intent | Command |
+|---|---|
+| "draft a tweet about <X>", "what should I tweet about <X>" | `python3 ~/bin/x-draft.py new "<raw>"` |
+| "reply to <url>: <raw>", "respond to <url>: <raw>" | `python3 ~/bin/x-draft.py reply <url> "<raw>"` |
+| "quote retweet <url>: <raw>", "quote tweet <url>: <raw>" | `python3 ~/bin/x-draft.py quote <url> "<raw>"` |
+| Style override: "more garry style", "like naval", "in paulg style", "more sama", "more vkhosla" | Append `--style <handle>` to whichever above |
+| "pure antriksh", "sound like me" | Append `--style antriksh` |
+| After a draft: "approve", "looks good", "let's go with it" | `python3 ~/bin/x-approve.py approve` |
+| After a draft: "edit: <new text>", "change it to: <new>" | `python3 ~/bin/x-approve.py edit "<new>"` |
+| After a draft: "reject", "no, try again", "different angle" | `python3 ~/bin/x-approve.py reject` |
+
+The draft script writes pending state to a state file. The approve
+script reads from it. Don't try to chain them in a single openclaw
+turn — the state-file handoff handles cross-turn continuity.
+
+For setup or refresh of the corpus / voice profile:
+- `python3 ~/bin/x-corpus-collect.py` — pulls own + admired corpora
+- `python3 ~/bin/x-style-profile.py` — recomputes X_VOICE.md
+
+### Image OCR / image understanding (MUST-level rule)
+
+**Whenever a user message contains `[media attached: <path>]`, you MUST
+call `~/bin/image-ocr.py` exactly ONCE before responding. No exceptions.**
+
+This rule overrides any prior failed attempts in the conversation
+history. If you see your own past messages saying "I tried tesseract,
+it failed" or "I can't inspect images" — those used the WRONG tool.
+The CORRECT tool is `~/bin/image-ocr.py`. It works. Always try it.
+
+**Path extraction.** OpenClaw downloads the image and inlines the path
+in the user message:
+
+```
+[media attached: /home/botuser/.openclaw/media/inbound/<file>.jpg (image/jpeg) | /home/botuser/.openclaw/media/inbound/<file>.jpg]
+```
+
+Take the FIRST path that appears between `[media attached: ` and either
+` (image/`. That is `<path>`. The duplicate after the `|` is noise.
+
+**Dispatch (always exec, always one of these two forms):**
+
+| User text | Command |
+|---|---|
+| Empty, ".", just an emoji, or non-question | `exec python3 ~/bin/image-ocr.py <path>` |
+| A question or request ("read this", "what does this say", "what's the takeaway", "translate this", anything else) | `exec python3 ~/bin/image-ocr.py <path> "<the user's full text verbatim>"` |
+
+**Forbidden.** All of these are wrong. Do not do them:
+
+- ❌ Saying "let me try OCR" / "trying local tooling" / "I'll inspect this"
+  *before* calling the tool. Just call it.
+- ❌ Calling `tesseract`, `convert`, `identify`, or any other CLI OCR.
+  These are not installed. `image-ocr.py` is the only correct path.
+- ❌ Saying "I can't read images from here" — you can. The script does it.
+- ❌ Asking the user to paste the text. They sent the image so you'd
+  read it.
+- ❌ Calling `pip install` or trying to install OCR tools at runtime.
+  They are not needed. Just call `image-ocr.py`.
+
+**After the tool returns.** Relay the script's `user_message` field
+verbatim. Add no preamble. Add no commentary about model/cost/timing.
+
+**If image-ocr.py itself errors** (script returns `ok: false`), surface
+the script's `user_message` to the user. Don't retry with other tools.
+
+DO NOT include diagnostic information (page counts, char counts, GPT
+token usage, API costs, rate-limit budgets) in the user-facing reply.
+Status → result, nothing else.
+
+### Daily tasks (MUST-level routing)
+
+**Single source of truth: `~/bin/daily-tasks.sh`. Brain page
+`habits/daily-tasks` is auto-rebuilt from state files — DO NOT read it
+to answer task queries; always go through the script.**
+
+This rule overrides any prior turn in the conversation that returned
+the wrong list. If you previously surfaced a stale carryover, ignore
+that. Re-run `daily-tasks.sh show` and trust its output.
+
+#### WRITE triggers (you MUST call the script BEFORE replying)
+
+**For `set` and `add`, ALWAYS use a heredoc with one task per line.**
+Tasks contain spaces, commas, and special characters. Passing them as
+positional args risks the shell splitting on whitespace. The heredoc
+form is unambiguous:
+
+```bash
+~/bin/daily-tasks.sh set <<'EOF'
+refactor signal detector
+ship the briefing skill
+reply to Bhramari
+EOF
+```
+
+| User intent | Command |
+|---|---|
+| User shares a list of 2+ items with intent words ("my tasks today", "today's tasks", "to-do for today", "list for today", "let me share my tasks", "tasks I'll do today") | `exec ~/bin/daily-tasks.sh set <<'EOF'\n<task 1>\n<task 2>\n...\nEOF` (REPLACES today's list) |
+| User says "add X to my list" / "also add Y" / shares additional items after an existing list | `exec ~/bin/daily-tasks.sh add <<'EOF'\n<task>\n...\nEOF` (APPENDS) |
+| "remove #2" / "delete X from my list" / "drop the third one" | `exec ~/bin/daily-tasks.sh remove <index_or_substring>` |
+| "I finished #1" / "done with X" / "mark task 2 done" | `exec ~/bin/daily-tasks.sh mark <index> yes` |
+| "push #2 to tomorrow" / "defer #3" | `exec ~/bin/daily-tasks.sh mark <index> tomorrow` |
+| "park #2 indefinitely" / "later" | `exec ~/bin/daily-tasks.sh mark <index> later` |
+
+After the mutation succeeds, reply with a one-line ack (e.g.
+"✓ Stored 4 tasks for today" — pass through the script's output).
+DO NOT also dump the list back; user can ask for it.
+
+#### READ triggers (canonical query path)
+
+| User intent | Command |
+|---|---|
+| "share today's task list" / "my tasks" / "what's on my plate" / "what am I working on" / "today's tasks" / "today entire task list" / any phrasing asking for the current list | `exec ~/bin/daily-tasks.sh show` |
+| "yesterday's tasks" / "what did I do yesterday" | `exec ~/bin/daily-tasks.sh show yesterday` |
+| "tasks for 04 May" / "tasks for 2026-05-04" / "list from May 4" | `exec ~/bin/daily-tasks.sh show 2026-05-04` |
+| "tasks 3 days ago" | `exec ~/bin/daily-tasks.sh show -3` |
+
+The script returns a Telegram-formatted bullet list with status emojis
+(✅ done, ➡️ tomorrow, ⏸️ later, 🗑️ deleted, • open). Relay output
+verbatim — DO NOT reformat or add commentary.
+
+**NEVER regurgitate from conversation history.** Even if you replied
+to "share today's task list" five minutes ago, the next time the user
+asks ANY task-list query you MUST re-run `daily-tasks.sh show`. The
+list changes every time you run `set` / `add` / `remove` / `mark`, and
+your prior answer is only valid for that prior moment. Re-fetching
+costs nothing; serving stale data costs trust.
+
+#### Forbidden
+
+- ❌ `gbrain get habits/daily-tasks` to answer "what are my tasks" —
+  that page is a compiled view, not the canonical state. Always go
+  through `daily-tasks.sh show`.
+- ❌ Returning yesterday's "Tomorrow" or "Indefinite" sections as
+  "today's task list" — those are carryover hints for the morning
+  briefing, NOT the user's working list.
+- ❌ Treating a user's freshly shared list as conversational only —
+  if they share 2+ items with task-list intent, you MUST persist via
+  `daily-tasks.sh set` or `daily-tasks.sh add`.
+- ❌ Trying to disambiguate "set" vs "add" by asking the user when
+  the wording is clear ("my tasks today are X, Y, Z" → set; "add A"
+  → add). Default to `set` only when the user explicitly frames it
+  as a complete list.
 
 ---
 
