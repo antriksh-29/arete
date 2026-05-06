@@ -501,6 +501,73 @@ DO NOT include diagnostic information (page counts, char counts, GPT
 token usage, API costs, rate-limit budgets) in the user-facing reply.
 Status → result, nothing else.
 
+### Daily tasks (MUST-level routing)
+
+**Single source of truth: `~/bin/daily-tasks.sh`. Brain page
+`habits/daily-tasks` is auto-rebuilt from state files — DO NOT read it
+to answer task queries; always go through the script.**
+
+This rule overrides any prior turn in the conversation that returned
+the wrong list. If you previously surfaced a stale carryover, ignore
+that. Re-run `daily-tasks.sh show` and trust its output.
+
+#### WRITE triggers (you MUST call the script BEFORE replying)
+
+**For `set` and `add`, ALWAYS use a heredoc with one task per line.**
+Tasks contain spaces, commas, and special characters. Passing them as
+positional args risks the shell splitting on whitespace. The heredoc
+form is unambiguous:
+
+```bash
+~/bin/daily-tasks.sh set <<'EOF'
+refactor signal detector
+ship the briefing skill
+reply to Bhramari
+EOF
+```
+
+| User intent | Command |
+|---|---|
+| User shares a list of 2+ items with intent words ("my tasks today", "today's tasks", "to-do for today", "list for today", "let me share my tasks", "tasks I'll do today") | `exec ~/bin/daily-tasks.sh set <<'EOF'\n<task 1>\n<task 2>\n...\nEOF` (REPLACES today's list) |
+| User says "add X to my list" / "also add Y" / shares additional items after an existing list | `exec ~/bin/daily-tasks.sh add <<'EOF'\n<task>\n...\nEOF` (APPENDS) |
+| "remove #2" / "delete X from my list" / "drop the third one" | `exec ~/bin/daily-tasks.sh remove <index_or_substring>` |
+| "I finished #1" / "done with X" / "mark task 2 done" | `exec ~/bin/daily-tasks.sh mark <index> yes` |
+| "push #2 to tomorrow" / "defer #3" | `exec ~/bin/daily-tasks.sh mark <index> tomorrow` |
+| "park #2 indefinitely" / "later" | `exec ~/bin/daily-tasks.sh mark <index> later` |
+
+After the mutation succeeds, reply with a one-line ack (e.g.
+"✓ Stored 4 tasks for today" — pass through the script's output).
+DO NOT also dump the list back; user can ask for it.
+
+#### READ triggers (canonical query path)
+
+| User intent | Command |
+|---|---|
+| "share today's task list" / "my tasks" / "what's on my plate" / "what am I working on" / "today's tasks" | `exec ~/bin/daily-tasks.sh show` |
+| "yesterday's tasks" / "what did I do yesterday" | `exec ~/bin/daily-tasks.sh show yesterday` |
+| "tasks for 04 May" / "tasks for 2026-05-04" / "list from May 4" | `exec ~/bin/daily-tasks.sh show 2026-05-04` |
+| "tasks 3 days ago" | `exec ~/bin/daily-tasks.sh show -3` |
+
+The script returns a Telegram-formatted bullet list with status emojis
+(✅ done, ➡️ tomorrow, ⏸️ later, 🗑️ deleted, • open). Relay output
+verbatim — DO NOT reformat or add commentary.
+
+#### Forbidden
+
+- ❌ `gbrain get habits/daily-tasks` to answer "what are my tasks" —
+  that page is a compiled view, not the canonical state. Always go
+  through `daily-tasks.sh show`.
+- ❌ Returning yesterday's "Tomorrow" or "Indefinite" sections as
+  "today's task list" — those are carryover hints for the morning
+  briefing, NOT the user's working list.
+- ❌ Treating a user's freshly shared list as conversational only —
+  if they share 2+ items with task-list intent, you MUST persist via
+  `daily-tasks.sh set` or `daily-tasks.sh add`.
+- ❌ Trying to disambiguate "set" vs "add" by asking the user when
+  the wording is clear ("my tasks today are X, Y, Z" → set; "add A"
+  → add). Default to `set` only when the user explicitly frames it
+  as a complete list.
+
 ---
 
 <!-- gbrain:skillpack:begin -->
