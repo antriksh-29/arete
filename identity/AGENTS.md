@@ -758,6 +758,9 @@ After the script returns, reply with the script's one-line ack
 | "water summary yesterday" / "yesterday's water" / "water on May 4" | `exec ~/bin/water-log.sh summary <YYYY-MM-DD>` |
 | "list today's water entries" | `exec ~/bin/water-log.sh entries $(TZ=Asia/Kolkata date +%Y-%m-%d)` |
 | "water for the week" / "last 7 days water" / "weekly water review" / "did I hit target this week" | `exec ~/bin/water-log.sh week` |
+| "water since 1 May" / "from May 1 to May 6" / "May 1–6 water" / "show me my water for the past 5 days" / ANY range of 2+ days | `exec ~/bin/water-log.sh range <from-YYYY-MM-DD> <to-YYYY-MM-DD>` (resolve "past 5 days" to inclusive from/to vs today IST) |
+
+**`summary` is stdout-only. `notify` is cron-only.** The script never sends to Telegram from agent flows. Read the stdout, then send ONE Telegram message in the agent's reply.
 
 **NEVER regurgitate from chat history.** Re-fetch via the script every
 time. Logs change throughout the day; cached answers are stale.
@@ -823,6 +826,85 @@ Mapping intent → category:
   from stats.
 - ❌ Adding to Strava's `ACT_FILE` directly — the nightly sync wipes
   it. Always use `manual-log` (writes to `manual.tsv` which survives).
+
+---
+
+## Aggregate-query output contract (MUST-level)
+
+For ANY habit query that spans multiple days (water, reading, activity,
+tasks — past or future), the user-facing reply MUST be ONE Telegram
+message in the compact list shape below. Never send one message per day.
+Never paste the verbose single-day `summary` shape multiple times.
+
+**Canonical shape:**
+
+```
+💧 Water — 01 May → 06 May
+
+✅ Fri 01 May: 3.15L (105%)
+❌ Sat 02 May: 2.25L (75%)
+❌ Sun 03 May: 1.70L (57%)
+❌ Mon 04 May: 1.45L (48%)
+❌ Tue 05 May: 2.65L (88%)
+❌ Wed 06 May: 2.50L (83%)
+
+Hit target: 1/6 days · total 13.70L
+```
+
+Rules:
+- One emoji per day prefix: ✅ hit / ❌ missed / ➖ no data.
+- Day label format: `<DayShort> <DD MMM>` (e.g. `Fri 01 May`).
+- One numeric value + percent of target.
+- Footer line: hit ratio + total.
+- Habit emoji at top: 💧 water · 📚 reading · 🏃 activity · 📋 tasks.
+
+**The script outputs (water-log.sh week / range) already produce this
+shape. For multi-day intent, call the script's range/week subcommand
+and relay output verbatim.** Do not iterate the per-day `summary`
+subcommand to assemble a multi-day view — that's the failure mode
+that prompted this rule (May 7, 2026).
+
+**Forbidden for aggregate queries:**
+- ❌ Calling `water-log.sh summary <date>` in a loop for 2+ dates.
+- ❌ Composing one Telegram message per day. Always one message total.
+- ❌ Verbose per-day breakdown ("Total: X / 3L target ✅ Target met! Entries: ...") for a multi-day question. That's the single-day shape; aggregate uses compact.
+- ❌ Adding lengthy commentary after the table. The table IS the answer.
+
+Single-day queries still use `summary <date>` — that path is unchanged
+and the verbose shape is correct for one day.
+
+---
+
+## Rule 0+ — FIRE THE FEEDBACK-LEARNER ALONGSIDE THE SIGNAL-DETECTOR
+
+Right after spawning signal-detector (Rule 0), if the user's message
+contains feedback markers — "next time", "going forward", "from now
+on", "stop doing", "always", "never", "don't ever", "you should
+always", "in future", "make sure you", "remember to" — your SECOND
+tool call MUST be:
+
+```
+exec ~/bin/spawn-feedback-learner.sh "<the user's exact message verbatim>"
+```
+
+Same fire-and-forget pattern as signal-detector. Returns in ~200ms.
+The sub-agent extracts the rule and writes a proposal to
+`~/.brain-bootstrap-raw/feedback-queue/<ts>-<slug>.md`. Proposals
+DO NOT auto-merge into AGENTS.md — they sit pending review.
+
+After spawn, continue composing the user reply normally.
+
+### Pending-feedback queue (READ + APPLY routing)
+
+| User intent | Action |
+|---|---|
+| "show pending feedback" / "what feedback is queued" / "what learnings are pending" / "show me the feedback queue" | `exec ls -1t ~/.brain-bootstrap-raw/feedback-queue/ 2>/dev/null` then `cat` each file in order; relay numbered list with title + proposed AGENTS.md edit summary |
+| "apply feedback #N" / "approve learning #N" / "merge #N" | Read the Nth file (newest = #1). Use Edit tool to apply the proposed AGENTS.md edit verbatim. Then `mv` that file to `~/.brain-bootstrap-raw/feedback-queue/applied/`. Then `scp` updated AGENTS.md to all three bot mirrors and `systemctl --user restart openclaw-gateway.service`. |
+| "discard feedback #N" / "reject #N" | `mv ~/.brain-bootstrap-raw/feedback-queue/<file> ~/.brain-bootstrap-raw/feedback-queue/discarded/` |
+
+The learner is v0 — capture wide, surface to user, let user decide what
+becomes durable rule. Don't auto-merge: format-feedback edits to
+AGENTS.md change agent behavior across all sessions; user is the gate.
 
 ---
 
