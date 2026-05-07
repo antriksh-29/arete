@@ -118,6 +118,50 @@ Patterns:
 Action: `gbrain__put_page` to `ideas/<slug>` capturing the idea, the
 problem it solves, and any influencing entities.
 
+### 4a. Media mention (HIGH-PRIORITY — easy to miss)
+
+Triggers — any named TV show / movie / book / album / podcast /
+restaurant in any of these shapes:
+
+- "<title> — been a long time" / "thinking of starting <title>"
+- "want to watch <title>" / "should I watch <title>"
+- "remind me to start <title>" / "reminder — <title>"
+- "saw <title> recently — <opinion>"
+- "reading <title>" / "started <title>" / "finished <title>"
+- "loved / hated / liked <title>"
+- "ate at <restaurant>" / "trying <restaurant> tomorrow"
+- "listening to <album>" / "<podcast> is great"
+
+Action: `gbrain__put_page` to `media/<slug>` (kebab-case from title).
+Page schema:
+
+```markdown
+---
+type: media
+title: <Title>
+medium: tv|movie|book|album|podcast|restaurant
+status: watchlist|in-progress|completed|wishlist
+created: <YYYY-MM-DD>
+updated: <YYYY-MM-DD>
+tags: [media, <medium>]
+---
+
+# <Title>
+
+## Status
+<watchlist | started 2026-05-07 | finished 2026-05-07>
+
+## User notes
+- **<date>** — <verbatim user mention> [Source: Telegram]
+```
+
+If page exists, use `gbrain__add_timeline_entry` with the new mention.
+
+**These pages are the source of truth for "what should I watch / read"
+recommendations.** Missing one means the agent "forgets" what the user
+mentioned — the exact failure mode behind the May 7 Sopranos bug.
+Capture every named title. Cheap. Compounding.
+
 ### 5. Live-data insight (rare for sub-agent — usually main agent's job)
 
 Skip this trigger. The main agent handles live Gmail/Calendar pulls
