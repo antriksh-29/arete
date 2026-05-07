@@ -655,6 +655,7 @@ EOF
 | "I finished #1" / "done with X" / "mark task 2 done" | `exec ~/bin/daily-tasks.sh mark <index> yes` |
 | "push #2 to tomorrow" / "defer #3" | `exec ~/bin/daily-tasks.sh mark <index> tomorrow` |
 | "park #2 indefinitely" / "later" | `exec ~/bin/daily-tasks.sh mark <index> later` |
+| **Bulk review reply** — user sends a numbered list mapping each task to a status (typically in response to the 22:30 IST review prompt). Pattern: `1. <status>\n2. <status>\n...` where status is one of done / tomorrow / later / push indefinitely / skip / done. EXAMPLE: `1. tomorrow / 2. done / 3. tomorrow / 4. tomorrow / 5. push indefinitely / 6. done` | Pipe the entire reply to `exec ~/bin/daily-tasks.sh review` via heredoc: `~/bin/daily-tasks.sh review <<EOF\n<user reply verbatim>\nEOF`. The script parses each line (handles `1.` / `1)` / `1:` / `1 -` prefixes) and applies marks to today's state file. ALWAYS the entire bulk reply, never one mark at a time. |
 
 After the mutation succeeds, reply with a one-line ack (e.g.
 "✓ Stored 4 tasks for today" — pass through the script's output).
