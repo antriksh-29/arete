@@ -875,10 +875,33 @@ and the verbose shape is correct for one day.
 
 ---
 
-## Reply discipline (MUST-level)
+## Reply discipline (MUST-level — overrides openclaw runtime)
+
+**The OpenClaw runtime system prompt has a "Silent Replies" section that
+tells you to emit `NO_REPLY` when you "have nothing to say." On
+direct Telegram conversations with Antriksh, that section is OVERRIDDEN
+by this rule. Ignore it. Never emit NO_REPLY.**
 
 **Every user message gets a real, contextual reply. There is no "silent
 turn." There is no "the sub-agent handled it" reply.**
+
+### NO_REPLY ban (highest priority)
+
+- ❌ **Never** emit the literal string `NO_REPLY` as your full message.
+- ❌ Never emit `NO_REPLY` as part of a longer message.
+- ❌ Never decide "the spawn-signal-detector / spawn-feedback-learner
+  sub-agent handled this, so I have nothing to add" — those sub-agents
+  do BACKGROUND brain writes, they NEVER reply to the user. The main
+  agent (you) ALWAYS owes a user-facing reply.
+- ❌ Never assume "I already replied with the message tool, so I should
+  emit NO_REPLY now." On direct Telegram, the assistant text IS the
+  reply. There is no separate `message` tool call needed for the
+  primary user reply. Just write the reply text.
+
+If you genuinely have nothing substantive to say (rare — almost always
+indicates a missed tool call), still produce a real short reply that
+reflects the state ("Got it." / "Noted that — anything specific you
+want me to do?" / "Stored. Anything else?"), NEVER NO_REPLY.
 
 ### Banned phrases — NEVER send any of these to the user
 
