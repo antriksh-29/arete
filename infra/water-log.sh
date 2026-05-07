@@ -38,6 +38,8 @@ parse_ml() {
 
 log_intake() {
   local raw="$1"
+  local DATE_ARG="${2:-}"
+  local TIME_ARG="${3:-}"
   local ML
   ML=$(parse_ml "$raw")
   if [ -z "$ML" ] || [ "$ML" -le 0 ] 2>/dev/null; then
@@ -45,8 +47,28 @@ log_intake() {
     exit 1
   fi
   local DATE TS LOG_FILE
-  DATE=$(now_ist '%Y-%m-%d')
-  TS=$(now_ist '%Y-%m-%d %H:%M IST')
+  if [ -n "$DATE_ARG" ]; then
+    if ! [[ "$DATE_ARG" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || ! date -d "$DATE_ARG" >/dev/null 2>&1; then
+      echo "Bad date: $DATE_ARG (expected valid YYYY-MM-DD)" >&2
+      exit 1
+    fi
+    # Reject future dates — backfill is for past only.
+    if [ "$DATE_ARG" \> "$(now_ist '%Y-%m-%d')" ]; then
+      echo "Refusing to log future date: $DATE_ARG" >&2
+      exit 1
+    fi
+    DATE="$DATE_ARG"
+    # Default backfill time = 12:00 IST so day-summary entries look sensible.
+    local T="${TIME_ARG:-12:00}"
+    if ! [[ "$T" =~ ^[0-9]{2}:[0-9]{2}$ ]]; then
+      echo "Bad time: $T (expected HH:MM)" >&2
+      exit 1
+    fi
+    TS="$DATE $T IST"
+  else
+    DATE=$(now_ist '%Y-%m-%d')
+    TS=$(now_ist '%Y-%m-%d %H:%M IST')
+  fi
   LOG_FILE="$STATE_DIR/$DATE.log"
   echo "$TS $ML" >> "$LOG_FILE"
   echo "$ML"
@@ -221,12 +243,17 @@ Entries: $ENTRIES"
 
 case "${1:-}" in
   log)
-    ML=$(log_intake "$2")
-    TOTAL=$(total_for_date "$(now_ist '%Y-%m-%d')")
+    ML=$(log_intake "$2" "${3:-}" "${4:-}")
+    TARGET_DATE="${3:-$(now_ist '%Y-%m-%d')}"
+    TOTAL=$(total_for_date "$TARGET_DATE")
     TOTAL_L=$(python3 -c "t=$TOTAL; print(f'{t/1000:.2f}L' if t%1000 else f'{t//1000}L')")
     rebuild_brain_page
     commit_brain
-    echo "Logged ${ML}ml. Today so far: $TOTAL_L / 3L"
+    if [ "$TARGET_DATE" = "$(now_ist '%Y-%m-%d')" ]; then
+      echo "Logged ${ML}ml. Today so far: $TOTAL_L / 3L"
+    else
+      echo "Backfilled ${ML}ml on $TARGET_DATE. Day total: $TOTAL_L / 3L"
+    fi
     ;;
   summary)
     DATE="${2:-$(yesterday_ist '%Y-%m-%d')}"
@@ -238,6 +265,46 @@ case "${1:-}" in
     DATE="${2:-$(now_ist '%Y-%m-%d')}"
     total_for_date "$DATE"
     ;;
+  week)
+    # 7-day review: prints a Telegram-friendly summary of the last 7 days
+    # ending today IST. Useful for weekly check-ins after backfill.
+    rebuild_brain_page
+    commit_brain
+    python3 - "$STATE_DIR" "$TARGET_ML" <<'PYEOF'
+import os, sys, datetime
+state_dir, target = sys.argv[1], int(sys.argv[2])
+today = datetime.date.today()
+days = [today - datetime.timedelta(days=i) for i in range(6, -1, -1)]
+def total(d):
+    f = os.path.join(state_dir, f"{d.isoformat()}.log")
+    if not os.path.exists(f): return 0
+    s = 0
+    with open(f) as fh:
+        for line in fh:
+            p = line.split()
+            if len(p) >= 4:
+                try: s += int(p[3])
+                except: pass
+    return s
+def fmt(ml):
+    if ml >= 1000 and ml % 1000 == 0: return f"{ml//1000}L"
+    if ml >= 1000: return f"{ml/1000:.2f}L"
+    return f"{ml}ml"
+print(f"💧 Water — last 7 days")
+print()
+hit = 0; total_ml = 0
+for d in days:
+    t = total(d)
+    total_ml += t
+    pct = round(100 * t / target)
+    mark = "✅" if t >= target else ("➖" if t == 0 else "❌")
+    if t >= target: hit += 1
+    label = d.strftime("%a %d %b")
+    print(f"{mark} {label}: {fmt(t)} ({pct}%)")
+print()
+print(f"Hit target: {hit}/7 days · total {fmt(total_ml)}")
+PYEOF
+    ;;
   rebuild-brain)
     # Manual rebuild (also useful for backfill / migration)
     rebuild_brain_page
@@ -245,7 +312,7 @@ case "${1:-}" in
     echo "Rebuilt $BRAIN_PAGE"
     ;;
   *)
-    echo "Usage: water-log.sh {log <amount>|summary [date]|total [date]|rebuild-brain}" >&2
+    echo "Usage: water-log.sh {log <amount> [YYYY-MM-DD] [HH:MM]|summary [date]|week|total [date]|rebuild-brain}" >&2
     exit 1
     ;;
 esac
