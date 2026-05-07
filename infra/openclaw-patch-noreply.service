@@ -1,0 +1,12 @@
+[Unit]
+Description=Re-apply NO_REPLY removal patch to openclaw dist (idempotent)
+Before=openclaw-gateway.service
+PartOf=openclaw-gateway.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /home/botuser/bin/patch-openclaw-noreply.py
+RemainAfterExit=true
+
+[Install]
+WantedBy=openclaw-gateway.service
