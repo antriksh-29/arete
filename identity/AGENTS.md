@@ -655,6 +655,7 @@ EOF
 | "I finished #1" / "done with X" / "mark task 2 done" | `exec ~/bin/daily-tasks.sh mark <index> yes` |
 | "push #2 to tomorrow" / "defer #3" | `exec ~/bin/daily-tasks.sh mark <index> tomorrow` |
 | "park #2 indefinitely" / "later" | `exec ~/bin/daily-tasks.sh mark <index> later` |
+| **Bulk review reply** — user sends a numbered list mapping each task to a status (typically in response to the 22:30 IST review prompt). Pattern: `1. <status>\n2. <status>\n...` where status is one of done / tomorrow / later / push indefinitely / skip / done. EXAMPLE: `1. tomorrow / 2. done / 3. tomorrow / 4. tomorrow / 5. push indefinitely / 6. done` | Pipe the entire reply to `exec ~/bin/daily-tasks.sh review` via heredoc: `~/bin/daily-tasks.sh review <<EOF\n<user reply verbatim>\nEOF`. The script parses each line (handles `1.` / `1)` / `1:` / `1 -` prefixes) and applies marks to today's state file. ALWAYS the entire bulk reply, never one mark at a time. |
 
 After the mutation succeeds, reply with a one-line ack (e.g.
 "✓ Stored 4 tasks for today" — pass through the script's output).
@@ -729,6 +730,97 @@ the script first, always.
 
 The stats math (yes / yes+no over each window) is correct; the bug
 that loses data is skipping the persist call. Don't skip it.
+
+### Water log (MUST-level routing)
+
+**Single source of truth: `~/bin/water-log.sh`. Brain page
+`habits/water-intake` is auto-rebuilt — DO NOT read it to answer water
+queries; always go through the script.**
+
+#### WRITE triggers (you MUST call the script BEFORE replying)
+
+| User intent | Command |
+|---|---|
+| "drank 750ml" / "had 500 ml of water" / "just had a glass (250ml)" / "logged 1L" / explicit volume + water/glass/bottle/water-bottle | `exec ~/bin/water-log.sh log "<amount>"` (amount: `750ml`, `0.5l`, `1L`, etc.) |
+| "had a coffee" / "had a tea" with NO ml stated | Don't auto-log. Reply: "How many ml? I'll log it." |
+| Past-date log: "drank 2L yesterday" / "logged 750ml on May 4" | `exec ~/bin/water-log.sh log "<amount>" <YYYY-MM-DD>` |
+
+After the script returns, reply with the script's one-line ack
+(e.g. "✓ +750ml — 2.25L today"). DO NOT also dump full history.
+
+#### READ triggers (canonical query path)
+
+| User intent | Command |
+|---|---|
+| "how much water today" / "water total" / "did I hit my water goal" | `exec ~/bin/water-log.sh total $(TZ=Asia/Kolkata date +%Y-%m-%d)` |
+| "water summary" / "water summary today" | `exec ~/bin/water-log.sh summary $(TZ=Asia/Kolkata date +%Y-%m-%d)` |
+| "water summary yesterday" / "yesterday's water" / "water on May 4" | `exec ~/bin/water-log.sh summary <YYYY-MM-DD>` |
+| "list today's water entries" | `exec ~/bin/water-log.sh entries $(TZ=Asia/Kolkata date +%Y-%m-%d)` |
+
+**NEVER regurgitate from chat history.** Re-fetch via the script every
+time. Logs change throughout the day; cached answers are stale.
+
+**Forbidden:** `gbrain get habits/water-intake` to answer "how much
+water today" — that page is a compiled view, not canonical state.
+
+### Reminders (MUST-level routing)
+
+**Single source of truth: `~/bin/schedule-reminder.sh`. The script
+registers a systemd-run user unit that pings via Telegram at fire time.**
+
+#### Pattern detectors — call the script before composing the reply
+
+| User intent | Command |
+|---|---|
+| "remind me to X at 5pm" / "ping me at 17:30 about Y" | `exec ~/bin/schedule-reminder.sh "@<YYYY-MM-DD HH:MM:SS>" "<X>"` (resolve to today's date IST if time is still in the future, else tomorrow) |
+| "remind me about X in 30 min" / "ping me in 1h to Y" | `exec ~/bin/schedule-reminder.sh "30m" "<X>"` (or `1h`, `2h`, `45m`) |
+| "remind me tomorrow morning to X" | `exec ~/bin/schedule-reminder.sh "@<tomorrow-date> 09:00:00" "<X>"` (default morning = 09:00 IST) |
+| "remind me on May 10 to file taxes" / "remind me next Monday about X" | `exec ~/bin/schedule-reminder.sh "@<YYYY-MM-DD> 09:00:00" "<X>"` (default 09:00 IST unless a time is given) |
+| "remind me tonight to X" | `exec ~/bin/schedule-reminder.sh "@<today-date> 21:00:00" "<X>"` (default evening = 21:00 IST) |
+
+Always resolve relative dates ("tomorrow", "next Monday", "tonight")
+to absolute YYYY-MM-DD against IST before invoking the script.
+
+After the script returns, reply with the script's confirmation
+(e.g. "✓ Reminder set for 2026-05-08 09:00 IST: file taxes").
+
+**Forbidden:**
+- ❌ Promising "I'll remind you" without calling the script. Reminders
+  that aren't scheduled don't fire.
+- ❌ Asking the user to confirm a relative time twice ("did you mean
+  in 30 min or at 30 past?"). If the wording is clear, schedule it.
+
+### Activity tracker (MUST-level routing)
+
+**Single source of truth: `~/bin/activity-tracker.sh`. Strava sync runs
+nightly via cron. Manual entries go via `manual-log` and persist
+across sync wipes (separate file).**
+
+#### WRITE triggers (manual-log for non-Strava activities)
+
+| User intent | Command |
+|---|---|
+| "did 30 min yoga today" / "logged a 45 min HIIT session" / "played squash for 1 hour" / explicit activity + duration NOT covered by Strava (yoga, squash, swim, hike, walk, padel, pickleball, cycling indoor, manual gym) | `exec ~/bin/activity-tracker.sh manual-log <category> <duration_min> "<title>"` where category ∈ {gym, running, tennis, others} |
+| Past-date: "did yoga yesterday for 40 min" / "30 min run on May 4" | `exec ~/bin/activity-tracker.sh manual-log <category> <duration_min> "<title>" <YYYY-MM-DD>` |
+
+Mapping intent → category:
+- yoga, pilates, gym, weights, strength, HIIT → `gym`
+- run, jog, marathon → `running`
+- tennis, squash, padel, pickleball, badminton → `tennis`
+- swim, hike, walk, cycling, anything else → `others`
+
+#### READ triggers
+
+| User intent | Command |
+|---|---|
+| "activity stats" / "how many sessions this year" / "am I hitting my activity target" | `exec ~/bin/activity-tracker.sh stats` |
+
+**Forbidden:**
+- ❌ Treating a manually-reported activity as conversational. If the
+  user says "did 30 min yoga today", persist it. Otherwise it's lost
+  from stats.
+- ❌ Adding to Strava's `ACT_FILE` directly — the nightly sync wipes
+  it. Always use `manual-log` (writes to `manual.tsv` which survives).
 
 ---
 

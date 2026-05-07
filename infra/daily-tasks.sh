@@ -182,11 +182,72 @@ cmd_remove() {
   fi
 }
 
+# Bulk review: parse a multi-line "1. status\n2. status\n..." input from
+# stdin OR args and apply each mark to the most recent state file (defaults
+# to today, or use --date YYYY-MM-DD). Used for the 22:30 IST review reply.
+cmd_review() {
+  local target_date
+  if [ "${1:-}" = "--date" ] && [ -n "${2:-}" ]; then
+    target_date="$2"
+    shift 2
+  else
+    target_date=$(today)
+  fi
+  local f="$STATE_DIR/$target_date.json"
+
+  if [ ! -f "$f" ]; then
+    echo "No tasks for $target_date." >&2
+    return 1
+  fi
+
+  local input
+  if [ "$#" -gt 0 ]; then
+    input="$*"
+  else
+    input=$(cat)
+  fi
+
+  local count=0
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    # Match patterns like "1. tomorrow" / "2: done" / "3) later" / "4 - skip"
+    local idx status
+    idx=$(echo "$line" | grep -oE '^[[:space:]]*[0-9]+' | grep -oE '[0-9]+')
+    [ -z "$idx" ] && continue
+    status=$(echo "$line" | sed -E 's/^[[:space:]]*[0-9]+[.):\-[:space:]]*//' | tr '[:upper:]' '[:lower:]' | xargs)
+    case "$status" in
+      yes|y|done|completed|complete) status="yes" ;;
+      tomorrow|push*tomorrow|defer|push) status="tomorrow" ;;
+      later|push*later|push*indefinite*|park|backlog|indefinite) status="later" ;;
+      no|n|skip*|not\ done|delete|remove|drop) status="delete" ;;
+      *) echo "  skipping line (unrecognized status): $line" >&2; continue ;;
+    esac
+    local task
+    task=$(jq -r ".tasks[$((idx - 1))] // empty" "$f")
+    if [ -z "$task" ]; then
+      echo "  skipping #$idx (no task at that index)" >&2
+      continue
+    fi
+    jq --arg task "$task" --arg status "$status" \
+      '.statuses[$task] = $status' \
+      "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    count=$((count + 1))
+    echo "  ✓ #$idx → $status: $task"
+  done <<< "$input"
+
+  rebuild_brain
+  echo "✓ Applied $count status updates to $target_date"
+}
+
 cmd_mark() {
-  local idx="${1:?Usage: mark <index> <status>}"
-  local status="${2:?Usage: mark <index> <yes|tomorrow|later|delete>}"
   local d
   d=$(today)
+  if [ "${1:-}" = "--date" ] && [ -n "${2:-}" ]; then
+    d="$2"
+    shift 2
+  fi
+  local idx="${1:?Usage: mark [--date YYYY-MM-DD] <index> <status>}"
+  local status="${2:?Usage: mark [--date YYYY-MM-DD] <index> <yes|tomorrow|later|delete>}"
   local f="$STATE_DIR/$d.json"
 
   if [ ! -f "$f" ]; then
@@ -410,7 +471,12 @@ case "${1:-help}" in
     cmd_remove "$@"
     ;;
   mark)
-    cmd_mark "$2" "$3"
+    shift
+    cmd_mark "$@"
+    ;;
+  review)
+    shift
+    cmd_review "$@"
     ;;
   show|today|list)
     cmd_show "${2:-today}"
