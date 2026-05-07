@@ -210,9 +210,9 @@ commit_brain() {
   fi
 }
 
-send_summary() {
+build_summary_msg() {
   local DATE="$1"
-  local DISPLAY_DATE TOTAL_ML ENTRIES TOTAL_L SHORT_ML SHORT_L STATUS MSG
+  local DISPLAY_DATE TOTAL_ML ENTRIES TOTAL_L SHORT_ML SHORT_L STATUS
   DISPLAY_DATE=$(TZ=Asia/Kolkata date -d "$DATE" '+%a %d %b')
   TOTAL_ML=$(total_for_date "$DATE")
   ENTRIES=$(entries_for_date "$DATE")
@@ -225,20 +225,72 @@ send_summary() {
     STATUS="❌ Target not met (${SHORT_L} short)"
   fi
   if [ -z "$ENTRIES" ]; then
-    MSG="💧 Water log — $DISPLAY_DATE
-
-No entries recorded.
-
-Target: 3L — ❌ Not met"
+    printf '💧 Water log — %s\n\nNo entries recorded.\n\nTarget: 3L — ❌ Not met\n' "$DISPLAY_DATE"
   else
-    MSG="💧 Water log — $DISPLAY_DATE
-
-Total: $TOTAL_L / 3L target
-$STATUS
-
-Entries: $ENTRIES"
+    printf '💧 Water log — %s\n\nTotal: %s / 3L target\n%s\n\nEntries: %s\n' "$DISPLAY_DATE" "$TOTAL_L" "$STATUS" "$ENTRIES"
   fi
+}
+
+# Pure stdout version — agent reads and decides format. NO Telegram side-effect.
+print_summary() { build_summary_msg "$1"; }
+
+# Cron-only path: composes verbose msg and sends to Telegram. Used by
+# water-summary.timer at 6am IST. Agent flows MUST NOT call this — they
+# use `summary` (stdout) + `range` (compact list) and compose their own reply.
+notify_summary() {
+  local DATE="$1"
+  local MSG
+  MSG=$(build_summary_msg "$DATE")
   /home/botuser/bin/send-telegram.sh "$MSG"
+}
+
+# Compact one-line-per-day list for any [from] [to] inclusive range.
+# Same shape as `week`. Stdout only.
+range_summary() {
+  local FROM="$1" TO="$2"
+  if ! [[ "$FROM" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || ! [[ "$TO" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    echo "Usage: water-log.sh range <YYYY-MM-DD> <YYYY-MM-DD>" >&2
+    return 1
+  fi
+  python3 - "$STATE_DIR" "$TARGET_ML" "$FROM" "$TO" <<'PYEOF'
+import os, sys, datetime
+state_dir, target = sys.argv[1], int(sys.argv[2])
+d_from = datetime.date.fromisoformat(sys.argv[3])
+d_to = datetime.date.fromisoformat(sys.argv[4])
+if d_to < d_from:
+    print("range end before start", file=sys.stderr); sys.exit(1)
+days = []
+d = d_from
+while d <= d_to:
+    days.append(d); d += datetime.timedelta(days=1)
+def total(d):
+    f = os.path.join(state_dir, f"{d.isoformat()}.log")
+    if not os.path.exists(f): return 0
+    s = 0
+    with open(f) as fh:
+        for line in fh:
+            p = line.split()
+            if len(p) >= 4:
+                try: s += int(p[3])
+                except: pass
+    return s
+def fmt(ml):
+    if ml >= 1000 and ml % 1000 == 0: return f"{ml//1000}L"
+    if ml >= 1000: return f"{ml/1000:.2f}L"
+    return f"{ml}ml"
+print(f"💧 Water — {d_from.strftime('%d %b')} → {d_to.strftime('%d %b')}")
+print()
+hit = 0; total_ml = 0
+for d in days:
+    t = total(d)
+    total_ml += t
+    pct = round(100 * t / target)
+    mark = "✅" if t >= target else ("➖" if t == 0 else "❌")
+    if t >= target: hit += 1
+    print(f"{mark} {d.strftime('%a %d %b')}: {fmt(t)} ({pct}%)")
+print()
+print(f"Hit target: {hit}/{len(days)} days · total {fmt(total_ml)}")
+PYEOF
 }
 
 case "${1:-}" in
@@ -256,10 +308,24 @@ case "${1:-}" in
     fi
     ;;
   summary)
+    # Stdout only. Agent reads this and composes its own Telegram reply.
     DATE="${2:-$(yesterday_ist '%Y-%m-%d')}"
     rebuild_brain_page
     commit_brain
-    send_summary "$DATE"
+    print_summary "$DATE"
+    ;;
+  notify)
+    # Cron-only: composes + sends verbose Telegram message. DO NOT call
+    # from agent flows.
+    DATE="${2:-$(yesterday_ist '%Y-%m-%d')}"
+    rebuild_brain_page
+    commit_brain
+    notify_summary "$DATE"
+    ;;
+  range)
+    rebuild_brain_page
+    commit_brain
+    range_summary "${2:-}" "${3:-}"
     ;;
   total)
     DATE="${2:-$(now_ist '%Y-%m-%d')}"
@@ -312,7 +378,7 @@ PYEOF
     echo "Rebuilt $BRAIN_PAGE"
     ;;
   *)
-    echo "Usage: water-log.sh {log <amount> [YYYY-MM-DD] [HH:MM]|summary [date]|week|total [date]|rebuild-brain}" >&2
+    echo "Usage: water-log.sh {log <amount> [YYYY-MM-DD] [HH:MM]|summary [date]|range <from> <to>|week|notify [date]|total [date]|rebuild-brain}" >&2
     exit 1
     ;;
 esac
