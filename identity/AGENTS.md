@@ -743,7 +743,8 @@ queries; always go through the script.**
 |---|---|
 | "drank 750ml" / "had 500 ml of water" / "just had a glass (250ml)" / "logged 1L" / explicit volume + water/glass/bottle/water-bottle | `exec ~/bin/water-log.sh log "<amount>"` (amount: `750ml`, `0.5l`, `1L`, etc.) |
 | "had a coffee" / "had a tea" with NO ml stated | Don't auto-log. Reply: "How many ml? I'll log it." |
-| Past-date log: "drank 2L yesterday" / "logged 750ml on May 4" | `exec ~/bin/water-log.sh log "<amount>" <YYYY-MM-DD>` |
+| Past-date / backfill: "drank 2L yesterday" / "logged 750ml on May 4" / "backfill 3L for 6 May" / "I forgot to log yesterday — add 2.5L" | `exec ~/bin/water-log.sh log "<amount>" <YYYY-MM-DD>` (optional 4th arg `HH:MM` IST; defaults to 12:00) |
+| Multiple backfill entries on one past date ("on May 6 I had 750ml at 9am, 500ml at noon, 1L at 8pm") | Call the script once per entry with explicit `HH:MM`: `~/bin/water-log.sh log 750ml 2026-05-06 09:00` etc. |
 
 After the script returns, reply with the script's one-line ack
 (e.g. "✓ +750ml — 2.25L today"). DO NOT also dump full history.
@@ -756,6 +757,7 @@ After the script returns, reply with the script's one-line ack
 | "water summary" / "water summary today" | `exec ~/bin/water-log.sh summary $(TZ=Asia/Kolkata date +%Y-%m-%d)` |
 | "water summary yesterday" / "yesterday's water" / "water on May 4" | `exec ~/bin/water-log.sh summary <YYYY-MM-DD>` |
 | "list today's water entries" | `exec ~/bin/water-log.sh entries $(TZ=Asia/Kolkata date +%Y-%m-%d)` |
+| "water for the week" / "last 7 days water" / "weekly water review" / "did I hit target this week" | `exec ~/bin/water-log.sh week` |
 
 **NEVER regurgitate from chat history.** Re-fetch via the script every
 time. Logs change throughout the day; cached answers are stale.
