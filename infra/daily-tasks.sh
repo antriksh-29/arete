@@ -240,10 +240,14 @@ cmd_review() {
 }
 
 cmd_mark() {
-  local idx="${1:?Usage: mark <index> <status>}"
-  local status="${2:?Usage: mark <index> <yes|tomorrow|later|delete>}"
   local d
   d=$(today)
+  if [ "${1:-}" = "--date" ] && [ -n "${2:-}" ]; then
+    d="$2"
+    shift 2
+  fi
+  local idx="${1:?Usage: mark [--date YYYY-MM-DD] <index> <status>}"
+  local status="${2:?Usage: mark [--date YYYY-MM-DD] <index> <yes|tomorrow|later|delete>}"
   local f="$STATE_DIR/$d.json"
 
   if [ ! -f "$f" ]; then
@@ -467,7 +471,8 @@ case "${1:-help}" in
     cmd_remove "$@"
     ;;
   mark)
-    cmd_mark "$2" "$3"
+    shift
+    cmd_mark "$@"
     ;;
   review)
     shift
