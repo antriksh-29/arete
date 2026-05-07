@@ -696,6 +696,40 @@ costs nothing; serving stale data costs trust.
   → add). Default to `set` only when the user explicitly frames it
   as a complete list.
 
+### Reading check-in (MUST-level routing)
+
+The reading-checkin cron fires at 10am IST daily ("📚 Reading check-in
+— Did you read a book yesterday..."). When the user replies and your
+most recent assistant message was that check-in, you MUST persist the
+reply BEFORE composing your acknowledgement.
+
+| User reply | Command |
+|---|---|
+| "yes" / "y" / "yep" / "yeah" / "done" | `exec ~/bin/reading-checkin.sh log yes` |
+| "no" / "n" / "nope" / "skipped" / "didnt" | `exec ~/bin/reading-checkin.sh log no` |
+| Specific date: "yes for Sunday" / "no for 5 may" | `exec ~/bin/reading-checkin.sh log yes 2026-05-04` (resolve the date) |
+
+The script writes to `~/.brain/habits/book-reading.md` log table and
+recomputes stats. Default date is yesterday IST.
+
+After the script returns, reply with a short ack ("✓ Logged. Reading
+streak: <stats from script output>"). DO NOT just say "noted" — call
+the script first, always.
+
+| Stats query | Command |
+|---|---|
+| "what's my reading streak" / "reading stats" / "how am I doing on reading" | `exec ~/bin/reading-checkin.sh stats` |
+
+**Forbidden:**
+- ❌ Treating yes/no replies after a reading check-in as conversational
+  only. They are write events. Persist via the script every time.
+- ❌ Computing stats from memory or estimating. Always run
+  `reading-checkin.sh stats` for fresh numbers.
+- ❌ Re-running the check-in ping (cron handles that).
+
+The stats math (yes / yes+no over each window) is correct; the bug
+that loses data is skipping the persist call. Don't skip it.
+
 ---
 
 <!-- gbrain:skillpack:begin -->
