@@ -226,7 +226,11 @@ manual-log call.
 EOF
 
   if [ -x "$GBRAIN" ]; then
-    "$GBRAIN" put "$BRAIN_SLUG" < "$BRAIN_PAGE" >/dev/null 2>&1 || true
+    # Don't swallow errors — if gbrain put fails, the brief reads stale
+    # DB data (May 8 incident). Surface failures to the journal.
+    if ! "$GBRAIN" put "$BRAIN_SLUG" < "$BRAIN_PAGE" >/tmp/gbrain-put.log 2>&1; then
+      echo "[$(date -Iseconds)] gbrain put failed: $(cat /tmp/gbrain-put.log)" >&2
+    fi
   fi
 
   if [ -d "$BRAIN_DIR/.git" ]; then
