@@ -1,0 +1,73 @@
+# Eval suite for skill-drift.
+skill: skill-drift
+script: infra/skill-drift-report.sh
+version: 1
+
+triggers:
+  - id: drift-001
+    utterance: "skill drift report"
+    expect_skill: skill-drift
+  - id: drift-002
+    utterance: "which skills are dormant"
+    expect_skill: skill-drift
+  - id: drift-003
+    utterance: "skill health"
+    expect_skill: skill-drift
+  - id: drift-004
+    utterance: "skill catalog status"
+    expect_skill: skill-drift
+  - id: drift-005
+    utterance: "what skills are broken"
+    expect_skill: skill-drift
+  - id: drift-006
+    utterance: "skill activity last week"
+    expect_skill: skill-drift
+  - id: drift-007
+    utterance: "are any skills failing"
+    expect_skill: skill-drift
+  - id: drift-008
+    utterance: "skill drift last 30 days"
+    expect_skill: skill-drift
+  - id: drift-009
+    utterance: "any dormant skills i should retire"
+    expect_skill: skill-drift
+  - id: drift-010
+    utterance: "skill catalog health check"
+    expect_skill: skill-drift
+
+  # ── negative cases ──
+  - id: drift-neg-001
+    utterance: "audit daily-tasks"
+    expect_skill: skillify
+    notes: "single-skill audit → skillify, not skill-drift"
+  - id: drift-neg-002
+    utterance: "what did I burn today"
+    expect_skill: usage-status
+    notes: "LLM cost → usage-status"
+  - id: drift-neg-003
+    utterance: "share today's task list"
+    expect_skill: daily-tasks
+  - id: drift-neg-004
+    utterance: "drank 750ml"
+    expect_skill: water-log
+
+# Output evals — confirm the script produces the right shape.
+outputs:
+  - id: drift-out-smoke
+    cmd: "bash infra/skill-drift-report.sh --smoke"
+    expect_json_keys: [ok, user_message]
+    expect_ok: true
+
+  - id: drift-out-json-shape
+    cmd: "bash infra/skill-drift-report.sh --days 7"
+    expect_json_keys: [ok, skill, window_days, since, totals, rows, user_message]
+    expect_ok: true
+    judge_rubric: |
+      Output must be valid JSON with rows[] including every skill in
+      skills/. Each row must have skill, journal_hits, state_freshness,
+      smoke, status fields. window_days and since must reflect the
+      requested window.
+
+smoke:
+  cmd: "bash infra/skill-drift-report.sh --smoke"
+  expect_exit: 0

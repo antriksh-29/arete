@@ -1,7 +1,7 @@
-# Eval suite for usage-status (PLACEHOLDER — version 0).
+# Eval suite for usage-status.
 skill: usage-status
 script: infra/usage-status.py
-version: 0
+version: 1
 
 triggers:
   - id: usg-001
@@ -56,13 +56,16 @@ outputs:
     expect_json_keys: [ok, user_message]
     expect_ok: true
 
-  - id: usg-out-placeholder
+  # Data-driven check — locally returns ok:false (no openclaw, no
+  # cache) and on VPS returns ok:true. We assert shape only, not ok.
+  - id: usg-out-shape
     cmd: "python3 infra/usage-status.py"
-    expect_json_keys: [ok, scope, user_message]
-    expect_ok: true
+    expect_json_keys: [ok, skill, source, scope, user_message]
     judge_rubric: |
-      Placeholder envelope must be honest about the limitation.
-      Hard fails: fabricated dollar amounts, fake token counts.
+      Output must always have ok / skill / source / scope /
+      user_message. When ok=false (data sources unreachable), source
+      must be null and user_message must point the user at openclaw
+      doctor — never fabricate numbers.
 
 smoke:
   cmd: "python3 infra/usage-status.py --smoke"
