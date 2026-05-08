@@ -72,6 +72,12 @@ def main():
     if len(sys.argv) < 2:
         sys.exit("Usage: image-ocr.py <image-path-or-url> [question]")
     src = sys.argv[1]
+    if src == "--smoke":
+        # Cold-boot callability check used by eval/run-skill-eval.mjs.
+        # No image, no LLM, no network — just prove the script runs end
+        # to end and emits a well-formed envelope on stdout.
+        print(json.dumps({"ok": True, "provider": "smoke", "user_message": "image-ocr smoke ok"}))
+        return
     question = " ".join(sys.argv[2:]).strip()
 
     image_url, image_base64 = load_image(src)

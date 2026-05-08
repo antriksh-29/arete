@@ -1,15 +1,32 @@
 ---
 name: ingest-x-thread
-description: Ingest an X (Twitter) thread URL into the brain as an analyzed media page with the full bundle (thread, quotes, linked articles, notable replies) and cross-references.
+version: 1
+script: infra/ingest-x-thread.py
+mutating: true
+cron: null
+eval: skills/ingest-x-thread/eval.yaml
+last_audited: 2026-05-08
+description: |
+  X (Twitter) thread ingestion. The user shares a tweet URL and wants the
+  full bundle (canonical thread, quoted/referenced tweets, notable replies,
+  linked articles) absorbed into the brain as a media/social page.
+  WHEN: twitter.com/* or x.com/* URL + intent words like "ingest", "absorb",
+  "read this", "remember this", "worth reading", "take notes".
+  NOT WHEN: User wants the thread queued for later (→ reading-list shallow),
+  or wants to draft a reply/quote-tweet (→ x-draft), or it's a non-X URL
+  (→ ingest-pdf for PDFs, reading-list for general web).
 trigger: |
   twitter.com/* or x.com/* URL plus any of:
   - "ingest", "absorb"
   - "read this", "remember this"
   - "what does this say"
   - "worth reading", "take notes"
-mutating: true
 writes_to:
   - media/social/
+  - people/
+  - companies/
+  - concepts/
+brain_dirs_read:
   - people/
   - companies/
   - concepts/

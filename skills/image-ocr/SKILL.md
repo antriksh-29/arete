@@ -1,6 +1,23 @@
 ---
 name: image-ocr
-description: Read text in images, extract data from screenshots, answer questions about images via gpt-5.4-mini vision (fallback gpt-5.4 vision).
+version: 1
+script: infra/image-ocr.py
+mutating: false
+cron: null
+eval: skills/image-ocr/eval.yaml
+last_audited: 2026-05-08
+description: |
+  Vision-driven extraction skill. The user shares an image and either asks
+  what it says, asks to extract structured data from it, or asks a direct
+  question grounded in the image content.
+  WHEN: Telegram image attachment + intent words like "what does this say",
+  "read this", "OCR this", "extract the text", "translate this", or any
+  question whose answer is in the image ("what's the price", "what time does
+  it open"). Also fires when only an image is sent with no caption — assume
+  default extraction mode.
+  NOT WHEN: User wants to save the image for later (→ reading-list), absorb
+  a screenshotted PDF page (→ ingest-pdf if it's actually a PDF), or analyze
+  a tweet screenshot they could just send the URL of (→ ingest-x-thread).
 trigger: |
   Image attachment on Telegram + any of:
   - "what does this say"
@@ -9,7 +26,8 @@ trigger: |
   - "what's in this picture/image/screenshot"
   - "translate this"
   - Or a question about the image ("what's the price", "what time does it open")
-mutating: false
+writes_to: []
+brain_dirs_read: []
 ---
 
 # /image-ocr

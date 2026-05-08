@@ -262,6 +262,10 @@ verify() {
 }
 
 case "${1:-help}" in
+  --smoke)
+    echo '{"ok":true,"skill":"activity-tracker","user_message":"activity-tracker smoke ok"}'
+    exit 0
+    ;;
   sync) sync ;;
   stats) stats ;;
   manual-log) shift; manual_log "$@" ;;

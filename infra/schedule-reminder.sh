@@ -16,6 +16,13 @@
 set -e
 
 WHEN="$1"
+
+if [ "$WHEN" = "--smoke" ]; then
+  # Cold-boot callability check — no systemd unit registered.
+  echo '{"ok":true,"skill":"reminder","user_message":"reminder smoke ok"}'
+  exit 0
+fi
+
 shift
 MSG="$*"
 

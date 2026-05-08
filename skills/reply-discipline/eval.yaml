@@ -1,0 +1,109 @@
+# Eval suite for reply-discipline.
+#
+# This is a constraint skill — no resolver-based trigger eval makes
+# sense (it's not user-fired). Instead the eval is a list of input
+# replies and the expected verdict from the script.
+
+skill: reply-discipline
+script: infra/reply-discipline.py
+version: 1
+
+# triggers: omitted — this skill is not user-fired. The check-resolvable
+# audit and run-skill-eval harness skip trigger routing for skills with
+# constraint_skill: true (Wave 4 wiring).
+
+# Output evals: feed candidate replies to stdin, assert the verdict.
+outputs:
+  # ── pass cases ──
+  - id: rd-pass-001
+    cmd: 'echo "✓ Stored 4 tasks for today. Anything else?" | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reply]
+    expect_ok: true
+    judge_rubric: "Substantive replies pass through unchanged."
+
+  - id: rd-pass-002
+    cmd: 'echo "✓ Logged 750ml — 2.25L today." | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reply]
+    expect_ok: true
+
+  - id: rd-pass-003
+    cmd: 'echo "Stored under media/social/x-garrytan-2026-05-08." | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reply]
+    expect_ok: true
+
+  - id: rd-pass-004
+    cmd: 'echo "✓ Done with task #2. Anything else?" | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reply]
+    expect_ok: true
+    judge_rubric: "The word 'done' inside a longer reply must pass — only bare single-word acks fail."
+
+  # ── reject cases ──
+  - id: rd-rej-no-reply
+    cmd: 'echo "NO_REPLY" | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reason, suggestion]
+    expect_ok: false
+
+  - id: rd-rej-no-reply-mid
+    cmd: 'echo "Got it. NO_REPLY now." | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reason, suggestion]
+    expect_ok: false
+    judge_rubric: "NO_REPLY anywhere in the reply is a fail, not just at start."
+
+  - id: rd-rej-no-extra
+    cmd: 'echo "No extra message needed from me." | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reason, suggestion]
+    expect_ok: false
+
+  - id: rd-rej-nothing-more
+    cmd: 'echo "Nothing more from me." | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reason, suggestion]
+    expect_ok: false
+
+  - id: rd-rej-no-reply-needed
+    cmd: 'echo "No reply needed." | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reason, suggestion]
+    expect_ok: false
+
+  - id: rd-rej-nothing-to-say
+    cmd: 'echo "I have nothing to say." | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reason, suggestion]
+    expect_ok: false
+
+  - id: rd-rej-nothing-to-add
+    cmd: 'echo "I have nothing more to add." | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reason, suggestion]
+    expect_ok: false
+
+  - id: rd-rej-subagent-handled
+    cmd: 'echo "The sub-agent handled it." | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reason, suggestion]
+    expect_ok: false
+
+  - id: rd-rej-empty
+    cmd: 'printf "" | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reason, suggestion]
+    expect_ok: false
+
+  - id: rd-rej-whitespace
+    cmd: 'printf "   \n  \n" | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reason, suggestion]
+    expect_ok: false
+
+  - id: rd-rej-bare-noted
+    cmd: 'echo "Noted." | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reason, suggestion]
+    expect_ok: false
+
+  - id: rd-rej-bare-captured
+    cmd: 'echo "Captured." | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reason, suggestion]
+    expect_ok: false
+
+  - id: rd-rej-bare-ok
+    cmd: 'echo "ok" | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reason, suggestion]
+    expect_ok: false
+
+smoke:
+  cmd: "python3 infra/reply-discipline.py --smoke"
+  expect_exit: 0

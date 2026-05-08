@@ -188,6 +188,11 @@ commit_brain() {
 }
 
 case "${1:-}" in
+  --smoke)
+    # Cold-boot callability check — no state writes, no network.
+    echo '{"ok":true,"skill":"reading-checkin","user_message":"reading-checkin smoke ok"}'
+    exit 0
+    ;;
   ping)
     MSG=$(format_ping)
     /home/botuser/bin/send-telegram.sh "$MSG"

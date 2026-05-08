@@ -1,15 +1,33 @@
 ---
 name: ingest-pdf
-description: Ingest a PDF (URL or Telegram attachment) into the brain as an analyzed source page with cross-references to mentioned entities.
+version: 1
+script: infra/ingest-pdf.py
+mutating: true
+cron: null
+eval: skills/ingest-pdf/eval.yaml
+last_audited: 2026-05-08
+description: |
+  PDF ingestion. The user shares a PDF (URL or Telegram attachment) and
+  wants it absorbed into the brain as a durable analyzed source page,
+  cross-linked to every entity it mentions.
+  WHEN: PDF URL (ending .pdf) or PDF attachment + intent words like
+  "ingest", "absorb", "read this", "remember this", "worth reading",
+  "take notes". Also fires for "what does this say" on a PDF.
+  NOT WHEN: User wants the PDF queued for later reading without ingesting
+  yet (→ reading-list shallow), or it's an image not a PDF (→ image-ocr),
+  or it's an X thread (→ ingest-x-thread).
 trigger: |
   PDF URL (ending .pdf) or PDF Telegram attachment, plus any of:
   - "ingest", "absorb"
   - "read this", "remember this"
   - "what does this say"
   - "worth reading", "take notes"
-mutating: true
 writes_to:
   - sources/
+  - people/
+  - companies/
+  - concepts/
+brain_dirs_read:
   - people/
   - companies/
   - concepts/

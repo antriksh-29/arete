@@ -1,6 +1,22 @@
 ---
 name: reading-list
-description: Manage the reading list — add URLs (shallow or deep ingest), show what's queued, mark as read, remove. Single brain page is canonical.
+version: 1
+script: infra/reading-list.py
+mutating: true
+cron: null
+eval: skills/reading-list/eval.yaml
+last_audited: 2026-05-08
+description: |
+  Reading-list manager. The user wants to queue a URL for later, see what's
+  queued, mark something as read, or drop something. Default is shallow
+  (just title + URL row); explicit "absorb / deep" upgrades to full ingest.
+  WHEN: Any of "save this", "save for later", "read later", "add to reading
+  list", "queue this", "show reading list", "what's queued", "I read X",
+  "mark X as read", "finished X", "remove X", "drop X".
+  NOT WHEN: User explicitly wants the content absorbed into the brain right
+  now ("ingest", "absorb", "remember this") — that's ingest-pdf or
+  ingest-x-thread directly. NOT WHEN they want to extract text from an image
+  (→ image-ocr).
 trigger: |
   - "save this", "save for later", "read later"
   - "add to reading list", "queue this", "queue for reading"
@@ -8,8 +24,11 @@ trigger: |
   - "show reading list", "what's on my reading list", "reading queue"
   - "I read X" / "mark X as read" / "I finished X"
   - "remove X from reading list" / "drop X"
-mutating: true
 writes_to:
+  - lists/to-read
+  - sources/
+  - media/social/
+brain_dirs_read:
   - lists/to-read
 ---
 

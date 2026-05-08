@@ -1,0 +1,82 @@
+# Eval suite for reading-checkin.
+skill: reading-checkin
+script: infra/reading-checkin.sh
+version: 1
+
+triggers:
+  # ── yes/no replies after the 10am check-in ──
+  - id: rcheck-001
+    utterance: "yes"
+    expect_skill: reading-checkin
+    notes: "after 10am check-in"
+  - id: rcheck-002
+    utterance: "yep"
+    expect_skill: reading-checkin
+  - id: rcheck-003
+    utterance: "yeah"
+    expect_skill: reading-checkin
+  - id: rcheck-005
+    utterance: "no"
+    expect_skill: reading-checkin
+  - id: rcheck-006
+    utterance: "nope"
+    expect_skill: reading-checkin
+  - id: rcheck-007
+    utterance: "skipped"
+    expect_skill: reading-checkin
+  - id: rcheck-008
+    utterance: "didn't"
+    expect_skill: reading-checkin
+
+  # ── specific past date ──
+  - id: rcheck-009
+    utterance: "yes for Sunday"
+    expect_skill: reading-checkin
+  - id: rcheck-010
+    utterance: "no for 5 may"
+    expect_skill: reading-checkin
+  - id: rcheck-011
+    utterance: "backfill reading for May 4"
+    expect_skill: reading-checkin
+
+  # ── stats / verify ──
+  - id: rcheck-012
+    utterance: "what's my reading streak"
+    expect_skill: reading-checkin
+  - id: rcheck-013
+    utterance: "reading stats"
+    expect_skill: reading-checkin
+  - id: rcheck-014
+    utterance: "how am I doing on reading"
+    expect_skill: reading-checkin
+  - id: rcheck-015
+    utterance: "are all reading days logged"
+    expect_skill: reading-checkin
+  - id: rcheck-016
+    utterance: "any gaps in reading log"
+    expect_skill: reading-checkin
+  - id: rcheck-017
+    utterance: "did anything get missed"
+    expect_skill: reading-checkin
+    notes: "implied scope: reading log gaps"
+
+  # ── negative cases ──
+  - id: rcheck-neg-001
+    utterance: "I finished Sapiens"
+    expect_skill: reading-list
+    notes: "marking a queued item as read — that's reading-list, not the daily yes/no"
+  - id: rcheck-neg-002
+    utterance: "save this article for later"
+    expect_skill: reading-list
+  - id: rcheck-neg-003
+    utterance: "yes"
+    has_image: true
+    expect_skill: image-ocr
+    notes: "yes alone with an image is OCR confirm, not reading-checkin"
+  - id: rcheck-neg-004
+    utterance: "drank 750ml"
+    expect_skill: water-log
+
+smoke:
+  cmd: "bash infra/reading-checkin.sh --smoke"
+  expect_exit: 0
