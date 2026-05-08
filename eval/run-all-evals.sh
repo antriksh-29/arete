@@ -4,17 +4,27 @@
 # called manually before landing changes.
 #
 # Usage: bash eval/run-all-evals.sh
-# Optional: --no-llm   (skip steps that need OPENAI_API_KEY)
+# Optional flags:
+#   --no-llm   skip every step that needs OPENAI_API_KEY (cheap pre-push)
+#   --judge    enable LLM-as-judge scoring on output evals (gpt-5.4-nano).
+#              Implies --llm. Use for the deeper weekly verification.
 
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
 NO_LLM=0
+WITH_JUDGE=0
 for arg in "$@"; do
   case "$arg" in
     --no-llm) NO_LLM=1 ;;
+    --judge) WITH_JUDGE=1 ;;
   esac
 done
+
+if [ "$NO_LLM" -eq 1 ] && [ "$WITH_JUDGE" -eq 1 ]; then
+  echo "error: --no-llm and --judge are mutually exclusive" >&2
+  exit 2
+fi
 
 red=$'\033[31m'; green=$'\033[32m'; yellow=$'\033[33m'; rst=$'\033[0m'
 fails=0
@@ -39,11 +49,17 @@ step "check-resolvable" node infra/check-resolvable.mjs
 # ── 2. dry-audit: no exact trigger collisions ──
 step "dry-audit" node infra/dry-audit.mjs
 
-# ── 3. per-skill evals (smoke + trigger routing) ──
+# ── 3. per-skill evals (smoke + structural; --judge adds LLM scoring) ──
+JUDGE_FLAG=""
+[ "$WITH_JUDGE" -eq 1 ] && JUDGE_FLAG="--judge"
 for d in skills/*/; do
   [ -f "${d}SKILL.md" ] || continue
   [ -f "${d}eval.yaml" ] || { echo "(skip ${d} — no eval.yaml)"; continue; }
-  step "skill-eval: $(basename "$d")" node eval/run-skill-eval.mjs "$d"
+  if [ -n "$JUDGE_FLAG" ]; then
+    step "skill-eval: $(basename "$d")" node eval/run-skill-eval.mjs "$d" "$JUDGE_FLAG"
+  else
+    step "skill-eval: $(basename "$d")" node eval/run-skill-eval.mjs "$d"
+  fi
 done
 
 # ── 4. retrieval eval (gbrain-backed; needs network + key) ──
