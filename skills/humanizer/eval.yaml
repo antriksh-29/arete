@@ -1,0 +1,108 @@
+# Eval suite for humanizer.
+skill: humanizer
+script: infra/humanizer.py
+version: 1
+
+triggers:
+  # ── direct invocation ──
+  - id: hum-001
+    utterance: "humanize this"
+    expect_skill: humanizer
+  - id: hum-002
+    utterance: "de-AI this paragraph"
+    expect_skill: humanizer
+  - id: hum-003
+    utterance: "strip the AI tells"
+    expect_skill: humanizer
+  - id: hum-004
+    utterance: "rewrite without AI-isms"
+    expect_skill: humanizer
+  - id: hum-005
+    utterance: "make this sound less like an AI"
+    expect_skill: humanizer
+  - id: hum-006
+    utterance: "less LLM-y please"
+    expect_skill: humanizer
+  - id: hum-007
+    utterance: "remove the em-dashes"
+    expect_skill: humanizer
+  - id: hum-008
+    utterance: "strip 'delve' and 'tapestry' from this"
+    expect_skill: humanizer
+
+  # ── ambiguous-but-clear ──
+  - id: hum-009
+    utterance: "this reads too AI — clean it up"
+    expect_skill: humanizer
+  - id: hum-010
+    utterance: "remove the AI flavor"
+    expect_skill: humanizer
+
+  # ── negative cases ──
+  - id: hum-neg-001
+    utterance: "draft a tweet about thin-harness fat-skills"
+    expect_skill: x-draft
+    notes: "tweet drafting → x-draft, not humanizer"
+  - id: hum-neg-002
+    utterance: "rewrite this in Garry Tan's voice"
+    expect_skill: x-draft
+    notes: "voice rewrite → x-draft (style-override path)"
+  - id: hum-neg-003
+    utterance: "summarize this"
+    expect_skill: default
+    notes: "summarization is a different operation"
+  - id: hum-neg-004
+    utterance: "translate this"
+    has_image: true
+    expect_skill: image-ocr
+
+# Output evals — feed candidate text + assert humanizer rewrites it
+# with the expected edits.
+outputs:
+  - id: hum-out-smoke
+    cmd: "python3 infra/humanizer.py --smoke"
+    expect_json_keys: [ok, user_message]
+    expect_ok: true
+
+  - id: hum-out-em-dash
+    cmd: 'echo "Stored — anything else?" | python3 infra/humanizer.py'
+    expect_json_keys: [ok, output, edits]
+    expect_ok: true
+    judge_rubric: |
+      Output must NOT contain " — " (em-dash flanked by spaces).
+      edits[] must include rule "em_dash_inline".
+
+  - id: hum-out-vocab
+    cmd: 'echo "Let me delve into the rich tapestry of pivotal AI ideas." | python3 infra/humanizer.py'
+    expect_json_keys: [ok, output, edits]
+    expect_ok: true
+    judge_rubric: |
+      Output must not contain "delve", "tapestry", or "pivotal".
+      edits[] must reference vocab_delve, vocab_tapestry, vocab_pivotal.
+
+  - id: hum-out-syco
+    cmd: 'echo "Great question! The answer is 42." | python3 infra/humanizer.py'
+    expect_json_keys: [ok, output, edits]
+    expect_ok: true
+    judge_rubric: |
+      Output must not start with "Great question!".
+      edits[] must reference syco_great_question.
+
+  - id: hum-out-clean-passthrough
+    cmd: 'echo "Stored under sources/yegge-thin-harness." | python3 infra/humanizer.py'
+    expect_json_keys: [ok, output, edits]
+    expect_ok: true
+    judge_rubric: |
+      Clean text must pass through with edits=[] or near-empty edits.
+
+  - id: hum-out-idempotent
+    cmd: 'echo "The pivotal insight." | python3 infra/humanizer.py | python3 -c "import json,sys; print(json.loads(sys.stdin.read())[\"output\"])" | python3 infra/humanizer.py'
+    expect_json_keys: [ok, output, edits]
+    expect_ok: true
+    judge_rubric: |
+      Running humanizer twice must equal running once. edits[] on the
+      second pass should be empty (or only whitespace cleanups).
+
+smoke:
+  cmd: "python3 infra/humanizer.py --smoke"
+  expect_exit: 0
