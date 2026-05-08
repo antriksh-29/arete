@@ -30,6 +30,7 @@ writes_to:
   - media/social/
 brain_dirs_read:
   - lists/to-read
+trigger_guard: any_url
 ---
 
 # /reading-list

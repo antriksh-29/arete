@@ -388,6 +388,9 @@ def main():
     if len(sys.argv) < 2:
         sys.exit("Usage: reading-list.py {add <url> [--deep]|show|read <n|slug>|drop <n|slug>|backfill}")
     cmd = sys.argv[1]
+    if cmd == "--smoke":
+        print(json.dumps({"ok": True, "skill": "reading-list", "user_message": "reading-list smoke ok"}))
+        return
     if cmd == "add":
         if len(sys.argv) < 3:
             sys.exit("Usage: reading-list.py add <url> [--deep]")

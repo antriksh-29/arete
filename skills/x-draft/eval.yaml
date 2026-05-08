@@ -1,0 +1,97 @@
+# Eval suite for x-draft.
+skill: x-draft
+script: infra/x-draft.py
+version: 1
+
+triggers:
+  # ── compose new ──
+  - id: xd-001
+    utterance: "draft a tweet about the new GBrain skillpack"
+    expect_skill: x-draft
+  - id: xd-002
+    utterance: "what should I tweet about thin-harness fat-skills"
+    expect_skill: x-draft
+  - id: xd-003
+    utterance: "draft a tweet on AI durable agents"
+    expect_skill: x-draft
+
+  # ── reply ──
+  - id: xd-004
+    utterance: "reply to https://x.com/garrytan/status/123: this is exactly the right framing"
+    has_url: true
+    expect_skill: x-draft
+  - id: xd-005
+    utterance: "reply to this: love it"
+    has_url: true
+    expect_skill: x-draft
+
+  # ── quote retweet ──
+  - id: xd-006
+    utterance: "quote retweet https://x.com/paulg/status/456 with: this is what compounds"
+    has_url: true
+    expect_skill: x-draft
+  - id: xd-007
+    utterance: "quote tweet https://x.com/sama/status/789: small models, big leverage"
+    has_url: true
+    expect_skill: x-draft
+
+  # ── style overrides ──
+  - id: xd-008
+    utterance: "draft a tweet about durability — more garry style"
+    expect_skill: x-draft
+  - id: xd-009
+    utterance: "what should I tweet about agents — like naval would say it"
+    expect_skill: x-draft
+  - id: xd-010
+    utterance: "draft something on focus, in paulg style"
+    expect_skill: x-draft
+  - id: xd-011
+    utterance: "draft a tweet on AGI — pure antriksh"
+    expect_skill: x-draft
+
+  # ── post-draft actions ──
+  - id: xd-012
+    utterance: "approve"
+    expect_skill: x-draft
+    notes: "after a draft is pending"
+  - id: xd-013
+    utterance: "looks good"
+    expect_skill: x-draft
+  - id: xd-014
+    utterance: "edit: <new tweet text>"
+    expect_skill: x-draft
+  - id: xd-015
+    utterance: "reject"
+    expect_skill: x-draft
+  - id: xd-016
+    utterance: "try again"
+    expect_skill: x-draft
+
+  # ── negative cases ──
+  - id: xd-neg-001
+    utterance: "ingest this thread"
+    has_url: true
+    expect_skill: ingest-x-thread
+    notes: "ingestion is the opposite intent — pulling content INTO brain, not pushing OUT"
+  - id: xd-neg-002
+    utterance: "save this for later"
+    has_url: true
+    expect_skill: reading-list
+  - id: xd-neg-003
+    utterance: "drank 750ml"
+    expect_skill: water-log
+  - id: xd-neg-004
+    utterance: "approve"
+    has_image: true
+    expect_skill: image-ocr
+    notes: "approve+image is OCR confirm, not tweet approve (no pending draft assumed)"
+
+outputs:
+  - id: xd-out-smoke
+    cmd: "python3 infra/x-draft.py --smoke"
+    expect_json_keys: [ok, user_message]
+    expect_ok: true
+
+smoke:
+  cmd: "python3 infra/x-draft.py --smoke"
+  expect_exit: 0

@@ -202,6 +202,9 @@ def main():
     if len(sys.argv) < 2:
         sys.exit("Usage: ingest-pdf.py <url-or-path>")
     src = sys.argv[1]
+    if src == "--smoke":
+        print(json.dumps({"ok": True, "skill": "ingest-pdf", "user_message": "ingest-pdf smoke ok"}))
+        return
 
     SOURCES_DIR.mkdir(parents=True, exist_ok=True)
 

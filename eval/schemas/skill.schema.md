@@ -27,6 +27,9 @@ fields directly — if they're missing or malformed, the audit fails.
 | `helper_scripts` | list[string] | Secondary scripts the main one calls. |
 | `requires_creds` | list[string] | Env-var or vault names. Audited at boot. |
 | `model_tier` | string | `vision`, `cheap`, `default`, `deep` — see `identity/MODEL_ROUTING.md`. |
+| `mutates_external_state` | bool | True if the skill mutates non-brain state (systemd, files outside brain, etc.). Required when `mutating: true` and `writes_to: []`. |
+| `trigger_guard` | string | Modality guard. One of: `image_attached`, `pdf_url`, `x_url`, `any_url`. When two skills legitimately share a trigger phrase but disambiguate by input modality (e.g. "read this" with image vs PDF URL), declare distinct guards so DRY audit treats the overlap as WARN not FAIL. Skills without a guard fire on text-only intent. |
+| `constraint_skill` | bool | True for skills that filter every outbound message rather than firing on user intent (e.g. `reply-discipline`). Audit skips trigger-routing checks for these. |
 
 ## Description discipline
 

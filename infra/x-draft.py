@@ -210,6 +210,9 @@ def build_prompt(mode, raw, target, style_override):
 
 
 def main():
+    if len(sys.argv) >= 2 and sys.argv[1] == "--smoke":
+        print(json.dumps({"ok": True, "skill": "x-draft", "user_message": "x-draft smoke ok"}))
+        return
     if len(sys.argv) < 3:
         sys.exit("Usage: x-draft.py {new <raw>|reply <url> <raw>|quote <url> <raw>} [--style <handle>]")
 

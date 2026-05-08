@@ -31,6 +31,7 @@ brain_dirs_read:
   - people/
   - companies/
   - concepts/
+trigger_guard: pdf_url
 ---
 
 # /ingest-pdf

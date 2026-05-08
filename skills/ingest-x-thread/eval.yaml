@@ -1,0 +1,95 @@
+# Eval suite for ingest-x-thread.
+skill: ingest-x-thread
+script: infra/ingest-x-thread.py
+version: 1
+
+triggers:
+  # ── X URL + ingest intent ──
+  - id: xthr-001
+    utterance: "ingest this"
+    has_url: true
+    expect_skill: ingest-x-thread
+    notes: "guarded by x_url — twitter.com or x.com URL"
+  - id: xthr-002
+    utterance: "absorb this thread"
+    has_url: true
+    expect_skill: ingest-x-thread
+  - id: xthr-003
+    utterance: "remember this"
+    has_url: true
+    expect_skill: ingest-x-thread
+  - id: xthr-004
+    utterance: "read this thread"
+    has_url: true
+    expect_skill: ingest-x-thread
+  - id: xthr-005
+    utterance: "what does this thread say"
+    has_url: true
+    expect_skill: ingest-x-thread
+  - id: xthr-006
+    utterance: "worth reading"
+    has_url: true
+    expect_skill: ingest-x-thread
+  - id: xthr-007
+    utterance: "take notes on this"
+    has_url: true
+    expect_skill: ingest-x-thread
+
+  # ── different framings ──
+  - id: xthr-008
+    utterance: "save and absorb this thread"
+    has_url: true
+    expect_skill: ingest-x-thread
+  - id: xthr-009
+    utterance: "process this twitter thread"
+    has_url: true
+    expect_skill: ingest-x-thread
+  - id: xthr-010
+    utterance: "interesting thread — let's keep it"
+    has_url: true
+    expect_skill: ingest-x-thread
+
+  # ── twitter.com vs x.com both fire ──
+  - id: xthr-011
+    utterance: "ingest this twitter.com thread"
+    has_url: true
+    expect_skill: ingest-x-thread
+  - id: xthr-012
+    utterance: "ingest this x.com post"
+    has_url: true
+    expect_skill: ingest-x-thread
+
+  # ── negative cases ──
+  - id: xthr-neg-001
+    utterance: "save this thread for later"
+    has_url: true
+    expect_skill: reading-list
+    notes: "save-for-later → reading-list"
+  - id: xthr-neg-002
+    utterance: "draft a reply to this"
+    has_url: true
+    expect_skill: x-draft
+    notes: "drafting a tweet about the thread → x-draft"
+  - id: xthr-neg-003
+    utterance: "quote retweet this with: <thought>"
+    has_url: true
+    expect_skill: x-draft
+  - id: xthr-neg-004
+    utterance: "ingest this"
+    has_image: true
+    expect_skill: image-ocr
+    notes: "image attached → image-ocr"
+  - id: xthr-neg-005
+    utterance: "ingest"
+    expect_skill: default
+    notes: "no URL, no image — agent must ask what to ingest"
+
+outputs:
+  - id: xthr-out-smoke
+    cmd: "python3 infra/ingest-x-thread.py --smoke"
+    expect_json_keys: [ok, user_message]
+    expect_ok: true
+
+smoke:
+  cmd: "python3 infra/ingest-x-thread.py --smoke"
+  expect_exit: 0
