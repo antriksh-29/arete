@@ -41,6 +41,10 @@ def fetch(url):
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--smoke":
+        # Cold-boot callability check. No network, no vault, no API.
+        print(json.dumps({"ok": True, "skill": "weather", "user_message": "weather smoke ok"}))
+        return
     key = vault_get("WEATHER_API_KEY")
     base = "https://api.openweathermap.org/data/2.5"
 

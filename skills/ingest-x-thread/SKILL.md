@@ -30,6 +30,7 @@ brain_dirs_read:
   - people/
   - companies/
   - concepts/
+trigger_guard: x_url
 ---
 
 # /ingest-x-thread

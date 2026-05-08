@@ -324,6 +324,9 @@ def main():
     if len(sys.argv) < 2:
         sys.exit("Usage: ingest-x-thread.py <tweet-url>")
     url = sys.argv[1]
+    if url == "--smoke":
+        print(json.dumps({"ok": True, "skill": "ingest-x-thread", "user_message": "ingest-x-thread smoke ok"}))
+        return
 
     token = vault_get("X_API_BEARER_TOKEN")
     if not token:

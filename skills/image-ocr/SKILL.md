@@ -28,6 +28,7 @@ trigger: |
   - Or a question about the image ("what's the price", "what time does it open")
 writes_to: []
 brain_dirs_read: []
+trigger_guard: image_attached
 ---
 
 # /image-ocr

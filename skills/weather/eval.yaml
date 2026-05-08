@@ -1,0 +1,79 @@
+# Eval suite for weather.
+skill: weather
+script: infra/weather-snapshot.py
+version: 1
+
+triggers:
+  # ── current conditions / direct weather queries ──
+  - id: wx-001
+    utterance: "weather"
+    expect_skill: weather
+  - id: wx-002
+    utterance: "weather today"
+    expect_skill: weather
+  - id: wx-003
+    utterance: "what's the weather"
+    expect_skill: weather
+  - id: wx-004
+    utterance: "what's the temp outside"
+    expect_skill: weather
+  - id: wx-005
+    utterance: "temperature in Bangalore"
+    expect_skill: weather
+  - id: wx-006
+    utterance: "weather right now"
+    expect_skill: weather
+  - id: wx-007
+    utterance: "weather snapshot"
+    expect_skill: weather
+
+  # ── forecast / rain ──
+  - id: wx-008
+    utterance: "forecast"
+    expect_skill: weather
+  - id: wx-009
+    utterance: "is it going to rain"
+    expect_skill: weather
+  - id: wx-010
+    utterance: "next 24 hours weather"
+    expect_skill: weather
+  - id: wx-011
+    utterance: "should I take an umbrella"
+    expect_skill: weather
+  - id: wx-012
+    utterance: "umbrella?"
+    expect_skill: weather
+
+  # ── AQI / air quality ──
+  - id: wx-013
+    utterance: "AQI"
+    expect_skill: weather
+  - id: wx-014
+    utterance: "air quality today"
+    expect_skill: weather
+  - id: wx-015
+    utterance: "is the air bad"
+    expect_skill: weather
+  - id: wx-016
+    utterance: "AQI in Bangalore"
+    expect_skill: weather
+
+  # ── negative cases ──
+  - id: wx-neg-001
+    utterance: "it's hot, my run got cut short"
+    expect_skill: activity-tracker
+    notes: "weather as context, real intent is activity log"
+  - id: wx-neg-002
+    utterance: "remind me to check weather at 7am"
+    expect_skill: reminder
+  - id: wx-neg-003
+    utterance: "what's the weather in Tokyo"
+    expect_skill: default
+    notes: "v1 script is Bangalore-only — should not pretend to fire"
+  - id: wx-neg-004
+    utterance: "drank 750ml"
+    expect_skill: water-log
+
+smoke:
+  cmd: "python3 infra/weather-snapshot.py --smoke"
+  expect_exit: 0

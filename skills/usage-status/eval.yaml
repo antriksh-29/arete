@@ -1,0 +1,69 @@
+# Eval suite for usage-status (PLACEHOLDER — version 0).
+skill: usage-status
+script: infra/usage-status.py
+version: 0
+
+triggers:
+  - id: usg-001
+    utterance: "usage"
+    expect_skill: usage-status
+  - id: usg-002
+    utterance: "usage today"
+    expect_skill: usage-status
+  - id: usg-003
+    utterance: "spend today"
+    expect_skill: usage-status
+  - id: usg-004
+    utterance: "how much have I spent today"
+    expect_skill: usage-status
+  - id: usg-005
+    utterance: "tokens today"
+    expect_skill: usage-status
+  - id: usg-006
+    utterance: "what did I burn today"
+    expect_skill: usage-status
+  - id: usg-007
+    utterance: "API cost today"
+    expect_skill: usage-status
+  - id: usg-008
+    utterance: "spend yesterday"
+    expect_skill: usage-status
+  - id: usg-009
+    utterance: "yesterday's usage"
+    expect_skill: usage-status
+  - id: usg-010
+    utterance: "what's my spend"
+    expect_skill: usage-status
+
+  # ── negative cases ──
+  - id: usg-neg-001
+    utterance: "how much water today"
+    expect_skill: water-log
+  - id: usg-neg-002
+    utterance: "brain storage usage"
+    expect_skill: default
+    notes: "different system — gbrain stats, not LLM spend"
+  - id: usg-neg-003
+    utterance: "drank 750ml"
+    expect_skill: water-log
+  - id: usg-neg-004
+    utterance: "what's my reading streak"
+    expect_skill: reading-checkin
+
+outputs:
+  - id: usg-out-smoke
+    cmd: "python3 infra/usage-status.py --smoke"
+    expect_json_keys: [ok, user_message]
+    expect_ok: true
+
+  - id: usg-out-placeholder
+    cmd: "python3 infra/usage-status.py"
+    expect_json_keys: [ok, scope, user_message]
+    expect_ok: true
+    judge_rubric: |
+      Placeholder envelope must be honest about the limitation.
+      Hard fails: fabricated dollar amounts, fake token counts.
+
+smoke:
+  cmd: "python3 infra/usage-status.py --smoke"
+  expect_exit: 0

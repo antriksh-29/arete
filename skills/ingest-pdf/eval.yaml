@@ -1,0 +1,93 @@
+# Eval suite for ingest-pdf.
+skill: ingest-pdf
+script: infra/ingest-pdf.py
+version: 1
+
+triggers:
+  # ── PDF URL + ingest intent ──
+  - id: pdf-001
+    utterance: "ingest this"
+    has_url: true
+    expect_skill: ingest-pdf
+    notes: "guarded by pdf_url"
+  - id: pdf-002
+    utterance: "absorb this"
+    has_url: true
+    expect_skill: ingest-pdf
+  - id: pdf-003
+    utterance: "remember this"
+    has_url: true
+    expect_skill: ingest-pdf
+  - id: pdf-004
+    utterance: "read this"
+    has_url: true
+    expect_skill: ingest-pdf
+  - id: pdf-005
+    utterance: "what does this say"
+    has_url: true
+    expect_skill: ingest-pdf
+  - id: pdf-006
+    utterance: "worth reading"
+    has_url: true
+    expect_skill: ingest-pdf
+  - id: pdf-007
+    utterance: "take notes"
+    has_url: true
+    expect_skill: ingest-pdf
+
+  # ── PDF Telegram attachment + intent ──
+  - id: pdf-008
+    utterance: "ingest this PDF"
+    expect_skill: ingest-pdf
+  - id: pdf-009
+    utterance: "save and absorb this paper"
+    has_url: true
+    expect_skill: ingest-pdf
+  - id: pdf-010
+    utterance: "remember the key points from this"
+    has_url: true
+    expect_skill: ingest-pdf
+
+  # ── ambiguous phrasing that still resolves to ingest-pdf when a PDF URL is present ──
+  - id: pdf-011
+    utterance: "let's go through this"
+    has_url: true
+    expect_skill: ingest-pdf
+  - id: pdf-012
+    utterance: "process this paper"
+    has_url: true
+    expect_skill: ingest-pdf
+
+  # ── negative cases ──
+  - id: pdf-neg-001
+    utterance: "save this for later"
+    has_url: true
+    expect_skill: reading-list
+    notes: "save-for-later → reading-list, not full ingest"
+  - id: pdf-neg-002
+    utterance: "ingest this"
+    has_image: true
+    expect_skill: image-ocr
+    notes: "image attached → image-ocr; same phrase, different modality"
+  - id: pdf-neg-003
+    utterance: "ingest this thread"
+    has_url: true
+    expect_skill: ingest-x-thread
+    notes: "twitter.com / x.com URL → ingest-x-thread (more specific guard)"
+  - id: pdf-neg-004
+    utterance: "ingest"
+    expect_skill: default
+    notes: "no URL, no image — agent must ask what to ingest"
+  - id: pdf-neg-005
+    utterance: "drank 750ml"
+    expect_skill: water-log
+
+outputs:
+  - id: pdf-out-smoke
+    cmd: "python3 infra/ingest-pdf.py --smoke"
+    expect_json_keys: [ok, user_message]
+    expect_ok: true
+
+smoke:
+  cmd: "python3 infra/ingest-pdf.py --smoke"
+  expect_exit: 0
