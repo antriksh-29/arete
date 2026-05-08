@@ -1,0 +1,83 @@
+# Eval suite for skillify.
+skill: skillify
+script: infra/skillify.py
+version: 1
+
+triggers:
+  # ── checklist / discipline queries ──
+  - id: skl-001
+    utterance: "skillify this"
+    expect_skill: skillify
+  - id: skl-002
+    utterance: "make this a skill"
+    expect_skill: skillify
+  - id: skl-003
+    utterance: "let's codify this workflow"
+    expect_skill: skillify
+  - id: skl-004
+    utterance: "what's the skillify discipline"
+    expect_skill: skillify
+  - id: skl-005
+    utterance: "what are the stages of building a skill"
+    expect_skill: skillify
+  - id: skl-006
+    utterance: "let's turn this into a skill"
+    expect_skill: skillify
+  - id: skl-007
+    utterance: "show me the skillify checklist"
+    expect_skill: skillify
+
+  # ── audit ──
+  - id: skl-008
+    utterance: "audit daily-tasks against the cycle"
+    expect_skill: skillify
+  - id: skl-009
+    utterance: "is reading-checkin skillify-clean"
+    expect_skill: skillify
+  - id: skl-010
+    utterance: "what's missing for usage-status"
+    expect_skill: skillify
+  - id: skl-011
+    utterance: "audit weather"
+    expect_skill: skillify
+
+  # ── negative cases ──
+  - id: skl-neg-001
+    utterance: "remind me to ship the skill at 5pm"
+    expect_skill: reminder
+  - id: skl-neg-002
+    utterance: "what skills do I have"
+    expect_skill: default
+    notes: "list-all-skills query is not skillify; it'd be a brain-ops or query"
+  - id: skl-neg-003
+    utterance: "draft a tweet about the skillify discipline"
+    expect_skill: x-draft
+  - id: skl-neg-004
+    utterance: "drank 750ml"
+    expect_skill: water-log
+
+# Output evals — verify checklist + audit + smoke.
+outputs:
+  - id: skl-out-smoke
+    cmd: "python3 infra/skillify.py --smoke"
+    expect_json_keys: [ok, user_message]
+    expect_ok: true
+
+  - id: skl-out-audit-clean-skill
+    cmd: "python3 infra/skillify.py audit daily-tasks"
+    expect_json_keys: [ok, skill, stages, gaps, user_message]
+    expect_ok: true
+    judge_rubric: |
+      daily-tasks should be skillify-clean (gaps == []).
+      Hard fails: any gap on daily-tasks since it's a fully built skill.
+
+  - id: skl-out-audit-self
+    cmd: "python3 infra/skillify.py audit skillify"
+    expect_json_keys: [ok, skill, stages, gaps]
+    expect_ok: true
+    judge_rubric: |
+      Skillify auditing itself must be clean — eats its own dogfood.
+
+smoke:
+  cmd: "python3 infra/skillify.py --smoke"
+  expect_exit: 0
