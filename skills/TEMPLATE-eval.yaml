@@ -1,0 +1,39 @@
+# Copy to skills/<name>/eval.yaml when adding a new skill's eval suite.
+# See eval/schemas/skill-eval.schema.md for the full spec.
+
+skill: <name>
+script: infra/<file>.py
+version: 1
+
+# At least 20 entries. Mix positive (this skill should fire) + negative
+# (a different skill should fire). Negative cases are critical — they
+# prevent resolver false-positives.
+triggers:
+  - id: <slug>-001
+    utterance: "<exact user message>"
+    has_image: false       # optional
+    has_url: false         # optional
+    expect_skill: <name>
+    notes: "happy path"
+
+  - id: <slug>-002
+    utterance: "<a phrase that LOOKS similar but should route elsewhere>"
+    expect_skill: <other-skill>
+    notes: "negative case — disambiguates against <other-skill>"
+
+# At least 3 entries. Cover happy + edge + error.
+outputs:
+  - id: <slug>-out-001
+    fixture: eval/fixtures/<skill>/example.input
+    cmd: "python3 infra/<file>.py {fixture}"
+    expect_json_keys: [ok, user_message]
+    expect_ok: true
+    judge_rubric: |
+      Output must <one paragraph criterion>.
+      Hard fails: <patterns that disqualify>.
+
+# Cold-boot callability check. No network, no LLM, no auth — just "does
+# the script start and exit cleanly".
+smoke:
+  cmd: "python3 infra/<file>.py --smoke"
+  expect_exit: 0

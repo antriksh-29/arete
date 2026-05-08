@@ -1,16 +1,38 @@
 ---
 name: x-draft
-description: Draft a tweet (new, reply, or quote retweet) in Antriksh's voice blended with admired accounts. Capture approve/edit/reject feedback to compound the voice corpus.
+version: 1
+script: infra/x-draft.py
+helper_scripts:
+  - infra/x-corpus-collect.py
+  - infra/x-style-profile.py
+  - infra/x-approve.py
+mutating: true
+cron: null
+eval: skills/x-draft/eval.yaml
+last_audited: 2026-05-08
+description: |
+  Tweet composition. The user wants to draft a new tweet, reply, or quote-
+  tweet in their voice blended with admired accounts, then approve/edit/
+  reject to compound the voice corpus.
+  WHEN: "draft a tweet about <X>", "what should I tweet about <X>", "reply
+  to <tweet-url>: <thought>", "quote retweet <url>: <thought>", style
+  overrides like "more garry style", "in paulg style", "pure antriksh", and
+  the post-draft actions "approve", "edit: <new text>", "reject", "try
+  again".
+  NOT WHEN: User wants to ingest a tweet they were sent (→ ingest-x-thread),
+  save a tweet for later (→ reading-list), or general writing help that
+  isn't about X (→ default agent).
 trigger: |
   - "draft a tweet about <topic>", "what should I tweet about <X>"
   - "reply to <tweet-url>: <raw thought>"
   - "quote retweet <tweet-url>: <raw thought>", "quote tweet <url>: <raw>"
   - Style overrides: "more garry style", "like naval would say it", "in paulg style", "pure antriksh"
   - After a draft: "approve" / "looks good", "edit: <new text>", "reject" / "try again"
-mutating: true
 writes_to:
   - corpus/x-antriksssh
-  - identity/X_VOICE.md (via separate x-style-profile.py)
+  - identity/X_VOICE.md
+brain_dirs_read:
+  - corpus/
 ---
 
 # /x-draft

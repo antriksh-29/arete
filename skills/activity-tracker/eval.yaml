@@ -1,0 +1,85 @@
+# Eval suite for activity-tracker.
+skill: activity-tracker
+script: infra/activity-tracker.sh
+version: 1
+
+triggers:
+  # ── manual-log gym ──
+  - id: act-001
+    utterance: "did 30 min yoga today"
+    expect_skill: activity-tracker
+  - id: act-002
+    utterance: "logged a 45 min HIIT session"
+    expect_skill: activity-tracker
+  - id: act-003
+    utterance: "did 60 min weights"
+    expect_skill: activity-tracker
+  - id: act-004
+    utterance: "30 min pilates this morning"
+    expect_skill: activity-tracker
+
+  # ── manual-log running ──
+  - id: act-005
+    utterance: "did a 5km run"
+    expect_skill: activity-tracker
+  - id: act-006
+    utterance: "morning jog 25 min"
+    expect_skill: activity-tracker
+  - id: act-007
+    utterance: "30 min run on May 4"
+    expect_skill: activity-tracker
+
+  # ── manual-log tennis ──
+  - id: act-008
+    utterance: "played squash for 1 hour"
+    expect_skill: activity-tracker
+  - id: act-009
+    utterance: "tennis 90 min"
+    expect_skill: activity-tracker
+  - id: act-010
+    utterance: "padel 60 min yesterday"
+    expect_skill: activity-tracker
+
+  # ── manual-log others ──
+  - id: act-011
+    utterance: "evening walk 45 min"
+    expect_skill: activity-tracker
+  - id: act-012
+    utterance: "swam for 30 min"
+    expect_skill: activity-tracker
+  - id: act-013
+    utterance: "hiked 2 hours"
+    expect_skill: activity-tracker
+
+  # ── stats ──
+  - id: act-014
+    utterance: "activity stats"
+    expect_skill: activity-tracker
+  - id: act-015
+    utterance: "how many sessions this year"
+    expect_skill: activity-tracker
+  - id: act-016
+    utterance: "am I hitting my activity target"
+    expect_skill: activity-tracker
+
+  # ── negative cases ──
+  - id: act-neg-001
+    utterance: "worked out"
+    expect_skill: default
+    notes: "no duration → ask, do not auto-log"
+  - id: act-neg-002
+    utterance: "drank 750ml"
+    expect_skill: water-log
+  - id: act-neg-003
+    utterance: "yes"
+    expect_skill: reading-checkin
+  - id: act-neg-004
+    utterance: "remind me to stretch in 30 min"
+    expect_skill: reminder
+  - id: act-neg-005
+    utterance: "add finish workout to my list"
+    expect_skill: daily-tasks
+
+smoke:
+  cmd: "bash infra/activity-tracker.sh --smoke"
+  expect_exit: 0

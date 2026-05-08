@@ -1,0 +1,80 @@
+# Eval suite for reminder.
+skill: reminder
+script: infra/schedule-reminder.sh
+version: 1
+
+triggers:
+  # ── absolute clock times ──
+  - id: rem-001
+    utterance: "remind me to call Bhramari at 5pm"
+    expect_skill: reminder
+  - id: rem-002
+    utterance: "ping me at 17:30 about the demo"
+    expect_skill: reminder
+  - id: rem-003
+    utterance: "remind me at 9am tomorrow to file taxes"
+    expect_skill: reminder
+
+  # ── relative durations ──
+  - id: rem-004
+    utterance: "remind me about the kettle in 30 min"
+    expect_skill: reminder
+  - id: rem-005
+    utterance: "ping me in 1h to stretch"
+    expect_skill: reminder
+  - id: rem-006
+    utterance: "remind me in 2h about the client call"
+    expect_skill: reminder
+  - id: rem-007
+    utterance: "remind me in 45m to take meds"
+    expect_skill: reminder
+
+  # ── named-time defaults ──
+  - id: rem-008
+    utterance: "remind me tomorrow morning to send the deck"
+    expect_skill: reminder
+  - id: rem-009
+    utterance: "remind me tonight to lock the door"
+    expect_skill: reminder
+  - id: rem-010
+    utterance: "remind me on May 10 to file taxes"
+    expect_skill: reminder
+  - id: rem-011
+    utterance: "remind me next Monday about the dentist"
+    expect_skill: reminder
+
+  # ── slight variations ──
+  - id: rem-012
+    utterance: "set a reminder for 8pm to call mom"
+    expect_skill: reminder
+  - id: rem-013
+    utterance: "schedule a ping in 20m about the oven"
+    expect_skill: reminder
+  - id: rem-014
+    utterance: "buzz me at 6 to head out"
+    expect_skill: reminder
+
+  # ── negative cases ──
+  - id: rem-neg-001
+    utterance: "remind me about Bhramari"
+    expect_skill: default
+    notes: "no time anchor — agent must ask, not schedule"
+  - id: rem-neg-002
+    utterance: "every morning at 7 ping me my brief"
+    expect_skill: cron-scheduler
+    notes: "recurring → cron-scheduler skill, not one-shot reminder"
+  - id: rem-neg-003
+    utterance: "what reminders do I have"
+    expect_skill: default
+    notes: "list query — not yet supported by reminder skill"
+  - id: rem-neg-004
+    utterance: "add review the PR to my list"
+    expect_skill: daily-tasks
+    notes: "task list, not reminder"
+  - id: rem-neg-005
+    utterance: "drank 750ml"
+    expect_skill: water-log
+
+smoke:
+  cmd: "bash infra/schedule-reminder.sh --smoke"
+  expect_exit: 0

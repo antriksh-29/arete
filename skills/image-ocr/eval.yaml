@@ -1,0 +1,151 @@
+# Eval suite for the image-ocr skill.
+# Run: node eval/run-skill-eval.mjs skills/image-ocr/
+
+skill: image-ocr
+script: infra/image-ocr.py
+version: 1
+
+triggers:
+  # ── Positive: image attachment + extraction intent ──
+  - id: ocr-001
+    utterance: "what does this say"
+    has_image: true
+    expect_skill: image-ocr
+    notes: "canonical phrase, image present"
+
+  - id: ocr-002
+    utterance: "read this"
+    has_image: true
+    expect_skill: image-ocr
+    notes: "ambiguous-with-ingest-pdf if URL present, but image=true disambiguates"
+
+  - id: ocr-003
+    utterance: "OCR this"
+    has_image: true
+    expect_skill: image-ocr
+
+  - id: ocr-004
+    utterance: "extract the text"
+    has_image: true
+    expect_skill: image-ocr
+
+  - id: ocr-005
+    utterance: "extract the data from this screenshot"
+    has_image: true
+    expect_skill: image-ocr
+
+  - id: ocr-006
+    utterance: "what's in this picture"
+    has_image: true
+    expect_skill: image-ocr
+
+  - id: ocr-007
+    utterance: "translate this"
+    has_image: true
+    expect_skill: image-ocr
+
+  - id: ocr-008
+    utterance: "what's the price"
+    has_image: true
+    expect_skill: image-ocr
+    notes: "question grounded in image content"
+
+  - id: ocr-009
+    utterance: "what time does it open"
+    has_image: true
+    expect_skill: image-ocr
+
+  - id: ocr-010
+    utterance: ""
+    has_image: true
+    expect_skill: image-ocr
+    notes: "image with no caption — default extraction mode per SKILL.md"
+
+  - id: ocr-011
+    utterance: "can you read what this menu says"
+    has_image: true
+    expect_skill: image-ocr
+
+  - id: ocr-012
+    utterance: "summarize this screenshot"
+    has_image: true
+    expect_skill: image-ocr
+    notes: "looser phrasing, still extraction intent"
+
+  # ── Negative: image present but DIFFERENT intent ──
+  - id: ocr-neg-001
+    utterance: "save this for later"
+    has_image: true
+    expect_skill: reading-list
+    notes: "image + 'save for later' → reading-list, not image-ocr"
+
+  - id: ocr-neg-002
+    utterance: "add this to my reading list"
+    has_image: true
+    expect_skill: reading-list
+
+  - id: ocr-neg-003
+    utterance: "draft a tweet about this"
+    has_image: true
+    expect_skill: x-draft
+    notes: "image + tweet-drafting intent → x-draft"
+
+  # ── Negative: same words, NO image ──
+  - id: ocr-neg-004
+    utterance: "what does this say"
+    has_image: false
+    has_url: true
+    notes: "URL not image → ingest-pdf or ingest-x-thread depending on URL"
+    expect_skill: ingest-pdf
+
+  - id: ocr-neg-005
+    utterance: "read this"
+    has_image: false
+    has_url: true
+    expect_skill: ingest-pdf
+    notes: "URL only — image-ocr should NOT fire"
+
+  - id: ocr-neg-006
+    utterance: "translate this"
+    has_image: false
+    expect_skill: default
+    notes: "no image, no URL — image-ocr definitely should not fire"
+
+  # ── Negative: PDF page that LOOKS like an image ──
+  - id: ocr-neg-007
+    utterance: "ingest this"
+    has_image: false
+    has_url: true
+    expect_skill: ingest-pdf
+    notes: "URL ending .pdf → ingest-pdf, not image-ocr"
+
+  # ── Negative: X-thread URL ──
+  - id: ocr-neg-008
+    utterance: "what does this thread say"
+    has_image: false
+    has_url: true
+    expect_skill: ingest-x-thread
+    notes: "x.com URL → ingest-x-thread"
+
+outputs:
+  - id: ocr-out-001
+    fixture: null
+    cmd: "python3 infra/image-ocr.py --smoke"
+    expect_json_keys: [ok, provider, user_message]
+    expect_ok: true
+    judge_rubric: |
+      Smoke output must include the standard envelope keys and ok=true.
+      Hard fails: missing keys, non-JSON output on stdout.
+
+  # NOTE: real fixture-based output evals (run vision against a
+  # checked-in test image) require OPENAI_API_KEY and are gated by
+  # `--with-fixtures`. They live separately at:
+  #   eval/fixtures/image-ocr/menu.png
+  #   eval/fixtures/image-ocr/handwritten.jpg
+  # They will be added in a follow-up (Wave 2) once the smoke flag
+  # is wired into infra/image-ocr.py.
+
+smoke:
+  cmd: "python3 infra/image-ocr.py --smoke"
+  expect_exit: 0
+  notes: "Cold-boot callability. Should print {\"ok\":true,...} on stdout."

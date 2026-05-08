@@ -458,6 +458,11 @@ rebuild_brain() {
 # -------------------- dispatch --------------------
 
 case "${1:-help}" in
+  --smoke)
+    # Cold-boot callability check — no state writes, no network.
+    echo '{"ok":true,"skill":"daily-tasks","user_message":"daily-tasks smoke ok"}'
+    exit 0
+    ;;
   set)
     shift
     cmd_set "$@"

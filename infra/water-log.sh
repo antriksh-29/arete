@@ -294,6 +294,11 @@ PYEOF
 }
 
 case "${1:-}" in
+  --smoke)
+    # Cold-boot callability check — no state writes, no network.
+    echo '{"ok":true,"skill":"water-log","user_message":"water-log smoke ok"}'
+    exit 0
+    ;;
   log)
     ML=$(log_intake "$2" "${3:-}" "${4:-}")
     TARGET_DATE="${3:-$(now_ist '%Y-%m-%d')}"

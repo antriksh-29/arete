@@ -1,0 +1,87 @@
+# Eval suite for water-log.
+skill: water-log
+script: infra/water-log.sh
+version: 1
+
+triggers:
+  # ── log: today, current time ──
+  - id: water-001
+    utterance: "drank 750ml"
+    expect_skill: water-log
+  - id: water-002
+    utterance: "had 500 ml of water"
+    expect_skill: water-log
+  - id: water-003
+    utterance: "logged 1L"
+    expect_skill: water-log
+  - id: water-004
+    utterance: "1.5L water just now"
+    expect_skill: water-log
+  - id: water-005
+    utterance: "just had a glass of water (250ml)"
+    expect_skill: water-log
+
+  # ── log: backfill / past-date ──
+  - id: water-006
+    utterance: "drank 2L yesterday"
+    expect_skill: water-log
+  - id: water-007
+    utterance: "logged 750ml on May 4"
+    expect_skill: water-log
+  - id: water-008
+    utterance: "I forgot to log yesterday — add 2.5L"
+    expect_skill: water-log
+
+  # ── reads ──
+  - id: water-009
+    utterance: "how much water today"
+    expect_skill: water-log
+  - id: water-010
+    utterance: "water total"
+    expect_skill: water-log
+  - id: water-011
+    utterance: "did I hit my water goal"
+    expect_skill: water-log
+  - id: water-012
+    utterance: "water summary today"
+    expect_skill: water-log
+  - id: water-013
+    utterance: "water summary yesterday"
+    expect_skill: water-log
+  - id: water-014
+    utterance: "list today's water entries"
+    expect_skill: water-log
+  - id: water-015
+    utterance: "water for the week"
+    expect_skill: water-log
+  - id: water-016
+    utterance: "weekly water review"
+    expect_skill: water-log
+  - id: water-017
+    utterance: "water since 1 May"
+    expect_skill: water-log
+  - id: water-018
+    utterance: "show me my water for the past 5 days"
+    expect_skill: water-log
+
+  # ── negative cases ──
+  - id: water-neg-001
+    utterance: "had a coffee"
+    expect_skill: default
+    notes: "no ml stated — agent must ask, NOT auto-log"
+  - id: water-neg-002
+    utterance: "drank a glass of milk"
+    expect_skill: default
+    notes: "non-water; not water-log territory"
+  - id: water-neg-003
+    utterance: "went for a 5km run"
+    expect_skill: activity-tracker
+    notes: "activity, not hydration"
+  - id: water-neg-004
+    utterance: "I read for 30 min"
+    expect_skill: reading-checkin
+    notes: "reading habit, not water"
+
+smoke:
+  cmd: "bash infra/water-log.sh --smoke"
+  expect_exit: 0

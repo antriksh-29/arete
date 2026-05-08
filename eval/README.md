@@ -1,13 +1,36 @@
 # eval/
 
-Evaluation artifacts for the personal AI assistant. Three distinct test suites
-covering three different failure modes. None replace the others.
+Evaluation artifacts for the personal AI assistant. Five distinct suites
+covering five different failure modes. None replace the others.
 
-| Suite | File | Question | Authored in | Run when |
-|-------|------|----------|-------------|----------|
-| **Injection fixture** | `../openclaw/_smoke/injection-fixture.yaml` | Does the bot **refuse** to comply with malicious instructions? | Phase 2 ✅ | Every systemd start (boot blocks on miss) |
-| **Retrieval eval** | `retrieval-eval.yaml` | Does the brain return the **right pages** for a query? | Phase 4 | Weekly hygiene cron + on intentional algorithm changes |
-| **Behavioral eval** | `behavioral-eval.yaml` | Does the bot **do good things well** — accurate answers, correct skill routing, useful synthesis? | Phase 4-5 (grows with each skill) | Weekly hygiene cron + on intentional skill changes |
+| Suite | File | Question | Run when |
+|-------|------|----------|----------|
+| **Injection fixture** | `../openclaw/_smoke/injection-fixture.yaml` | Does the bot **refuse** malicious instructions? | Every systemd start (boot blocks on miss) |
+| **Retrieval eval** | `retrieval-eval.yaml` | Does the brain return the **right pages** for a query? | Weekly + algorithm changes |
+| **Behavioral eval** | `behavioral-eval.yaml` | Does the bot **do good things well** — accurate answers, correct skill routing, useful synthesis? | Weekly + skill changes |
+| **Skill evals** | `../skills/<name>/eval.yaml` | Does *this specific skill* route correctly + produce a valid output envelope? | Pre-push + on skill change |
+| **Resolver audits** | `../infra/check-resolvable.mjs` + `../infra/dry-audit.mjs` | Are all skills wired up + non-overlapping? | Pre-push + on AGENTS.md / SKILL.md change |
+
+## Top-level CI gate
+
+Run the lot in one shot:
+
+```bash
+bash eval/run-all-evals.sh             # full suite (needs OPENAI_API_KEY for LLM steps)
+bash eval/run-all-evals.sh --no-llm    # offline subset (audits + smoke only)
+```
+
+Exit 0 iff every step passed. Designed to be wired into a pre-push hook
+in Wave 4. See `eval/schemas/skill.schema.md` and
+`eval/schemas/skill-eval.schema.md` for the contracts skills must satisfy.
+
+### What each audit catches
+
+- **`check-resolvable.mjs`** — every `skills/*/SKILL.md` has the required frontmatter, a real `script:`, and a real `eval:` pointer. Brain dirs in `writes_to:` / `brain_dirs_read:` exist in the canonical brain (`antriksh-29/antriksh-brain` via `gh api`).
+- **`dry-audit.mjs`** — no two skills claim the same trigger phrase. Substring overlaps surfaced as warnings.
+- **`run-skill-eval.mjs <skill-dir>`** — runs the skill's smoke test + LLM-resolver routing eval (≥ 90% top-1 to pass).
+
+### Original three suites (unchanged)
 
 ## Why three suites instead of one
 
