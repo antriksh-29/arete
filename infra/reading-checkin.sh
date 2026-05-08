@@ -123,10 +123,15 @@ def stats_for(window_days):
     pct = round(100 * yes / total) if total else 0
     return yes, total, pct
 
-last7 = [(d, entries[d.isoformat()]) for d in entries_dates if (today - d).days < 7 and d < today]
+# All three windows have the same upper bound (yesterday IST — data is
+# logged for the previous day at 10am IST), so when daily entries
+# exist within the window, the three counters AGREE. Using <= 7 (not
+# < 7) so a 7-day window of complete data returns 7/7, not 6/6.
+yesterday = today - datetime.timedelta(days=1)
+last7 = [(d, entries[d.isoformat()]) for d in entries_dates if (today - d).days <= 7 and d <= yesterday]
 month_first = today.replace(day=1)
-this_month = [(d, entries[d.isoformat()]) for d in entries_dates if d >= month_first and d < today]
-overall = [(d, entries[d.isoformat()]) for d in entries_dates if d >= start and d < today]
+this_month = [(d, entries[d.isoformat()]) for d in entries_dates if d >= month_first and d <= yesterday]
+overall = [(d, entries[d.isoformat()]) for d in entries_dates if d >= start and d <= yesterday]
 
 l7 = stats_for(last7)
 mo = stats_for(this_month)
@@ -160,13 +165,16 @@ format_ping() {
 
   cat <<MSG
 📚 Reading check-in
-Did you read yesterday ($YEST)?
+
+Did you read a book yesterday ($YEST)?
+
+Your statistics:
 
 Last 7 days: $L7
 $MO_LABEL: $MO
 Overall: $OV
 
-Reply yes / no
+Please reply yes / no to this message to log your activity
 MSG
 }
 
@@ -194,6 +202,45 @@ case "${1:-}" in
   stats)
     recompute_stats
     grep -A 10 '^## Stats' "$BRAIN_PAGE"
+    ;;
+  verify)
+    # Data integrity check: list every date from START_DATE to yesterday
+    # and flag any that are missing from the brain log table. The brain
+    # is the single source of truth — if a date is missing here, stats
+    # will be wrong even if the user logged it elsewhere.
+    ensure_page
+    python3 - "$BRAIN_PAGE" "$START_DATE" <<'PYEOF'
+import sys, re, datetime
+path, start_str = sys.argv[1], sys.argv[2]
+src = open(path).read()
+log_rows = re.findall(r"\| (\d{4}-\d{2}-\d{2}) \| (yes|no) \|", src)
+entries = dict(log_rows)
+today = datetime.date.today()
+start = datetime.date.fromisoformat(start_str)
+yesterday = today - datetime.timedelta(days=1)
+
+missing = []
+present = []
+d = start
+while d <= yesterday:
+    iso = d.isoformat()
+    if iso in entries:
+        present.append((iso, entries[iso]))
+    else:
+        missing.append(iso)
+    d += datetime.timedelta(days=1)
+
+print(f"Reading-checkin verify (range: {start_str} → {yesterday.isoformat()})")
+print(f"  present: {len(present)} days")
+print(f"  missing: {len(missing)} days")
+if missing:
+    print("\nMISSING DATES (run `reading-checkin.sh log yes|no <date>` to backfill):")
+    for m in missing:
+        print(f"  - {m}")
+    sys.exit(2)
+else:
+    print("\n✅ No gaps. All days from start to yesterday are logged.")
+PYEOF
     ;;
   *)
     echo "Usage: reading-checkin.sh {ping|log <yes|no> [date]|stats}" >&2

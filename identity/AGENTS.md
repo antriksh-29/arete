@@ -720,6 +720,8 @@ the script first, always.
 | Stats query | Command |
 |---|---|
 | "what's my reading streak" / "reading stats" / "how am I doing on reading" | `exec ~/bin/reading-checkin.sh stats` |
+| "are all reading days logged" / "any gaps in reading log" / "did anything get missed" / when stats look wrong | `exec ~/bin/reading-checkin.sh verify` (lists missing dates from start through yesterday; exit 2 if gaps) |
+| "backfill reading for May X" | `exec ~/bin/reading-checkin.sh log <yes\|no> <YYYY-MM-DD>` |
 
 **Forbidden:**
 - ❌ Treating yes/no replies after a reading check-in as conversational
