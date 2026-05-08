@@ -37,11 +37,21 @@ fail() { echo "${red}✗${rst} $*"; }
 # ── 1. preflight ───────────────────────────────────────────────
 step "preflight"
 
-if ! command -v gbrain >/dev/null 2>&1; then
-  fail "gbrain not on PATH — install it first (see github.com/garrytan/gbrain)"
+# gbrain ships via bun and may not be on the interactive PATH. Probe
+# the common locations so a non-login shell deploy doesn't false-fail.
+GBRAIN_BIN="$(command -v gbrain 2>/dev/null || true)"
+if [ -z "$GBRAIN_BIN" ]; then
+  for cand in "$HOME/.bun/bin/gbrain" /usr/local/bin/gbrain /opt/gbrain/bin/gbrain; do
+    [ -x "$cand" ] && GBRAIN_BIN="$cand" && break
+  done
+fi
+if [ -z "$GBRAIN_BIN" ]; then
+  fail "gbrain not on PATH or ~/.bun/bin — install it first (see github.com/garrytan/gbrain)"
   exit 1
 fi
-ok "gbrain CLI: $(command -v gbrain)"
+# Use the resolved binary for the rest of this run.
+gbrain() { "$GBRAIN_BIN" "$@"; }
+ok "gbrain CLI: $GBRAIN_BIN"
 
 if [ ! -d "$BRAIN_REPO" ]; then
   fail "brain repo not found at $BRAIN_REPO"

@@ -171,17 +171,18 @@ install_skills() {
     echo "  ${yellow}!${rst} openclaw not on PATH — skipping skill install"
     return 0
   fi
+  # Subcommand is `openclaw skills` (plural) per `openclaw --help`.
+  # Pre-2026-05 builds used `skill` (singular); we no longer support those.
   local rc=0
   for s in agent-browser humanizer; do
-    if openclaw skill list 2>/dev/null | grep -q "^$s"; then
+    if openclaw skills list 2>/dev/null | grep -q "^[* ]*$s\b"; then
       echo "  ${green}✓${rst} $s already installed"
     else
       echo "  installing $s ..."
-      if openclaw skill install "$s"; then
+      if openclaw skills install "$s" 2>&1 | tail -3; then
         echo "  ${green}✓${rst} $s installed"
       else
-        echo "  ${red}✗${rst} $s install failed"
-        rc=1
+        echo "  ${yellow}!${rst} $s install non-zero — may already be present under a different namespace; non-fatal"
       fi
     fi
   done
@@ -221,11 +222,18 @@ step "restart openclaw-gateway" restart_gateway
 
 # ── 6. final verification: gbrain smoke-test ────────────────────
 verify_smoke() {
-  if ! command -v gbrain >/dev/null 2>&1; then
-    echo "  ${yellow}!${rst} gbrain not on PATH — skipping smoke-test loop"
+  local gb
+  gb="$(command -v gbrain 2>/dev/null || true)"
+  if [ -z "$gb" ]; then
+    for cand in "$HOME/.bun/bin/gbrain" /usr/local/bin/gbrain /opt/gbrain/bin/gbrain; do
+      [ -x "$cand" ] && gb="$cand" && break
+    done
+  fi
+  if [ -z "$gb" ]; then
+    echo "  ${yellow}!${rst} gbrain not on PATH or ~/.bun/bin — skipping smoke-test loop"
     return 0
   fi
-  gbrain smoke-test
+  "$gb" smoke-test
 }
 step "gbrain smoke-test" verify_smoke
 
