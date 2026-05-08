@@ -1,21 +1,26 @@
 #!/usr/bin/env node
 // run-skill-eval.mjs — runs one skill's eval.yaml.
 //
-// Wave 1 scope:
+// Three layers, gated by flags + env:
 //   1. Smoke test       — always (cheap, no network, no LLM)
-//   2. Trigger routing  — if OPENAI_API_KEY set; uses gpt-4o-mini against
-//                         the resolver table extracted from AGENTS.md
-//   3. Output evals     — only if --with-fixtures (Wave 2)
+//   2. Output structural — always (run cmd, assert json keys + expect_ok)
+//   3. Trigger routing  — if OPENAI_API_KEY set; gpt-4o-mini scores each
+//                         utterance against the resolver table
+//   4. Output judge     — opt-in via --judge; gpt-5.4-nano scores each
+//                         output's actual stdout against its judge_rubric.
+//                         Pass threshold: 8/10.
 //
 // Pass thresholds (per eval/schemas/skill-eval.schema.md):
 //   - Trigger routing: ≥ 90% top-1 accuracy
 //   - Output shape: 100% expect_json_keys present, expect_ok matches
+//   - Output judge: ≥ 8/10 average per entry
 //   - Smoke: exit 0
 //
 // Exit 0 iff all enabled checks pass.
 //
 // Usage:
 //   node eval/run-skill-eval.mjs skills/image-ocr/
+//   node eval/run-skill-eval.mjs skills/image-ocr/ --judge      (LLM judge on)
 //   node eval/run-skill-eval.mjs skills/image-ocr/ --with-fixtures
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -30,9 +35,10 @@ const AGENTS_MD = resolve(REPO_ROOT, 'identity/AGENTS.md');
 const argv = process.argv.slice(2);
 const skillDir = argv.find((a) => !a.startsWith('--'));
 const withFixtures = argv.includes('--with-fixtures');
+const withJudge = argv.includes('--judge');
 
 if (!skillDir) {
-  console.error('Usage: run-skill-eval.mjs <skill-dir> [--with-fixtures]');
+  console.error('Usage: run-skill-eval.mjs <skill-dir> [--judge] [--with-fixtures]');
   process.exit(2);
 }
 
@@ -236,8 +242,11 @@ if (cfg.triggers && cfg.triggers.length > 0) {
 // ── 3. OUTPUT EVALS ──────────────────────────────────────────────
 // Run each output eval entry: execute cmd, parse stdout as JSON, assert
 // expect_json_keys are present and (if specified) expect_ok matches.
+// Capture stdout per entry so the judge layer (--judge) can score it.
 let outputsOk = true;
 let outputsRan = 0;
+const judgeCandidates = [];   // {id, rubric, stdout} — only entries that
+                              // passed structural checks AND have a rubric
 if (Array.isArray(cfg.outputs) && cfg.outputs.length > 0) {
   console.log('## outputs');
   for (const o of cfg.outputs) {
@@ -267,10 +276,41 @@ if (Array.isArray(cfg.outputs) && cfg.outputs.length > 0) {
     const tag = pass ? '✓' : '✗';
     if (pass) console.log(`  ${tag} ${o.id}`);
     else { console.log(`  ${tag} ${o.id}  (${why})`); outputsOk = false; }
+    // Queue for judge if structural pass AND rubric present
+    if (pass && o.judge_rubric) {
+      judgeCandidates.push({ id: o.id, rubric: o.judge_rubric, stdout: r.stdout });
+    }
   }
   console.log(`  ${outputsRan} ran  ${outputsOk ? '✓' : '✗'}\n`);
 } else {
   console.log('## outputs\n  (no outputs block — skipping)\n');
+}
+
+// ── 4. OUTPUT JUDGE (--judge) ────────────────────────────────────
+// LLM-as-judge on each output entry's actual stdout against its
+// judge_rubric. Uses gpt-5.4-nano (cheapest tier; ~30 calls per
+// full --judge run is well under $0.05). Pass threshold: 8/10.
+let judgeOk = true;
+let judgeSkipped = false;
+if (judgeCandidates.length > 0) {
+  console.log('## output judge');
+  if (!withJudge) {
+    console.log(`  (--judge not set — skipping ${judgeCandidates.length} rubric-eligible entries)\n`);
+    judgeSkipped = true;
+  } else if (!process.env.OPENAI_API_KEY) {
+    console.log('  (OPENAI_API_KEY not set — skipping)\n');
+    judgeSkipped = true;
+  } else {
+    let passed = 0;
+    for (const c of judgeCandidates) {
+      const verdict = await runJudge(c.rubric, c.stdout);
+      const tag = verdict.score >= 8 ? '✓' : '✗';
+      if (verdict.score >= 8) passed++;
+      else judgeOk = false;
+      console.log(`  ${tag} ${c.id.padEnd(20)} ${verdict.score}/10  ${verdict.rationale.slice(0, 80)}`);
+    }
+    console.log(`  ${passed}/${judgeCandidates.length}  ${judgeOk ? '✓' : '✗'}\n`);
+  }
 }
 
 if (withFixtures) {
@@ -278,7 +318,10 @@ if (withFixtures) {
 }
 
 // ── verdict ─────────────────────────────────────────────────────
-const overall = smokeOk && (triggerOk || triggerSkipped) && outputsOk;
+const overall = smokeOk
+  && (triggerOk || triggerSkipped)
+  && outputsOk
+  && (judgeOk || judgeSkipped);
 console.log(`overall: ${overall ? '✓' : '✗'}`);
 process.exit(overall ? 0 : 1);
 
@@ -365,4 +408,64 @@ ${resolverTable}`;
   const out = (j.choices?.[0]?.message?.content || '').trim().toLowerCase();
   // Normalize: strip backticks, quotes, periods
   return out.replace(/[`"'.]/g, '').trim();
+}
+
+// ── LLM-as-judge for output evals ───────────────────────────────
+// Scores actual stdout against a written rubric. Returns
+// {score: 0-10, verdict: "pass"|"fail", rationale: "..."}.
+// Model: gpt-5.4-nano (cheapest tier, fast, fine for binary rubric work).
+async function runJudge(rubric, actualStdout) {
+  const sys = `You are scoring an automated test output against a written rubric. Reply with ONLY a JSON object on one line, no prose, no code fences:
+{"score": <integer 0-10>, "verdict": "pass" | "fail", "rationale": "<one sentence, max 100 chars>"}
+
+Scoring guide:
+- 8-10: output meets the rubric's intent fully or near-fully.
+- 5-7: output partially meets the rubric (some criteria pass, some don't).
+- 0-4: output fails the rubric materially (a hard-fail pattern is present, or the output doesn't address the rubric at all).
+
+Respect "Hard fails:" lines in the rubric — any one of them caps the score at 4.`;
+
+  const user = `Rubric:
+${rubric}
+
+Actual output (truncated to 4KB):
+${actualStdout.slice(0, 4096)}`;
+
+  const body = {
+    model: 'gpt-5.4-nano',
+    messages: [
+      { role: 'system', content: sys },
+      { role: 'user', content: user },
+    ],
+    temperature: 0,
+    max_tokens: 200,
+  };
+
+  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const errBody = await r.text();
+    return { score: 0, verdict: 'fail', rationale: `judge api error ${r.status}: ${errBody.slice(0, 60)}` };
+  }
+  const j = await r.json();
+  const content = (j.choices?.[0]?.message?.content || '').trim();
+  // Strip markdown code fences if present.
+  const stripped = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+  try {
+    const parsed = JSON.parse(stripped);
+    const score = Math.max(0, Math.min(10, parseInt(parsed.score, 10) || 0));
+    return {
+      score,
+      verdict: parsed.verdict || (score >= 8 ? 'pass' : 'fail'),
+      rationale: (parsed.rationale || '').slice(0, 200),
+    };
+  } catch (e) {
+    return { score: 0, verdict: 'fail', rationale: `judge returned non-JSON: ${stripped.slice(0, 60)}` };
+  }
 }

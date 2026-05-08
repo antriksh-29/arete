@@ -16,19 +16,27 @@ covering five different failure modes. None replace the others.
 Run the lot in one shot:
 
 ```bash
-bash eval/run-all-evals.sh             # full suite (needs OPENAI_API_KEY for LLM steps)
-bash eval/run-all-evals.sh --no-llm    # offline subset (audits + smoke only)
+bash eval/run-all-evals.sh             # default — audits + smoke + trigger routing (needs OPENAI_API_KEY)
+bash eval/run-all-evals.sh --no-llm    # offline — audits + smoke only (pre-push default)
+bash eval/run-all-evals.sh --judge     # deeper — adds LLM-as-judge on every rubric-tagged output (gpt-5.4-nano)
 ```
 
-Exit 0 iff every step passed. Designed to be wired into a pre-push hook
-in Wave 4. See `eval/schemas/skill.schema.md` and
+Mode comparison:
+
+| Mode | Cost | Use |
+|---|---|---|
+| `--no-llm` | $0 | Wired into pre-push hook (`infra/install-pre-push-hook.sh`); runs on every push |
+| default | ~$0.01 | Local sanity check before opening a PR |
+| `--judge` | < $0.05 | Weekly cron or on intentional rubric changes |
+
+Exit 0 iff every step passed. See `eval/schemas/skill.schema.md` and
 `eval/schemas/skill-eval.schema.md` for the contracts skills must satisfy.
 
 ### What each audit catches
 
 - **`check-resolvable.mjs`** — every `skills/*/SKILL.md` has the required frontmatter, a real `script:`, and a real `eval:` pointer. Brain dirs in `writes_to:` / `brain_dirs_read:` exist in the canonical brain (`antriksh-29/antriksh-brain` via `gh api`).
 - **`dry-audit.mjs`** — no two skills claim the same trigger phrase. Substring overlaps surfaced as warnings.
-- **`run-skill-eval.mjs <skill-dir>`** — runs the skill's smoke test + LLM-resolver routing eval (≥ 90% top-1 to pass).
+- **`run-skill-eval.mjs <skill-dir>`** — runs the skill's smoke + structural output check + LLM-resolver routing (≥ 90% top-1) + (with `--judge`) gpt-5.4-nano scoring against `judge_rubric:` (≥ 8/10).
 
 ### Original three suites (unchanged)
 

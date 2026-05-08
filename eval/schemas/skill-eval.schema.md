@@ -1,24 +1,39 @@
-# skills/&lt;name&gt;/eval.yaml schema (v1)
+# skills/&lt;name&gt;/eval.yaml schema (v2)
 
 Every skill ships its own eval suite. The harness
-`eval/run-skill-eval.mjs` reads this file and runs four kinds of check:
+`eval/run-skill-eval.mjs` runs four kinds of check, layered cheap → costly:
 
-1. **Trigger routing** — for each utterance, does the resolver pick this skill?
-2. **Output shape** — given a fixture input, does the script produce the
-   expected JSON envelope?
-3. **Smoke** — is the script callable end-to-end with a no-op flag?
-4. **Judge rubric** — LLM-as-judge scores output against a written rubric.
+1. **Smoke** — script callable with `--smoke` flag (no network, no LLM).
+2. **Output structural** — for each output entry: run `cmd`, parse stdout
+   as JSON, assert `expect_json_keys` + `expect_ok` (if specified).
+3. **Trigger routing** *(needs `OPENAI_API_KEY`)* — gpt-4o-mini scores
+   each utterance against the resolver table. Pass: ≥ 90% top-1.
+4. **Output judge** *(opt-in via `--judge`, needs `OPENAI_API_KEY`)* —
+   gpt-5.4-nano scores each rubric-tagged output's actual stdout against
+   its `judge_rubric:`. Pass: ≥ 8/10 per entry.
 
-## Pass thresholds (Wave 1 baseline)
+## Pass thresholds
 
 | Check | Pass bar |
 |---|---|
-| Trigger routing | ≥ 90% top-1 accuracy |
-| Output shape | 100% of `expect_json_keys` present, `expect_ok` matches |
 | Smoke | exit 0 |
-| Judge rubric | ≥ 8/10 average |
+| Output shape | 100% of `expect_json_keys` present, `expect_ok` matches |
+| Trigger routing | ≥ 90% top-1 accuracy |
+| Output judge | ≥ 8/10 per entry |
 
-A skill's eval is **not green** unless all four pass.
+A skill's eval is **not green** unless all enabled checks pass. Skipped
+checks (no API key, `--judge` not set) don't fail the verdict — they're
+just not enforced for that run.
+
+## Cost model
+
+| Mode | Per skill (avg) | Per `run-all-evals.sh` |
+|---|---|---|
+| `--no-llm` (pre-push default) | 0¢ | 0¢ |
+| default | ~20–30 LLM calls (gpt-4o-mini for trigger routing) | ~$0.01 |
+| `--judge` | trigger routing + 2–4 judge calls per skill | < $0.05 total |
+
+`gpt-5.4-nano` is the cheapest tier. Fine for binary rubric scoring.
 
 ## Schema
 
