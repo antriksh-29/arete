@@ -1,0 +1,71 @@
+name: Deploy to VPS
+on:
+  push:
+    branches: [main]
+
+# Single-flight: a new push to main cancels any older deploy still
+# running for the same branch. Avoids two concurrent deploys racing
+# on the box.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repo (for the SSH config / sanity)
+        uses: actions/checkout@v4
+
+      - name: Set up SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY }}
+          SSH_HOST: ${{ secrets.VPS_HOST }}
+          SSH_USER: ${{ secrets.VPS_USER }}
+          SSH_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host bot
+            HostName $SSH_HOST
+            User $SSH_USER
+            IdentityFile ~/.ssh/id_deploy
+            IdentitiesOnly yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            StrictHostKeyChecking yes
+            ConnectTimeout 10
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Deploy on VPS (git pull + deploy-vps.sh)
+        run: |
+          ssh bot 'set -euo pipefail
+            cd ~/personal-assistant
+            git fetch --quiet origin main
+            git reset --hard origin/main
+            bash infra/deploy-vps.sh
+          '
+
+      - name: Post-deploy smoke probe
+        run: |
+          ssh bot 'set -uo pipefail
+            # Cheap signal: openclaw-gateway should be active right after deploy.
+            systemctl --user is-active openclaw-gateway.service || {
+              echo "::error::openclaw-gateway not active after deploy"
+              systemctl --user status openclaw-gateway.service --no-pager | head -20
+              exit 1
+            }
+            echo "openclaw-gateway: active"
+          '
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::warning::Deploy failed. Inspect the SSH steps above and check the VPS via 'ssh bot' + 'journalctl --user -u openclaw-gateway -n 100'."

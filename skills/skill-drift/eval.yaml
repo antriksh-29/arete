@@ -46,7 +46,7 @@ triggers:
     notes: "LLM cost → usage-status"
   - id: drift-neg-003
     utterance: "share today's task list"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
   - id: drift-neg-004
     utterance: "drank 750ml"
     expect_skill: water-log

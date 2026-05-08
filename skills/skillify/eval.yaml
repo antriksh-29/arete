@@ -29,7 +29,7 @@ triggers:
 
   # ── audit ──
   - id: skl-008
-    utterance: "audit daily-tasks against the cycle"
+    utterance: "audit daily-task-manager against the cycle"
     expect_skill: skillify
   - id: skl-009
     utterance: "is reading-checkin skillify-clean"
@@ -44,7 +44,7 @@ triggers:
   # ── negative cases ──
   - id: skl-neg-001
     utterance: "remind me to ship the skill at 5pm"
-    expect_skill: reminder
+    expect_skill: reminders
   - id: skl-neg-002
     utterance: "what skills do I have"
     expect_skill: default
@@ -64,12 +64,12 @@ outputs:
     expect_ok: true
 
   - id: skl-out-audit-clean-skill
-    cmd: "python3 infra/skillify.py audit daily-tasks"
+    cmd: "python3 infra/skillify.py audit daily-task-manager"
     expect_json_keys: [ok, skill, stages, gaps, user_message]
     expect_ok: true
     judge_rubric: |
-      daily-tasks should be skillify-clean (gaps == []).
-      Hard fails: any gap on daily-tasks since it's a fully built skill.
+      daily-task-manager should be skillify-clean (gaps == []).
+      Hard fails: any gap on daily-task-manager since it's a fully built skill.
 
   - id: skl-out-audit-self
     cmd: "python3 infra/skillify.py audit skillify"

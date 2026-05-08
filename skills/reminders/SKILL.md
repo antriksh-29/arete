@@ -1,10 +1,10 @@
 ---
-name: reminder
+name: reminders
 version: 1
 script: infra/schedule-reminder.sh
 mutating: true
 cron: null
-eval: skills/reminder/eval.yaml
+eval: skills/reminders/eval.yaml
 last_audited: 2026-05-08
 description: |
   One-shot scheduled reminders via Telegram. The user wants the bot to

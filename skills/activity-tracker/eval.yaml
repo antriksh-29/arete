@@ -75,10 +75,10 @@ triggers:
     expect_skill: reading-checkin
   - id: act-neg-004
     utterance: "remind me to stretch in 30 min"
-    expect_skill: reminder
+    expect_skill: reminders
   - id: act-neg-005
     utterance: "add finish workout to my list"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
 
 smoke:
   cmd: "bash infra/activity-tracker.sh --smoke"

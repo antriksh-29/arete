@@ -1,5 +1,5 @@
 # Eval suite for daily-tasks.
-skill: daily-tasks
+skill: daily-task-manager
 script: infra/daily-tasks.sh
 version: 1
 
@@ -7,82 +7,82 @@ triggers:
   # ── share / replace today's list ──
   - id: dt-001
     utterance: "my tasks today are: refactor signal detector, ship the briefing skill, reply to Bhramari"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
     notes: "complete list framing → set"
   - id: dt-002
     utterance: "today's tasks: review weekly metrics, eng standup, write the post"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
   - id: dt-003
     utterance: "let me share my tasks for today: 1) X 2) Y 3) Z"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
   - id: dt-004
     utterance: "tasks I'll do today — finish the doc, ping Garry, lift"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
 
   # ── add ──
   - id: dt-005
     utterance: "add review the PR to my list"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
   - id: dt-006
     utterance: "also add ship the eval gate"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
 
   # ── remove / mark ──
   - id: dt-007
     utterance: "remove #2"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
   - id: dt-008
     utterance: "drop the third one"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
   - id: dt-009
     utterance: "I finished #1"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
   - id: dt-010
     utterance: "done with the briefing skill"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
   - id: dt-011
     utterance: "mark task 2 done"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
   - id: dt-012
     utterance: "push #2 to tomorrow"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
   - id: dt-013
     utterance: "park #3 indefinitely"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
 
   # ── reads ──
   - id: dt-014
     utterance: "share today's task list"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
   - id: dt-015
     utterance: "what's on my plate"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
   - id: dt-016
     utterance: "what am I working on"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
   - id: dt-017
     utterance: "yesterday's tasks"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
   - id: dt-018
     utterance: "tasks for May 4"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
   - id: dt-019
     utterance: "tasks 3 days ago"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
 
   # ── bulk-review reply (22:30 IST prompt) ──
   - id: dt-020
     utterance: "1. done\n2. tomorrow\n3. push indefinitely\n4. done"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
     notes: "numbered status map after evening review prompt → review subcommand"
   - id: dt-021
     utterance: "1. tomorrow / 2. done / 3. tomorrow / 4. done / 5. push indefinitely"
-    expect_skill: daily-tasks
+    expect_skill: daily-task-manager
 
   # ── negative cases ──
   - id: dt-neg-001
     utterance: "remind me to review the PR at 5pm"
-    expect_skill: reminder
+    expect_skill: reminders
     notes: "single time-anchored → reminder, not daily-tasks"
   - id: dt-neg-002
     utterance: "add this article to my reading list"

@@ -65,7 +65,7 @@ triggers:
     notes: "weather as context, real intent is activity log"
   - id: wx-neg-002
     utterance: "remind me to check weather at 7am"
-    expect_skill: reminder
+    expect_skill: reminders
   - id: wx-neg-003
     utterance: "what's the weather in Tokyo"
     expect_skill: default
