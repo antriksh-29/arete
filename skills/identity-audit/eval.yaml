@@ -1,0 +1,81 @@
+# Eval suite for identity-audit.
+skill: identity-audit
+script: infra/identity-audit.py
+version: 1
+
+triggers:
+  - id: ida-001
+    utterance: "identity audit"
+    expect_skill: identity-audit
+  - id: ida-002
+    utterance: "audit identity files"
+    expect_skill: identity-audit
+  - id: ida-003
+    utterance: "anything stale in AGENTS.md"
+    expect_skill: identity-audit
+  - id: ida-004
+    utterance: "what's transient in my constitution"
+    expect_skill: identity-audit
+  - id: ida-005
+    utterance: "lint identity"
+    expect_skill: identity-audit
+  - id: ida-006
+    utterance: "is my identity drifting"
+    expect_skill: identity-audit
+  - id: ida-007
+    utterance: "identity drift check"
+    expect_skill: identity-audit
+  - id: ida-008
+    utterance: "stale dates in identity"
+    expect_skill: identity-audit
+  - id: ida-009
+    utterance: "audit USER.md and SOUL.md"
+    expect_skill: identity-audit
+  - id: ida-010
+    utterance: "review my constitution for staleness"
+    expect_skill: identity-audit
+
+  # ── negative cases ──
+  - id: ida-neg-001
+    utterance: "audit daily-tasks against the cycle"
+    expect_skill: skillify
+    notes: "single-skill audit → skillify, not identity-audit"
+  - id: ida-neg-002
+    utterance: "skill drift report"
+    expect_skill: skill-drift
+    notes: "catalog-wide drift → skill-drift"
+  - id: ida-neg-003
+    utterance: "what did I burn today"
+    expect_skill: usage-status
+  - id: ida-neg-004
+    utterance: "drank 750ml"
+    expect_skill: water-log
+
+# Output evals — assert shape + a basic semantic check via judge_rubric.
+outputs:
+  - id: ida-out-smoke
+    cmd: "python3 infra/identity-audit.py --smoke"
+    expect_json_keys: [ok, user_message]
+    expect_ok: true
+
+  - id: ida-out-shape
+    cmd: "python3 infra/identity-audit.py"
+    expect_json_keys: [ok, skill, files_scanned, findings_total, findings, user_message]
+    expect_ok: true
+    judge_rubric: |
+      Output must have integer files_scanned > 0 and integer
+      findings_total >= 0. The findings object's keys must be paths
+      under identity/. user_message must summarize the count.
+      Hard fails: missing fields, non-numeric counts.
+
+  - id: ida-out-single-file
+    cmd: "python3 infra/identity-audit.py --file identity/AGENTS.md"
+    expect_json_keys: [ok, files_scanned, findings_total]
+    expect_ok: true
+    judge_rubric: |
+      With --file targeting AGENTS.md, files_scanned must be 1.
+      findings should report only AGENTS.md keys.
+
+smoke:
+  cmd: "python3 infra/identity-audit.py --smoke"
+  expect_exit: 0
