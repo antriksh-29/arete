@@ -222,7 +222,7 @@ step "restart openclaw-gateway" restart_gateway
 
 # ── 6. final verification: gbrain smoke-test ────────────────────
 verify_smoke() {
-  local gb
+  local gb bun_bin path_with_bun
   gb="$(command -v gbrain 2>/dev/null || true)"
   if [ -z "$gb" ]; then
     for cand in "$HOME/.bun/bin/gbrain" /usr/local/bin/gbrain /opt/gbrain/bin/gbrain; do
@@ -233,7 +233,11 @@ verify_smoke() {
     echo "  ${yellow}!${rst} gbrain not on PATH or ~/.bun/bin — skipping smoke-test loop"
     return 0
   fi
-  "$gb" smoke-test
+  # gbrain is a bun script; PATH must include the bun binary.
+  bun_bin="$(command -v bun 2>/dev/null || true)"
+  [ -z "$bun_bin" ] && [ -x "$HOME/.bun/bin/bun" ] && bun_bin="$HOME/.bun/bin/bun"
+  path_with_bun="$([ -n "$bun_bin" ] && dirname "$bun_bin" || dirname "$gb"):$PATH"
+  PATH="$path_with_bun" "$gb" smoke-test
 }
 step "gbrain smoke-test" verify_smoke
 

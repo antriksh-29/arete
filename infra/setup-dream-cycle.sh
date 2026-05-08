@@ -49,9 +49,18 @@ if [ -z "$GBRAIN_BIN" ]; then
   fail "gbrain not on PATH or ~/.bun/bin — install it first (see github.com/garrytan/gbrain)"
   exit 1
 fi
+# gbrain is a bun script; PATH must include the bun binary too.
+# Resolve bun the same way and inject it into PATH for gbrain invocations.
+BUN_BIN="$(command -v bun 2>/dev/null || true)"
+if [ -z "$BUN_BIN" ]; then
+  for cand in "$HOME/.bun/bin/bun" /usr/local/bin/bun; do
+    [ -x "$cand" ] && BUN_BIN="$cand" && break
+  done
+fi
+GBRAIN_PATH="$([ -n "$BUN_BIN" ] && dirname "$BUN_BIN" || dirname "$GBRAIN_BIN"):$PATH"
 # Use the resolved binary for the rest of this run.
-gbrain() { "$GBRAIN_BIN" "$@"; }
-ok "gbrain CLI: $GBRAIN_BIN"
+gbrain() { PATH="$GBRAIN_PATH" "$GBRAIN_BIN" "$@"; }
+ok "gbrain CLI: $GBRAIN_BIN  (bun: ${BUN_BIN:-MISSING})"
 
 if [ ! -d "$BRAIN_REPO" ]; then
   fail "brain repo not found at $BRAIN_REPO"
