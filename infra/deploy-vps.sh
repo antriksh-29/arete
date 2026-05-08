@@ -94,6 +94,74 @@ sync_bin() {
 }
 step "sync ~/bin/" sync_bin
 
+# ── 1b. sync identity/ → ~/.openclaw/workspace/ ────────────────
+# OpenClaw reads workspace-rooted *.md files at every relevant turn
+# (AGENTS.md, USER.md, SOUL.md, etc.). The workspace lives at
+# ~/.openclaw/workspace/ on the box; identity/ files in this repo
+# are the canonical source.
+sync_identity() {
+  local target="$HOME/.openclaw/workspace"
+  if [ ! -d "$target" ]; then
+    echo "  ${yellow}!${rst} $target missing — skipping identity sync (run openclaw onboard first?)"
+    return 0
+  fi
+  local copied=0
+  for f in identity/*.md; do
+    [ -f "$f" ] || continue
+    local name="$(basename "$f")"
+    local dst="$target/$name"
+    if [ ! -f "$dst" ] || ! cmp -s "$f" "$dst"; then
+      [ -f "$dst" ] && cp "$dst" "$dst.bak.$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+      cp "$f" "$dst"
+      copied=$((copied+1))
+    fi
+  done
+  # AGENTS.md is also referenced from ~/.openclaw/identity/ — keep both in sync.
+  if [ -d "$HOME/.openclaw/identity" ] && [ -f identity/AGENTS.md ]; then
+    if ! cmp -s identity/AGENTS.md "$HOME/.openclaw/identity/AGENTS.md"; then
+      cp "$HOME/.openclaw/identity/AGENTS.md" "$HOME/.openclaw/identity/AGENTS.md.bak.$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+      cp identity/AGENTS.md "$HOME/.openclaw/identity/AGENTS.md"
+    fi
+  fi
+  echo "  synced $copied identity file(s) → $target/"
+  return 0
+}
+step "sync identity/" sync_identity
+
+# ── 1c. sync skills/ → ~/.openclaw/workspace/skills/<name>/ ─────
+# Per-skill: copy SKILL.md and eval.yaml (if present) into the live
+# workspace's skills/ tree. Skills only in our repo are NEW (created);
+# skills with a name on both sides get our version (per Decision 2).
+# Skills only on VPS (gbrain-shipped + custom we don't track) are
+# preserved untouched.
+sync_skills() {
+  local target="$HOME/.openclaw/workspace/skills"
+  if [ ! -d "$target" ]; then
+    echo "  ${yellow}!${rst} $target missing — skipping skills sync"
+    return 0
+  fi
+  local copied=0
+  for d in skills/*/; do
+    [ -f "${d}SKILL.md" ] || continue
+    local name="$(basename "$d")"
+    # Skip TEMPLATE-eval.yaml at top level (caught by the for-loop guard already)
+    local skill_target="$target/$name"
+    mkdir -p "$skill_target"
+    for f in SKILL.md eval.yaml; do
+      [ -f "${d}$f" ] || continue
+      local dst="$skill_target/$f"
+      if [ ! -f "$dst" ] || ! cmp -s "${d}$f" "$dst"; then
+        [ -f "$dst" ] && cp "$dst" "$dst.bak.$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+        cp "${d}$f" "$dst"
+        copied=$((copied+1))
+      fi
+    done
+  done
+  echo "  synced $copied skill file(s) → $target/"
+  return 0
+}
+step "sync skills/" sync_skills
+
 # ── 2. sync smoke-tests ─────────────────────────────────────────
 step "sync ~/.gbrain/smoke-tests.d/" bash infra/sync-smoke-tests.sh
 
@@ -133,7 +201,25 @@ else
   fi
 fi
 
-# ── 5. final verification: gbrain smoke-test ────────────────────
+# ── 5. restart openclaw-gateway so AGENTS.md / SKILL.md changes take effect ─
+restart_gateway() {
+  if ! systemctl --user is-active openclaw-gateway.service >/dev/null 2>&1; then
+    echo "  ${yellow}!${rst} openclaw-gateway not active — skipping restart"
+    return 0
+  fi
+  systemctl --user restart openclaw-gateway.service
+  sleep 4
+  if systemctl --user is-active openclaw-gateway.service >/dev/null 2>&1; then
+    echo "  gateway restarted; active"
+    return 0
+  fi
+  echo "  ${red}gateway failed to come back up${rst}"
+  systemctl --user status openclaw-gateway.service --no-pager | head -10
+  return 1
+}
+step "restart openclaw-gateway" restart_gateway
+
+# ── 6. final verification: gbrain smoke-test ────────────────────
 verify_smoke() {
   if ! command -v gbrain >/dev/null 2>&1; then
     echo "  ${yellow}!${rst} gbrain not on PATH — skipping smoke-test loop"

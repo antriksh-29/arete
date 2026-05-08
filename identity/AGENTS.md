@@ -612,7 +612,7 @@ the script's `user_message` verbatim.
 
 ### Daily tasks
 
-See `skills/daily-tasks/SKILL.md`. Single source of truth is
+See `skills/daily-task-manager/SKILL.md`. Single source of truth is
 `~/bin/daily-tasks.sh`; brain page `habits/daily-tasks` is auto-rebuilt
 and read-only. Re-run `show` every time — never regurgitate from
 conversation history.
@@ -631,7 +631,7 @@ totals.
 
 ### Reminders
 
-See `skills/reminder/SKILL.md`. Always resolve relative dates to
+See `skills/reminders/SKILL.md`. Always resolve relative dates to
 absolute YYYY-MM-DD IST before invoking `~/bin/schedule-reminder.sh`.
 Never promise a reminder you didn't schedule.
 

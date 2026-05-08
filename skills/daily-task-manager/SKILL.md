@@ -1,10 +1,10 @@
 ---
-name: daily-tasks
+name: daily-task-manager
 version: 1
 script: infra/daily-tasks.sh
 mutating: true
 cron: null
-eval: skills/daily-tasks/eval.yaml
+eval: skills/daily-task-manager/eval.yaml
 last_audited: 2026-05-08
 description: |
   Today's task list. The user shares a fresh list, adds/removes/marks
