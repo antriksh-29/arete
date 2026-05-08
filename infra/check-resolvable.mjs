@@ -21,6 +21,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..');
 const SKILLS_DIR = resolve(REPO_ROOT, 'skills');
 const AGENTS_MD = resolve(REPO_ROOT, 'identity/AGENTS.md');
+const BRAIN_FILING_MD = resolve(REPO_ROOT, 'identity/BRAIN_FILING.md');
 
 const REQUIRED_FIELDS = [
   'name', 'version', 'script', 'mutating', 'cron', 'eval',
@@ -90,6 +91,33 @@ function parseScalar(v) {
   }
   return v;
 }
+
+// ── canonical brain dirs (parsed from identity/BRAIN_FILING.md) ─
+
+function parseCanonicalDirs() {
+  if (!existsSync(BRAIN_FILING_MD)) return null;
+  const txt = readFileSync(BRAIN_FILING_MD, 'utf-8');
+  // Extract dirs from the "Canonical directories" markdown table —
+  // every row's second column is the dir, formatted as `<dir>/` (with
+  // optional sub-dir, e.g. "media/ or media/social/").
+  const dirs = new Set();
+  for (const line of txt.split('\n')) {
+    if (!line.startsWith('|')) continue;
+    const cells = line.split('|').map((c) => c.trim());
+    if (cells.length < 3) continue;
+    // Second cell is the dir cell. Pull every `code-spanned` token.
+    const m = cells[2].matchAll(/`([^`]+)`/g);
+    for (const x of m) {
+      let d = x[1].trim().replace(/\/$/, '');
+      // Skip slash-less labels like "or"
+      if (!d || d === 'or') continue;
+      dirs.add(d);
+    }
+  }
+  return dirs;
+}
+
+const CANONICAL_DIRS = parseCanonicalDirs();
 
 // ── audit ───────────────────────────────────────────────────────
 
@@ -166,20 +194,33 @@ function auditSkill(name) {
     record(name, 'FAIL', 'mutating: false but writes_to is non-empty');
   }
 
-  // brain dirs are real
+  // Brain dirs declared by the skill must (a) exist in the live brain,
+  // and (b) appear in the canonical filing-rules table.
   for (const dir of [...(fm.writes_to || []), ...(fm.brain_dirs_read || [])]) {
-    // Strip trailing slash, take first segment for dir-level check
-    const seg = dir.replace(/\/$/, '').split('/')[0];
+    const cleaned = dir.replace(/\/$/, '');
+    const seg = cleaned.split('/')[0];
     if (!seg) continue;
-    // Allow paths like "lists/to-read" (file) — only check the directory
-    // exists in brain. Skip "identity/" — that's repo-local, not brain.
-    if (seg === 'identity') continue;
+    if (seg === 'identity') continue;       // repo-local, not brain
+
+    // (a) live-brain existence (best-effort; network)
     try {
       if (!brainExists(seg)) {
-        record(name, 'WARN', `brain dir not found: ${seg} (referenced in writes_to/brain_dirs_read)`);
+        record(name, 'WARN', `brain dir not found in live brain: ${seg}`);
       }
     } catch (e) {
       record(name, 'WARN', `could not verify brain dir ${seg}: ${e.message}`);
+    }
+
+    // (b) canonical filing-rules check
+    if (CANONICAL_DIRS) {
+      // Accept either the full path ("media/social") or the top segment
+      // ("media") if the rules list either form.
+      const ok = CANONICAL_DIRS.has(cleaned)
+              || CANONICAL_DIRS.has(seg)
+              || CANONICAL_DIRS.has(seg + '/');
+      if (!ok) {
+        record(name, 'WARN', `brain dir not in identity/BRAIN_FILING.md canonical list: ${dir}`);
+      }
     }
   }
 

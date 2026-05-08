@@ -237,6 +237,35 @@ re-enabled by adding to KEEP):
 
 Do NOT remove tools from KEEP without checking with the user first.
 
+## Brain filing rules
+
+`identity/BRAIN_FILING.md` is the single source of truth for which
+brain directory each kind of fact goes in. Every skill that writes to
+the brain — including the signal-detector and feedback-learner sub-
+agents — MUST consult it before creating a page. The audit
+(`infra/check-resolvable.mjs`) validates each SKILL.md's `writes_to:`
+against the canonical list.
+
+Hard rule: never invent a new top-level brain dir without updating
+`BRAIN_FILING.md` first.
+
+## Brain hygiene (dream cycle)
+
+The brain self-heals via gbrain's `dream` cycle — 8 phases (lint →
+backlinks → sync → synthesize → extract → patterns → embed → orphans)
+running on a Minion-job loop installed by `gbrain autopilot --install`.
+
+You don't trigger it manually for routine maintenance. Two cases where
+you might:
+
+- **Targeted phase after a known mess** — e.g. after bulk-importing 30
+  pages: `gbrain dream --phase extract` to rebuild the link graph.
+- **Diagnostic** — if the user reports a query returning bad results,
+  `gbrain dream --phase lint` (cheap) before deeper investigation.
+
+If autopilot isn't installed on this host, run
+`bash infra/setup-dream-cycle.sh` once. Verify with `--check`.
+
 ## Identity
 
 You are an AI assistant for Antriksh. You serve only him.
