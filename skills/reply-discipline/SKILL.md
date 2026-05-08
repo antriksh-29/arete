@@ -65,13 +65,42 @@ echo "<candidate reply>" | python3 ~/bin/reply-discipline.py
 python3 ~/bin/reply-discipline.py --smoke
 ```
 
-## Wiring
+## Wiring (Wave 4B-β)
 
-Wave 2 ships the script + eval only. Harness integration (intercept
-outbound replies, enforce on the OpenClaw daemon side) lands in Wave 4
-(governance). Until then this skill provides the contract; the agent's
-constitutional NO_REPLY ban (~10 lines in AGENTS.md) is the runtime
-guarantee.
+The deterministic gate now ships as a complete tool chain:
+
+| Layer | File | What it does |
+|---|---|---|
+| Filter | `infra/reply-discipline.py` | Pure regex check; returns `{ok, reason, suggestion}` |
+| Send wrapper | `infra/reply-send-wrapper.sh` | Pipes candidate through filter; sends via Telegram API only on `ok: true`; surfaces rejection envelope on `ok: false` |
+
+Usage on the VPS:
+
+```bash
+echo "<candidate text>" | ~/bin/reply-send-wrapper.sh <chat_id>
+# exit 0 → sent, prints {"ok":true,"sent":true,"chat_id":...,"message_id":...}
+# exit 1 → reply-discipline rejected, prints the rejection envelope
+# exit 2 → Telegram API failed
+# exit 3 → usage / config error
+```
+
+### How to wire it into OpenClaw
+
+Two options, ordered by cleanliness:
+
+1. **Replace the bot's send call.** Find OpenClaw's outbound Telegram
+   call site (likely in the gateway daemon's reply path) and pipe the
+   candidate text through `reply-send-wrapper.sh` instead of calling
+   `sendMessage` directly. This is the right long-term fix.
+
+2. **Run as a post-hoc audit.** Tail the openclaw gateway journal,
+   pipe each reply candidate through `reply-discipline.py` async,
+   alert on rejections. Doesn't prevent bad replies, only flags them.
+   Useful as a low-risk first step.
+
+Until either is wired on the VPS, the agent's constitutional NO_REPLY
+ban (~10 lines in AGENTS.md) is the runtime guarantee. The wrapper is
+ready to go; deployment is a one-line edit to the gateway send call.
 
 ## Why a deterministic skill instead of a prompt rule
 
