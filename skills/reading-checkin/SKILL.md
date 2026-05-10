@@ -131,33 +131,71 @@ reading-checkin/run-stats-eval.py` enforces the math via the gate.
 
 ### Stats math — exact specification
 
-For a given `today` (IST date the script runs on):
+**Each window is a fixed range of CALENDAR DAYS. Denominator never
+shrinks because of missing entries. A day with no entry counts as 0
+yes (i.e. a miss).**
 
-| Window | Definition |
-|---|---|
-| `last_7_days` | entries `e` where `(today - e.date).days <= 7` AND `e.date <= yesterday` |
-| `this_month` | entries `e` where `e.date >= today.replace(day=1)` AND `e.date <= yesterday` |
-| `overall` | entries `e` where `e.date >= start_date` AND `e.date <= yesterday` |
+This was previously a bug — the denominator counted *logged* days
+inside the window, so gaps inflated the percentage (e.g. tomorrow's
+ping for a fully-logged 6-day stretch + unlogged 7th day showed
+`4/6 = 67%` instead of the correct `4/7 = 57%`). Fixed 2026-05-10
+with `eval/fixtures/reading-checkin/sample-with-gaps.md` exercising
+the gap behavior.
 
-`yesterday = today - 1 day`. The `e.date <= yesterday` filter excludes
-today's entry from every window — today's entry doesn't exist yet
-when the cron fires (the bot is asking the user to log today's
-behaviour). After the user replies, the new entry slides into next
-day's windows naturally.
+For a given `today` (IST date the script runs on), let `yesterday =
+today - 1 day`:
 
-For each window: `yes = sum where v == "yes"`, `total = len(window)`,
-`percent = round(100 * yes / total)` (or 0 if empty).
+| Window | Range (inclusive) | Denominator |
+|---|---|---|
+| `last_7_days` | `[yesterday - 6 days, yesterday]` | always 7 |
+| `this_month` | `[1st of current month, yesterday]` | days elapsed in month |
+| `overall` | `[start_date, yesterday]` | days since start |
 
-### Tomorrow's flow walkthrough
+For each window:
+```
+yes   = count of dates in window where entries[date] == "yes"
+total = number of calendar days in window
+pct   = round(100 * yes / total)   # 0 if total == 0
+```
+
+**A missing entry counts as 0 yes.** This treats unlogged days the
+same as explicitly-logged "no" — from a habit-tracking perspective,
+if you didn't reply, you didn't track it. Use `verify` to find gaps.
+
+The `e.date <= yesterday` cutoff excludes today's entry from every
+window — today's entry doesn't exist yet when the cron fires (the
+bot is asking the user to log yesterday's behaviour). After the user
+replies, the new entry is in `entries` and gets picked up by the next
+recompute_stats call.
+
+### Tomorrow's flow walkthrough (today=2026-05-11, yesterday=2026-05-10)
 
 To make the contract concrete, here's what happens at 10am IST May 11
-*after the fixes in this commit*:
+*after the fixes in this commit*. Brain has entries May 1 – May 9
+(May 10 not logged yet because the bot hasn't asked yet):
+
+| Window | Range | Denom | Yes | Display |
+|---|---|---|---|---|
+| Last 7 days | 5/04–5/10 | 7 | 4 (5/04, 5/06, 5/07, 5/09; 5/10 not logged) | **4/7 — 57%** |
+| This month | 5/01–5/10 | 10 | 4 | **4/10 — 40%** |
+| Overall | 5/01–5/10 | 10 | 4 | **4/10 — 40%** |
+
+After you reply "yes" to 5/10:
+
+| Window | Range | Denom | Yes | Display |
+|---|---|---|---|---|
+| Last 7 days | 5/04–5/10 | 7 | 5 | **5/7 — 71%** |
+| This month | 5/01–5/10 | 10 | 5 | **5/10 — 50%** |
+| Overall | 5/01–5/10 | 10 | 5 | **5/10 — 50%** |
+
+The same recompute runs each call so the brain page always reflects
+the current truth.
 
 1. **`reading-checkin.timer`** fires `reading-checkin.service`.
 2. Service runs `~/bin/reading-checkin.sh ping`.
 3. `ping` calls `format_ping`:
-   - `recompute_stats` reads the brain page (entries May 1 – May 9 + May 10 if you logged today, but if not yet then up to May 9).
-   - Writes new `## Stats` block.
+   - `recompute_stats` reads the brain page (entries May 1 – May 9; May 10 not logged yet at ping time).
+   - Writes new `## Stats` block per the math above.
    - Greps the stats lines.
    - `format_ping` returns the message body.
 4. `send-telegram.sh` ships the message to your chat.

@@ -136,37 +136,49 @@ entries = {d: v for d, v in log_rows}
 
 today = datetime.date.today()
 start = datetime.date.fromisoformat(start_str)
+yesterday = today - datetime.timedelta(days=1)
 
-def window(start_d, end_d):
-    days = []
+# Stats math (revised 2026-05-10 after user pointed out a denominator
+# bug in the original implementation):
+#
+# Each window is a CALENDAR-DAY range. Denominator = number of days in
+# the window. Numerator = count of days with `yes` in the entries dict.
+# A day with no entry counts as 0 yes (effectively a miss).
+#
+# Why this matters: previously the denominator equaled the number of
+# LOGGED days inside the window, so gaps shrunk it. With current data
+# (all 9 days logged) that produced the right answer; tomorrow it
+# would have shown 4/6 instead of 4/7 because today's entry isn't
+# logged yet at ping time. Always-fixed denominator removes the
+# inflation.
+
+def window_stats(start_d: datetime.date, end_d: datetime.date):
+    """Inclusive window [start_d .. end_d]. Returns (yes, total, pct)."""
+    if end_d < start_d:
+        return (0, 0, 0)
+    yes = 0
+    total = 0
     cur = start_d
     while cur <= end_d:
-        if cur in entries_dates:
-            days.append((cur, entries[cur.isoformat()]))
+        total += 1
+        if entries.get(cur.isoformat()) == "yes":
+            yes += 1
         cur += datetime.timedelta(days=1)
-    return days
-
-entries_dates = {datetime.date.fromisoformat(d) for d in entries}
-
-def stats_for(window_days):
-    yes = sum(1 for _, v in window_days if v == "yes")
-    total = len(window_days)
     pct = round(100 * yes / total) if total else 0
-    return yes, total, pct
+    return (yes, total, pct)
 
-# All three windows have the same upper bound (yesterday IST — data is
-# logged for the previous day at 10am IST), so when daily entries
-# exist within the window, the three counters AGREE. Using <= 7 (not
-# < 7) so a 7-day window of complete data returns 7/7, not 6/6.
-yesterday = today - datetime.timedelta(days=1)
-last7 = [(d, entries[d.isoformat()]) for d in entries_dates if (today - d).days <= 7 and d <= yesterday]
-month_first = today.replace(day=1)
-this_month = [(d, entries[d.isoformat()]) for d in entries_dates if d >= month_first and d <= yesterday]
-overall = [(d, entries[d.isoformat()]) for d in entries_dates if d >= start and d <= yesterday]
+# Last 7 days: the 7 calendar days ending yesterday (inclusive).
+# At ping time on day N+1 about day N, this includes day N — which
+# isn't logged yet, so it counts as 0 yes. Once user replies, the
+# next read picks it up.
+last7_start = yesterday - datetime.timedelta(days=6)
+l7 = window_stats(last7_start, yesterday)
 
-l7 = stats_for(last7)
-mo = stats_for(this_month)
-ov = stats_for(overall)
+# This month: 1st of current month through yesterday inclusive.
+mo = window_stats(today.replace(day=1), yesterday)
+
+# Overall: start_date through yesterday inclusive.
+ov = window_stats(start, yesterday)
 
 stats_block = f"""## Stats
 
