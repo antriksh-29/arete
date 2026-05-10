@@ -208,6 +208,15 @@ commit_brain() {
     git -c user.email='antriksh.bot@getarete.co' -c user.name='Alfred' \
       commit -m "habit: water-intake update $(now_ist '%Y-%m-%d %H:%M')" >/dev/null 2>&1 || true
   fi
+  # Push every habit commit immediately so GitHub reflects the change
+  # in real time. Network failure logs a warn but never blocks the reply.
+  if git log origin/main..HEAD --oneline 2>/dev/null | grep -q .; then
+    if git push origin main 2>/dev/null; then
+      echo "[water-log] pushed brain to origin"
+    else
+      echo "[water-log] WARN: git push failed; will retry on next call" >&2
+    fi
+  fi
 }
 
 build_summary_msg() {

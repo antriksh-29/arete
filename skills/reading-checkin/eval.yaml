@@ -77,6 +77,29 @@ triggers:
     utterance: "drank 750ml"
     expect_skill: water-log
 
+# Output evals — fixture-based stats-math regression check.
+# Reproduces recompute_stats logic against a known 9-day fixture and
+# asserts the per-window counts. If reading-checkin.sh's stats math
+# ever drifts (e.g. someone changes the 7-day window edge case), this
+# eval fails the gate.
+outputs:
+  - id: rcheck-out-smoke
+    cmd: "bash infra/reading-checkin.sh --smoke"
+    expect_json_keys: [ok, user_message]
+    expect_ok: true
+
+  - id: rcheck-out-stats-math
+    cmd: "python3 eval/fixtures/reading-checkin/run-stats-eval.py --json"
+    expect_json_keys: [ok, skill, fixture, anchor_today, expected, actual, failures, user_message]
+    expect_ok: true
+    judge_rubric: |
+      Stats math must match the deterministic fixture exactly.
+      For sample-9-days.md anchored at 2026-05-10:
+        - last7 = (4 yes, 7 total, 57%)
+        - this_month = (4, 9, 44%)
+        - overall = (4, 9, 44%)
+      Hard fails: failures[] non-empty.
+
 smoke:
   cmd: "bash infra/reading-checkin.sh --smoke"
   expect_exit: 0
