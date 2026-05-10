@@ -442,7 +442,8 @@ rebuild_brain() {
     "$GBRAIN" put "$BRAIN_SLUG" < "$BRAIN_PAGE_PATH" >/dev/null 2>&1 || true
   fi
 
-  # Commit to ~/.brain git so backups capture changes
+  # Commit to ~/.brain git so backups capture changes; push immediately
+  # so GitHub reflects state in real time (single-writer system).
   if [ -d "$BRAIN_DIR/.git" ]; then
     (
       cd "$BRAIN_DIR"
@@ -450,6 +451,10 @@ rebuild_brain() {
       if ! git diff --cached --quiet 2>/dev/null; then
         git -c user.email='alfred@bot' -c user.name='Alfred' \
           commit -m "daily-tasks: state update $d" >/dev/null 2>&1 || true
+      fi
+      if git log origin/main..HEAD --oneline 2>/dev/null | grep -q .; then
+        git push origin main >/dev/null 2>&1 || \
+          echo "[daily-tasks] WARN: git push failed; will retry next run" >&2
       fi
     )
   fi

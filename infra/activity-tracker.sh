@@ -241,6 +241,11 @@ EOF
         git -c user.email='alfred@bot' -c user.name='Alfred' \
           commit -m "activity-tracker: rebuild $today" >/dev/null 2>&1 || true
       fi
+      # Push immediately so GitHub reflects state in real time.
+      if git log origin/main..HEAD --oneline 2>/dev/null | grep -q .; then
+        git push origin main >/dev/null 2>&1 || \
+          echo "[activity-tracker] WARN: git push failed; will retry next run" >&2
+      fi
     )
   fi
 }

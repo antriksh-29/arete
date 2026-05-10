@@ -235,6 +235,17 @@ commit_brain() {
     git -c user.email='antriksh.bot@getarete.co' -c user.name='Alfred' \
       commit -m "habit: book-reading update $(now_ist '%Y-%m-%d %H:%M')" >/dev/null 2>&1 || true
   fi
+  # Push every habit commit immediately so GitHub reflects the change
+  # in real time (single-writer system, conflicts are vanishingly rare).
+  # Network failure logs a warn but never blocks the user-facing reply —
+  # the next push (or the daily collector at 7am) will catch up.
+  if git log origin/main..HEAD --oneline 2>/dev/null | grep -q .; then
+    if git push origin main 2>/dev/null; then
+      echo "[reading-checkin] pushed brain to origin"
+    else
+      echo "[reading-checkin] WARN: git push failed; commits will retry on next call or via daily collector" >&2
+    fi
+  fi
 }
 
 case "${1:-}" in
