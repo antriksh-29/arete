@@ -129,44 +129,61 @@ reading-checkin/run-stats-eval.py` enforces the math via the gate.
    diverge in count (different windows) but never in *which entries
    they consider* (always the brain page table).
 
-### Stats math — exact specification
+### Stats math — exact specification (v2)
 
-**Each window is a fixed range of CALENDAR DAYS. Denominator never
-shrinks because of missing entries. A day with no entry counts as 0
-yes (i.e. a miss).**
+The math has gone through two revisions. Current definition:
 
-This was previously a bug — the denominator counted *logged* days
-inside the window, so gaps inflated the percentage (e.g. tomorrow's
-ping for a fully-logged 6-day stretch + unlogged 7th day showed
-`4/6 = 67%` instead of the correct `4/7 = 57%`). Fixed 2026-05-10
-with `eval/fixtures/reading-checkin/sample-with-gaps.md` exercising
-the gap behavior.
+**Upper bound = `max(entry_date)` clamped to yesterday.** I.e., the
+date of the latest logged entry on or before yesterday. *Not*
+`yesterday` itself.
 
-For a given `today` (IST date the script runs on), let `yesterday =
-today - 1 day`:
-
-| Window | Range (inclusive) | Denominator |
-|---|---|---|
-| `last_7_days` | `[yesterday - 6 days, yesterday]` | always 7 |
-| `this_month` | `[1st of current month, yesterday]` | days elapsed in month |
-| `overall` | `[start_date, yesterday]` | days since start |
+Why this matters: at a ping firing on day N+1 about day N, day N
+hasn't been answered yet. The brain has entries through day N-1.
+Stats reflect data through N-1. Trailing unlogged days are excluded
+from the denominator — because the user hasn't been asked yet.
+After the user replies, the new entry shifts the upper bound forward
+on the next recompute, sliding all three windows by exactly the days
+the user just filled in.
 
 For each window:
 ```
-yes   = count of dates in window where entries[date] == "yes"
-total = number of calendar days in window
+upper = max(d for d in entries if d <= yesterday)   # None if empty
+yes   = count of dates in [start_d, upper] where entries[date] == "yes"
+total = number of calendar days in [start_d, upper]
 pct   = round(100 * yes / total)   # 0 if total == 0
 ```
 
-**A missing entry counts as 0 yes.** This treats unlogged days the
-same as explicitly-logged "no" — from a habit-tracking perspective,
-if you didn't reply, you didn't track it. Use `verify` to find gaps.
+| Window | start_d | end_d (= upper) | Denominator |
+|---|---|---|---|
+| `last_7_days` | `max(upper - 6 days, start_date)` | latest entry ≤ yesterday | 7 (or fewer if pre-start) |
+| `this_month` | 1st of current month | latest entry ≤ yesterday | days from 1st to upper |
+| `overall` | `start_date` | latest entry ≤ yesterday | days from start to upper |
 
-The `e.date <= yesterday` cutoff excludes today's entry from every
-window — today's entry doesn't exist yet when the cron fires (the
-bot is asking the user to log yesterday's behaviour). After the user
-replies, the new entry is in `entries` and gets picked up by the next
-recompute_stats call.
+**Missing days WITHIN a window count as 0 yes** (a miss). Missing
+days at the END (after the latest logged entry) are *excluded* — they
+don't sit in the denominator.
+
+#### Two failure modes this avoids
+
+| Failure | What | Old math | New math |
+|---|---|---|---|
+| Mid-window gap | Logged 5/03, 5/05, 5/07 (skipped 5/04, 5/06) | `3/3 = 100%` (denominator = entries) | `3/5 = 60%` (denominator = days) ✓ |
+| Trailing unlogged | At ping 5/11, brain has 5/01–5/09 (not 5/10 yet) | `4/6 = 67%` (denom = entries) THEN `4/7 = 57%` (denom = days, miss for 5/10) | `4/7 = 57%` (upper bound = 5/09; 5/10 not in window) ✓ |
+
+The third column was the original bug. The fourth was an interim fix.
+The fifth — current — uses `upper_bound = last logged ≤ yesterday`,
+which gets BOTH cases right.
+
+#### Five regression-test fixtures
+
+`eval/fixtures/reading-checkin/run-stats-eval.py` exercises every
+shape:
+
+1. **9 days fully logged @ today=5/10** — current data, no gaps. `(4,7,57)/(4,9,44)/(4,9,44)`.
+2. **9 days @ today=5/11 (tomorrow's ping)** — 5/10 unlogged. Upper bound = 5/09. `(4,7,57)/(4,9,44)/(4,9,44)` — same window, NOT extending into 5/10.
+3. **9 days + 5/10=yes @ today=5/11 (after reply)** — upper bound shifts to 5/10. `(5,7,71)/(5,10,50)/(5,10,50)`.
+4. **Alternating gaps (5/01, 03, 05, 07, 09)** — mid-window misses. `(4,7,57)/(5,9,56)/(5,9,56)`.
+5. **Empty (no entries)** — `(0,0,0)` × 3.
 
 ### Tomorrow's flow walkthrough (today=2026-05-11, yesterday=2026-05-10)
 

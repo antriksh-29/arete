@@ -93,13 +93,17 @@ outputs:
     expect_json_keys: [ok, skill, cases, failures, user_message]
     expect_ok: true
     judge_rubric: |
-      Stats math must use fixed-window denominators (calendar days,
-      not logged days). All 3 cases must pass:
-        1. sample-9-days.md @ 2026-05-10 → last7=(4,7,57)
-        2. sample-9-days.md @ 2026-05-11 → last7=(4,7,57) — critical:
-           catches the original bug where this returned (4,6,67)
-        3. sample-with-gaps.md @ 2026-05-10 → last7=(4,7,57) with
-           missing days counting as 0 yes
+      Stats math v2: upper_bound = max(entry_date <= yesterday). All 5
+      cases must pass:
+        1. sample-9-days.md @ 2026-05-10 → (4,7,57)/(4,9,44)/(4,9,44)
+        2. sample-9-days.md @ 2026-05-11 (TOMORROW'S PING — critical)
+           → (4,7,57)/(4,9,44)/(4,9,44). Window upper bound stays at
+           5/09 because 5/10 isn't logged yet.
+        3. sample-9-days-plus-510-yes.md @ 2026-05-11 (after reply)
+           → (5,7,71)/(5,10,50)/(5,10,50). Upper bound shifts to 5/10.
+        4. sample-with-gaps.md @ 2026-05-10 → (4,7,57)/(5,9,56)/(5,9,56)
+           — mid-window misses count as 0 yes.
+        5. sample-empty.md → (0,0,0)/(0,0,0)/(0,0,0).
       Hard fails: failures[] non-empty.
 
 smoke:
