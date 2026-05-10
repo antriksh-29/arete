@@ -89,3 +89,4 @@ Or from your Mac with one command:
 ```bash
 ssh bot 'cd ~/personal-assistant && git pull && bash infra/deploy-vps.sh'
 ```
+// triggered by GHA deploy verification — 2026-05-10
