@@ -90,14 +90,16 @@ outputs:
 
   - id: rcheck-out-stats-math
     cmd: "python3 eval/fixtures/reading-checkin/run-stats-eval.py --json"
-    expect_json_keys: [ok, skill, fixture, anchor_today, expected, actual, failures, user_message]
+    expect_json_keys: [ok, skill, cases, failures, user_message]
     expect_ok: true
     judge_rubric: |
-      Stats math must match the deterministic fixture exactly.
-      For sample-9-days.md anchored at 2026-05-10:
-        - last7 = (4 yes, 7 total, 57%)
-        - this_month = (4, 9, 44%)
-        - overall = (4, 9, 44%)
+      Stats math must use fixed-window denominators (calendar days,
+      not logged days). All 3 cases must pass:
+        1. sample-9-days.md @ 2026-05-10 → last7=(4,7,57)
+        2. sample-9-days.md @ 2026-05-11 → last7=(4,7,57) — critical:
+           catches the original bug where this returned (4,6,67)
+        3. sample-with-gaps.md @ 2026-05-10 → last7=(4,7,57) with
+           missing days counting as 0 yes
       Hard fails: failures[] non-empty.
 
 smoke:
