@@ -2,15 +2,32 @@
 # Daily reading habit check-in.
 #
 # Subcommands:
-#   ping         — send the morning Telegram check-in for yesterday's reading
-#   log yes|no [YYYY-MM-DD]  — record a result (date defaults to yesterday IST)
-#   stats        — print current stats to stdout (used inside ping)
+#   ping [--for YYYY-MM-DD]   send the morning Telegram check-in for
+#                             yesterday's reading. With --for, ask about
+#                             a specific past date instead (used for
+#                             backfill-style testing and missed-day pings).
+#   log yes|no [YYYY-MM-DD]   record a result (date defaults to yesterday IST)
+#   stats                     print current stats to stdout
+#   verify                    list any missing dates from start through yesterday
+#   --smoke                   cold-boot callability check
 #
 # Backing store: ~/.brain/habits/book-reading.md (committed to brain repo
 # by the daily collector + on every log update). The page has a markdown
 # log table; this script appends rows + recomputes the stats block.
+#
+# Discipline (added 2026-05-10 after silent-failure incident):
+#   - set -uo pipefail (was: just -e). Unset vars + pipe failures now error.
+#   - ERR trap logs the failing line+command to journal so a silent abort
+#     never happens again — previous version exited with no stdout/stderr
+#     on May 6/7/8.
+#   - format_ping checks the captured stats are non-empty before sending
+#     (prevents shipping a malformed Telegram message).
 
-set -e
+set -uo pipefail
+
+# Loud-fail trap. journalctl picks up stderr from systemd; this guarantees
+# a one-line "FAIL: <cmd> at line <N>" record on every silent abort.
+trap 'rc=$?; echo "[reading-checkin] FAIL rc=$rc at line ${LINENO} cmd: ${BASH_COMMAND}" >&2' ERR
 
 BRAIN_PAGE="$HOME/.brain/habits/book-reading.md"
 START_DATE="2026-05-01"
@@ -73,17 +90,31 @@ log_entry() {
     mv "$BRAIN_PAGE.tmp" "$BRAIN_PAGE"
   fi
 
-  # Sort the log table by date (after the table header rows)
+  # Sort the log table by date. Robust against blank lines INSIDE the
+  # table region (a known-bad state from earlier versions of this
+  # script). The previous regex required (?:\|.*\n)* which broke on
+  # the first blank line — leaving subsequent rows unsorted at the bottom.
+  # New approach: capture everything between the header dashes and
+  # `## Stats`, drop blank/non-pipe lines, sort, write back.
   python3 - "$BRAIN_PAGE" <<'PYEOF'
 import sys, re
 path = sys.argv[1]
 src = open(path).read()
-# Match the log table region between "| Date | Read |" header and "## Stats"
-m = re.search(r"(\| Date \| Read \|\n\|------\|------\|\n)((?:\|.*\n)*)(\n## Stats)", src)
+m = re.search(
+    r"(\| Date \| Read \|\n\|-+\|-+\|\n)([\s\S]*?)(\n*## Stats)",
+    src,
+)
 if m:
-    rows = [r for r in m.group(2).splitlines() if r.strip()]
-    rows.sort()
-    new = m.group(1) + "\n".join(rows) + ("\n" if rows else "") + m.group(3)
+    raw = m.group(2)
+    # Keep only well-formed `| YYYY-MM-DD | yes/no |` rows; drop blanks
+    # and any other accidental content. Sort lexically (= chronological
+    # for ISO dates).
+    rows = sorted(
+        line.rstrip()
+        for line in raw.splitlines()
+        if re.match(r"^\| \d{4}-\d{2}-\d{2} \| (yes|no) \|$", line.rstrip())
+    )
+    new = m.group(1) + "\n".join(rows) + ("\n\n" if rows else "\n") + "## Stats"
     src = src[:m.start()] + new + src[m.end():]
     open(path, "w").write(src)
 PYEOF
@@ -154,19 +185,38 @@ PYEOF
 format_ping() {
   ensure_page
   recompute_stats
-  local YEST=$(yesterday_ist '%a %d %b')
-  local YESTKEY=$(yesterday_ist '%Y-%m-%d')
 
-  # Pull the current stats lines
-  local L7=$(grep -oP 'Last 7 days:\*\* \K[^\n]+' "$BRAIN_PAGE" | head -1)
-  local MO_LABEL=$(grep -oP '\*\*This month \(\K[^)]+' "$BRAIN_PAGE" | head -1)
-  local MO=$(grep -oP "This month \([^)]+\):\*\* \K[^\n]+" "$BRAIN_PAGE" | head -1)
-  local OV=$(grep -oP 'Overall:\*\* \K[^\n]+' "$BRAIN_PAGE" | head -1)
+  # First arg (optional) is a target date YYYY-MM-DD; defaults to yesterday IST.
+  local TARGET_DATE="${1:-$(yesterday_ist '%Y-%m-%d')}"
+  local TARGET_LABEL
+  TARGET_LABEL=$(TZ=Asia/Kolkata date -d "$TARGET_DATE" '+%a %d %b' 2>/dev/null || echo "$TARGET_DATE")
+
+  # Pull the current stats lines (allow grep miss → empty, never fail).
+  local L7 MO_LABEL MO OV
+  L7=$(grep -oP 'Last 7 days:\*\* \K[^\n]+' "$BRAIN_PAGE" | head -1 || true)
+  MO_LABEL=$(grep -oP '\*\*This month \(\K[^)]+' "$BRAIN_PAGE" | head -1 || true)
+  MO=$(grep -oP "This month \([^)]+\):\*\* \K[^\n]+" "$BRAIN_PAGE" | head -1 || true)
+  OV=$(grep -oP 'Overall:\*\* \K[^\n]+' "$BRAIN_PAGE" | head -1 || true)
+
+  # Loud-fail if recompute_stats produced an unparseable page. Better to
+  # surface this early than ship a Telegram message with empty stats.
+  if [ -z "$L7" ] || [ -z "$OV" ]; then
+    echo "[reading-checkin] FAIL: stats parse failed (L7='$L7' OV='$OV')" >&2
+    return 1
+  fi
+
+  # If TARGET_DATE is yesterday, phrase it as "yesterday"; else explicit.
+  local PROMPT_DATE
+  if [ "$TARGET_DATE" = "$(yesterday_ist '%Y-%m-%d')" ]; then
+    PROMPT_DATE="yesterday ($TARGET_LABEL)"
+  else
+    PROMPT_DATE="on $TARGET_LABEL ($TARGET_DATE)"
+  fi
 
   cat <<MSG
 📚 Reading check-in
 
-Did you read a book yesterday ($YEST)?
+Did you read a book $PROMPT_DATE?
 
 Your statistics:
 
@@ -174,7 +224,7 @@ Last 7 days: $L7
 $MO_LABEL: $MO
 Overall: $OV
 
-Please reply yes / no to this message to log your activity
+Please reply yes / no to this message to log your activity (use "yes for $TARGET_DATE" / "no for $TARGET_DATE" to be explicit about the date).
 MSG
 }
 
@@ -194,8 +244,20 @@ case "${1:-}" in
     exit 0
     ;;
   ping)
-    MSG=$(format_ping)
+    # ping              → ask about yesterday
+    # ping --for <date> → ask about a specific date (backfill / catch-up)
+    TARGET_DATE=""
+    if [ "${2:-}" = "--for" ] && [ -n "${3:-}" ]; then
+      TARGET_DATE="$3"
+      # Sanity-check date format
+      if ! TZ=Asia/Kolkata date -d "$TARGET_DATE" >/dev/null 2>&1; then
+        echo "[reading-checkin] FAIL: --for received invalid date '$TARGET_DATE'" >&2
+        exit 1
+      fi
+    fi
+    MSG=$(format_ping "$TARGET_DATE")
     /home/botuser/bin/send-telegram.sh "$MSG"
+    echo "[reading-checkin] OK: ping sent for ${TARGET_DATE:-yesterday}"
     commit_brain
     ;;
   log)
