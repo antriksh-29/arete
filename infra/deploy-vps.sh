@@ -94,6 +94,11 @@ sync_bin() {
 }
 step "sync ~/bin/" sync_bin
 
+# ── 1a-bis. seed exec-approvals allowlist for routing skills ────
+# Without this, replies like "yes" to the reading-checkin daily ping
+# hit a per-call exec-approval gate and silently expire if not seen.
+step "seed exec allowlist" bash infra/seed-exec-allowlist.sh
+
 # ── 1b. sync identity/ → ~/.openclaw/workspace/ ────────────────
 # OpenClaw reads workspace-rooted *.md files at every relevant turn
 # (AGENTS.md, USER.md, SOUL.md, etc.). The workspace lives at
