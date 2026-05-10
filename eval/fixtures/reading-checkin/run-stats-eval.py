@@ -37,26 +37,39 @@ CASES = [
         "anchor_today": dt.date(2026, 5, 10),
         "expected": {
             "started": "2026-05-01",
-            # Window 5/03–5/09 = 7 days. All logged. Yes: 5/04, 5/06, 5/07, 5/09 = 4.
+            # upper_bound = max entry ≤ yesterday(5/9) = 5/9.
+            # Window 5/03–5/09 = 7 days. Yes: 5/04, 5/06, 5/07, 5/09 = 4.
             "last7": (4, 7, 57),
-            # Month-to-yesterday = 5/01–5/09 = 9 days. 4 yes.
             "this_month": (4, 9, 44),
-            # Overall = same as month here.
             "overall": (4, 9, 44),
         },
     },
     {
-        "name": "9-day fixture, anchored 2026-05-11 (simulates tomorrow's ping; 5/10 not logged yet)",
+        "name": "9-day fixture, anchored 2026-05-11 (tomorrow's ping; 5/10 not logged yet)",
         "fixture": HERE / "sample-9-days.md",
         "anchor_today": dt.date(2026, 5, 11),
         "expected": {
             "started": "2026-05-01",
-            # Window 5/04–5/10 = 7 days. 5/10 not logged → 0 yes.
-            # Yes: 5/04, 5/06, 5/07, 5/09 = 4.
+            # yesterday=5/10. No entry for 5/10 → upper_bound stays at 5/9.
+            # Window 5/03–5/09 = 7 days, NOT [5/04, 5/10].
             "last7": (4, 7, 57),
-            # Month 5/01–5/10 = 10 days. 5/10 not logged. 4 yes.
-            "this_month": (4, 10, 40),
-            "overall": (4, 10, 40),
+            # Month 5/01–5/09 (NOT through 5/10) = 9 days.
+            "this_month": (4, 9, 44),
+            "overall": (4, 9, 44),
+        },
+    },
+    {
+        "name": "9-day fixture + 5/10=yes, anchored 2026-05-11 (after user replies to ping)",
+        "fixture": HERE / "sample-9-days-plus-510-yes.md",
+        "anchor_today": dt.date(2026, 5, 11),
+        "expected": {
+            "started": "2026-05-01",
+            # yesterday=5/10, entry for 5/10 exists → upper_bound = 5/10.
+            # Window 5/04–5/10 = 7 days. Yes: 5/04, 5/06, 5/07, 5/09, 5/10 = 5.
+            "last7": (5, 7, 71),
+            # Month 5/01–5/10 = 10 days. 5 yes.
+            "this_month": (5, 10, 50),
+            "overall": (5, 10, 50),
         },
     },
     {
@@ -66,20 +79,32 @@ CASES = [
         "expected": {
             "started": "2026-05-01",
             # Logged 5/01, 5/03, 5/05, 5/07, 5/09 (all yes). Missing 5/02, 5/04, 5/06, 5/08.
-            # Window 5/03–5/09 = 7 days. Logged yes: 5/03, 5/05, 5/07, 5/09 = 4.
+            # upper_bound = 5/9. Window 5/03–5/09 = 7 days.
+            # Logged yes: 5/03, 5/05, 5/07, 5/09 = 4. (Missing days = 0 yes.)
             "last7": (4, 7, 57),
-            # Month 5/01–5/09 = 9 days. Logged yes: 5 (alternating).
+            # Month 5/01–5/09 = 9 days. Yes: 5.
             "this_month": (5, 9, 56),
             "overall": (5, 9, 56),
+        },
+    },
+    {
+        "name": "no entries yet (fresh start)",
+        "fixture": HERE / "sample-empty.md",
+        "anchor_today": dt.date(2026, 5, 10),
+        "expected": {
+            "started": "2026-05-01",
+            "last7": (0, 0, 0),
+            "this_month": (0, 0, 0),
+            "overall": (0, 0, 0),
         },
     },
 ]
 
 
 def stats_from_page(src: str, today: dt.date, start_str: str) -> dict:
-    """Independent reimplementation of recompute_stats with the fixed-
-    window denominator semantics. Mirror of the shell script's embedded
-    Python — if either drifts, the eval fails."""
+    """Independent reimplementation of recompute_stats v2 with
+    upper_bound = max(entry_date <= yesterday). Mirror of the shell
+    script's embedded Python — if either drifts, the eval fails."""
     log_rows = re.findall(r"\| (\d{4}-\d{2}-\d{2}) \| (yes|no) \|", src)
     entries = {d: v for d, v in log_rows}
     yesterday = today - dt.timedelta(days=1)
@@ -99,12 +124,30 @@ def stats_from_page(src: str, today: dt.date, start_str: str) -> dict:
         pct = round(100 * yes / total) if total else 0
         return (yes, total, pct)
 
-    last7_start = yesterday - dt.timedelta(days=6)
+    # Upper bound = latest entry on or before yesterday. None if empty.
+    candidate_dates = [
+        dt.date.fromisoformat(d) for d in entries
+        if dt.date.fromisoformat(d) <= yesterday
+    ]
+    upper_bound = max(candidate_dates) if candidate_dates else None
+    if upper_bound is None:
+        return {
+            "started": start_str,
+            "last7": (0, 0, 0),
+            "this_month": (0, 0, 0),
+            "overall": (0, 0, 0),
+        }
+
+    last7_start = max(upper_bound - dt.timedelta(days=6), start)
+    month_first = today.replace(day=1)
+    this_month = (
+        window_stats(month_first, upper_bound) if upper_bound >= month_first else (0, 0, 0)
+    )
     return {
         "started": start_str,
-        "last7": window_stats(last7_start, yesterday),
-        "this_month": window_stats(today.replace(day=1), yesterday),
-        "overall": window_stats(start, yesterday),
+        "last7": window_stats(last7_start, upper_bound),
+        "this_month": this_month,
+        "overall": window_stats(start, upper_bound),
     }
 
 

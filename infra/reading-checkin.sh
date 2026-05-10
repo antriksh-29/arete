@@ -138,19 +138,27 @@ today = datetime.date.today()
 start = datetime.date.fromisoformat(start_str)
 yesterday = today - datetime.timedelta(days=1)
 
-# Stats math (revised 2026-05-10 after user pointed out a denominator
-# bug in the original implementation):
+# Stats math v2 (revised 2026-05-10):
 #
 # Each window is a CALENDAR-DAY range. Denominator = number of days in
 # the window. Numerator = count of days with `yes` in the entries dict.
-# A day with no entry counts as 0 yes (effectively a miss).
+# Missing days in the MIDDLE of a window count as 0 yes (a miss).
 #
-# Why this matters: previously the denominator equaled the number of
-# LOGGED days inside the window, so gaps shrunk it. With current data
-# (all 9 days logged) that produced the right answer; tomorrow it
-# would have shown 4/6 instead of 4/7 because today's entry isn't
-# logged yet at ping time. Always-fixed denominator removes the
-# inflation.
+# Upper bound = last logged entry on or before yesterday. NOT just
+# `yesterday`. This excludes trailing unlogged days from the denominator
+# at ping time. Concretely: at tomorrow's 10am ping (today=N+1) about
+# yesterday=N, brain has entries through N-1 (N hasn't been answered
+# yet). Stats reflect data through N-1, NOT yesterday.
+#
+# Why: earlier versions used `yesterday` as the upper bound, which
+# pulled the unlogged-yet day into the denominator and counted it as
+# a miss. That was wrong — the user hasn't been ASKED yet about that
+# day. Stats should reflect only days the user has had a chance to
+# log.
+#
+# After the user replies to the ping, the new entry's date becomes
+# the new upper bound on the next recompute, sliding all three windows
+# forward by exactly the days the user has filled in.
 
 def window_stats(start_d: datetime.date, end_d: datetime.date):
     """Inclusive window [start_d .. end_d]. Returns (yes, total, pct)."""
@@ -167,18 +175,35 @@ def window_stats(start_d: datetime.date, end_d: datetime.date):
     pct = round(100 * yes / total) if total else 0
     return (yes, total, pct)
 
-# Last 7 days: the 7 calendar days ending yesterday (inclusive).
-# At ping time on day N+1 about day N, this includes day N — which
-# isn't logged yet, so it counts as 0 yes. Once user replies, the
-# next read picks it up.
-last7_start = yesterday - datetime.timedelta(days=6)
-l7 = window_stats(last7_start, yesterday)
+# Upper bound = max entry date <= yesterday. None if no entries yet.
+candidate_dates = [
+    datetime.date.fromisoformat(d)
+    for d in entries
+    if datetime.date.fromisoformat(d) <= yesterday
+]
+upper_bound = max(candidate_dates) if candidate_dates else None
 
-# This month: 1st of current month through yesterday inclusive.
-mo = window_stats(today.replace(day=1), yesterday)
+if upper_bound is None:
+    # No entries yet — emit zeros gracefully.
+    l7 = mo = ov = (0, 0, 0)
+else:
+    # Last 7 days: 7-day window ending at upper_bound. Clamp the start
+    # to the habit's start_date so pre-habit days don't count.
+    last7_start = max(upper_bound - datetime.timedelta(days=6), start)
+    l7 = window_stats(last7_start, upper_bound)
 
-# Overall: start_date through yesterday inclusive.
-ov = window_stats(start, yesterday)
+    # This month: 1st of THIS month (the month `today` is in) through
+    # upper_bound. If upper_bound is in a previous month (rare, only
+    # right after a month rolls over with no entries yet), window is
+    # empty → (0,0,0).
+    month_first = today.replace(day=1)
+    if upper_bound >= month_first:
+        mo = window_stats(month_first, upper_bound)
+    else:
+        mo = (0, 0, 0)
+
+    # Overall: start_date through upper_bound.
+    ov = window_stats(start, upper_bound)
 
 stats_block = f"""## Stats
 
