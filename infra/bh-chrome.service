@@ -1,0 +1,35 @@
+# systemd user unit — persistent headless Chrome for browser-harness.
+# Lives at ~/.config/systemd/user/bh-chrome.service after deploy.
+# browser-harness attaches to this Chrome via CDP on 127.0.0.1:9222.
+#
+# Notes:
+#   --headless=new is the modern headless mode (full Chrome surface).
+#   --no-sandbox is required when running under a non-root user inside
+#       a VPS kernel where unprivileged user namespaces are disabled.
+#   --user-data-dir is persistent so cookies/sessions survive restarts.
+#   --remote-debugging-address=127.0.0.1 keeps CDP loopback-only (do
+#       NOT expose to the public interface — CDP gives full Chrome RCE).
+[Unit]
+Description=Headless Chrome for browser-harness (CDP on 127.0.0.1:9222)
+After=network.target
+
+[Service]
+Type=simple
+Environment=HOME=%h
+ExecStart=/usr/bin/google-chrome \
+  --headless=new \
+  --disable-gpu \
+  --no-sandbox \
+  --no-first-run \
+  --no-default-browser-check \
+  --remote-debugging-port=9222 \
+  --remote-debugging-address=127.0.0.1 \
+  --user-data-dir=%h/.browser-harness/chrome-data \
+  --disable-features=TranslateUI,IsolateOrigins,site-per-process
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:%h/.browser-harness/chrome.log
+StandardError=append:%h/.browser-harness/chrome.log
+
+[Install]
+WantedBy=default.target

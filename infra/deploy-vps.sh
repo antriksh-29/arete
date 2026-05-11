@@ -196,130 +196,137 @@ install_skills() {
 if [ "$SKIP_SKILLS" -eq 1 ]; then skip "openclaw skills"; else step "openclaw skills" install_skills; fi
 
 # ── 3a. install Google Chrome (non-snap) + xdg-utils ──────────────
-# openclaw's browser plugin needs an unsandboxed browser. Ubuntu's
-# chromium-browser is a SNAP stub — even with classic confinement, the
-# snap can't write Chromium's SingletonLock to ~/.openclaw/.../user-data,
-# so `openclaw browser start` fails with `Permission denied (13)`.
-# Solution: install google-chrome-stable from Google's apt repo (real
-# native binary, no snap confinement). Idempotent: skip if a non-snap
-# browser is already present.
-install_chromium() {
-  local non_snap_browser=""
-  for cand in google-chrome google-chrome-stable chrome brave-browser; do
-    if command -v "$cand" >/dev/null 2>&1; then
-      non_snap_browser="$cand"
-      break
+# browser-harness needs a real Chrome on the host (no snap confinement
+# — snap chromium can't write to arbitrary user-data dirs).
+# Idempotent: skip if google-chrome is already present.
+install_chrome() {
+  if command -v google-chrome >/dev/null 2>&1; then
+    echo "  ${green}✓${rst} google-chrome present"
+  elif command -v apt-get >/dev/null 2>&1; then
+    if [ ! -f /etc/apt/sources.list.d/google-chrome.list ]; then
+      sudo -n bash -c '
+        set -e
+        curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
+          | gpg --dearmor -o /etc/apt/trusted.gpg.d/google-chrome.gpg
+        echo "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" \
+          > /etc/apt/sources.list.d/google-chrome.list
+        apt-get update -q
+      ' 2>&1 | tail -3 || true
     fi
-  done
-  if [ -z "$non_snap_browser" ] && command -v chromium >/dev/null 2>&1; then
-    local link
-    link=$(readlink -f "$(command -v chromium)" 2>/dev/null || echo "")
-    case "$link" in
-      *snap*) ;;  # snap — skip
-      *) non_snap_browser="chromium" ;;
-    esac
-  fi
-  if [ -n "$non_snap_browser" ] && command -v xdg-settings >/dev/null 2>&1; then
-    echo "  ${green}✓${rst} non-snap browser present: $non_snap_browser; xdg-utils OK"
-    return 0
-  fi
-  if ! command -v apt-get >/dev/null 2>&1; then
-    echo "  ${yellow}!${rst} no apt-get — install google-chrome-stable + xdg-utils manually"
-    return 0
-  fi
-  # Make sure xdg-utils is present regardless (chromium-browser wrapper
-  # needs it and so do some Chrome features).
-  if ! command -v xdg-settings >/dev/null 2>&1; then
-    echo "  installing xdg-utils ..."
-    sudo -n apt-get install -y -q xdg-utils 2>&1 | tail -3 || true
-  fi
-  if [ -n "$non_snap_browser" ]; then
-    return 0
-  fi
-  echo "  installing google-chrome-stable (non-snap) ..."
-  # Add Google's signing key + repo if not present, then install.
-  if [ ! -f /etc/apt/sources.list.d/google-chrome.list ]; then
-    sudo -n bash -c '
-      set -e
-      curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
-        | gpg --dearmor -o /etc/apt/trusted.gpg.d/google-chrome.gpg
-      echo "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" \
-        > /etc/apt/sources.list.d/google-chrome.list
-      apt-get update -q
-    ' 2>&1 | tail -5 || {
-      echo "  ${yellow}!${rst} failed to add Google Chrome apt repo — non-fatal"
-      return 0
-    }
-  fi
-  if sudo -n apt-get install -y -q google-chrome-stable 2>&1 | tail -3; then
-    echo "  ${green}✓${rst} google-chrome-stable installed at $(command -v google-chrome)"
-  else
-    echo "  ${yellow}!${rst} google-chrome-stable install failed — non-fatal"
-    return 0
-  fi
-}
-step "install chromium" install_chromium
-
-# ── 3b. apply openclaw browser config knobs ──────────────────────
-# noSandbox=true: chromium running under a non-root system user inside
-# a VPS still needs --no-sandbox in many container/VM kernels (the
-# unprivileged_userns_clone sysctl may be off). enabled=true and
-# defaultProfile=openclaw guarantee the plugin is reachable for the
-# agent-browser skill. Edits openclaw.json in place via jq.
-configure_openclaw_browser() {
-  local cfg="$HOME/.openclaw/openclaw.json"
-  if [ ! -f "$cfg" ]; then
-    echo "  ${yellow}!${rst} $cfg missing — skipping browser config patch"
-    return 0
-  fi
-  if ! command -v jq >/dev/null 2>&1; then
-    echo "  ${yellow}!${rst} jq missing — install with: apt-get install -y jq"
-    return 0
-  fi
-  local tmp
-  tmp=$(mktemp)
-  if jq '.browser = (.browser // {}) | .browser.enabled = true | .browser.defaultProfile = "openclaw" | .browser.noSandbox = true' "$cfg" > "$tmp" 2>/dev/null; then
-    if ! cmp -s "$tmp" "$cfg"; then
-      cp "$cfg" "$cfg.bak.$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
-      mv "$tmp" "$cfg"
-      echo "  ${green}✓${rst} browser config patched (enabled, noSandbox)"
+    if sudo -n apt-get install -y -q google-chrome-stable 2>&1 | tail -3; then
+      echo "  ${green}✓${rst} google-chrome-stable installed"
     else
-      rm -f "$tmp"
-      echo "  ${green}✓${rst} browser config already correct"
+      echo "  ${yellow}!${rst} google-chrome install failed — non-fatal"
     fi
   else
-    rm -f "$tmp"
-    echo "  ${yellow}!${rst} jq edit failed — non-fatal"
+    echo "  ${yellow}!${rst} no apt-get — install google-chrome manually"
+  fi
+  # xdg-utils is referenced by some chrome features; harmless if absent
+  if ! command -v xdg-settings >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+    sudo -n apt-get install -y -q xdg-utils 2>&1 | tail -1 || true
   fi
   return 0
 }
-step "openclaw browser config" configure_openclaw_browser
+step "install google-chrome" install_chrome
 
-# ── 3c. clear stale browser locks + start + doctor ────────────────
-# A previous failed start may leave SingletonLock / SingletonCookie
-# that prevents a fresh start. Safe to remove — they're recreated on
-# successful launch.
-start_openclaw_browser() {
-  if ! command -v openclaw >/dev/null 2>&1; then
-    echo "  ${yellow}!${rst} openclaw not on PATH — skipping browser start"
+# ── 3b. install uv + browser-harness ──────────────────────────────
+# uv is the Python tool installer browser-harness uses. We clone the
+# repo to ~/.browser-harness (separate from chrome-data) and
+# `uv tool install -e .` so the `browser-harness` CLI lands on PATH.
+BH_REPO_DIR="$HOME/.browser-harness/repo"
+install_browser_harness() {
+  # Install uv if missing
+  if ! command -v uv >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/uv" ]; then
+    echo "  installing uv ..."
+    curl -fsSL https://astral.sh/uv/install.sh | sh 2>&1 | tail -3 || true
+  fi
+  local uv_bin
+  uv_bin="$(command -v uv 2>/dev/null || echo "$HOME/.local/bin/uv")"
+  if [ ! -x "$uv_bin" ]; then
+    echo "  ${yellow}!${rst} uv install failed — non-fatal"
     return 0
   fi
-  local user_data="$HOME/.openclaw/browser/openclaw/user-data"
-  # Previous failed starts (especially when the snap chromium was in
-  # play) leave a partially-initialised user-data tree with files
-  # owned by the snap's mount namespace. Wipe it cleanly so the
-  # non-snap chrome can rebuild from scratch.
-  if [ -d "$user_data" ]; then
-    rm -rf "$user_data" 2>/dev/null || true
-    mkdir -p "$user_data"
+  # Clone or update the repo
+  if [ ! -d "$BH_REPO_DIR/.git" ]; then
+    mkdir -p "$(dirname "$BH_REPO_DIR")"
+    git clone --depth 1 https://github.com/browser-use/browser-harness "$BH_REPO_DIR" 2>&1 | tail -3 || true
+  else
+    ( cd "$BH_REPO_DIR" && git fetch origin --depth 1 main 2>&1 | tail -1 && git reset --hard origin/main 2>&1 | tail -1 ) || true
   fi
-  openclaw browser start 2>&1 | tail -5 || true
-  echo
-  echo "  doctor:"
-  openclaw browser doctor 2>&1 | head -10 | sed 's/^/    /'
+  if [ ! -f "$BH_REPO_DIR/pyproject.toml" ]; then
+    echo "  ${yellow}!${rst} browser-harness clone incomplete — non-fatal"
+    return 0
+  fi
+  # Editable tool install
+  ( cd "$BH_REPO_DIR" && "$uv_bin" tool install -e . 2>&1 | tail -5 ) || true
+  if [ -x "$HOME/.local/bin/browser-harness" ] || command -v browser-harness >/dev/null 2>&1; then
+    echo "  ${green}✓${rst} browser-harness CLI installed: $(command -v browser-harness 2>/dev/null || echo "$HOME/.local/bin/browser-harness")"
+  else
+    echo "  ${yellow}!${rst} browser-harness CLI not on PATH — non-fatal"
+  fi
   return 0
 }
-step "openclaw browser start" start_openclaw_browser
+step "install browser-harness" install_browser_harness
+
+# ── 3c. install bh-chrome systemd user unit + start ──────────────
+# Persistent headless Chrome on CDP port 9222. browser-harness attaches
+# to this Chrome for every command. user-data dir persists cookies +
+# session state so once a domain is logged in, it stays logged in
+# across restarts.
+install_bh_chrome_unit() {
+  local unit_src="infra/bh-chrome.service"
+  local unit_dst="$HOME/.config/systemd/user/bh-chrome.service"
+  if [ ! -f "$unit_src" ]; then
+    echo "  ${yellow}!${rst} $unit_src missing — non-fatal"
+    return 0
+  fi
+  mkdir -p "$(dirname "$unit_dst")" "$HOME/.browser-harness/chrome-data"
+  if [ ! -f "$unit_dst" ] || ! cmp -s "$unit_src" "$unit_dst"; then
+    cp "$unit_src" "$unit_dst"
+    systemctl --user daemon-reload 2>&1 | tail -1 || true
+    echo "  ${green}✓${rst} bh-chrome.service synced"
+  else
+    echo "  ${green}✓${rst} bh-chrome.service up to date"
+  fi
+  systemctl --user enable bh-chrome.service 2>&1 | tail -1 || true
+  if systemctl --user is-active bh-chrome.service >/dev/null 2>&1; then
+    # Restart to pick up any unit changes
+    systemctl --user restart bh-chrome.service
+  else
+    systemctl --user start bh-chrome.service
+  fi
+  sleep 3
+  if systemctl --user is-active bh-chrome.service >/dev/null 2>&1; then
+    echo "  ${green}✓${rst} bh-chrome.service active"
+  else
+    echo "  ${red}✗${rst} bh-chrome.service failed to start"
+    systemctl --user status bh-chrome.service --no-pager | head -15 | sed 's/^/    /'
+    return 1
+  fi
+  # Verify CDP endpoint is reachable
+  if curl -sf --max-time 5 http://127.0.0.1:9222/json/version >/dev/null 2>&1; then
+    echo "  ${green}✓${rst} CDP reachable on 127.0.0.1:9222"
+  else
+    echo "  ${yellow}!${rst} CDP not yet reachable — Chrome may still be starting"
+  fi
+  return 0
+}
+step "install bh-chrome unit" install_bh_chrome_unit
+
+# ── 3d. browser-harness doctor ────────────────────────────────────
+# Sanity check the full stack. Exits 0 even on failure so a flaky
+# doctor doesn't gate the rest of the deploy.
+bh_doctor() {
+  local bh
+  bh="$(command -v browser-harness 2>/dev/null || echo "$HOME/.local/bin/browser-harness")"
+  if [ ! -x "$bh" ]; then
+    echo "  ${yellow}!${rst} browser-harness not on PATH — skipping doctor"
+    return 0
+  fi
+  BU_CDP_URL="http://127.0.0.1:9222" "$bh" --doctor 2>&1 | head -20 | sed 's/^/    /' || true
+  return 0
+}
+step "browser-harness doctor" bh_doctor
 
 # ── 4. dream-cycle autopilot ────────────────────────────────────
 if [ "$SKIP_DREAM" -eq 1 ]; then
