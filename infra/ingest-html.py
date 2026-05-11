@@ -45,6 +45,63 @@ def fetch_html(url):
         return raw.decode(enc, errors="replace"), r.geturl()
 
 
+def fetch_via_browser(url, timeout_s=90):
+    """Render the page in browser-harness's headless Chrome and return
+    {title, description, author, body, final_url}. Used when the static
+    fetch returns a JS-app shell or a login wall."""
+    import shutil
+    bh = shutil.which("browser-harness") or os.path.expanduser("~/.local/bin/browser-harness")
+    if not os.path.isfile(bh):
+        log("browser-harness CLI not found; skipping JS render fallback")
+        return None
+    script = (
+        "import time, json\n"
+        f"new_tab({url!r})\n"
+        "wait_for_load()\n"
+        "time.sleep(3)\n"
+        "info = page_info()\n"
+        "text = cdp('Runtime.evaluate', expression='document.body.innerText', returnByValue=True).get('result',{}).get('value','')\n"
+        "metas = cdp('Runtime.evaluate', expression='JSON.stringify(Array.from(document.querySelectorAll(\\\"meta[property],meta[name]\\\")).map(m=>({k:m.getAttribute(\\\"property\\\")||m.getAttribute(\\\"name\\\"),v:m.getAttribute(\\\"content\\\")||\\\"\\\"})))', returnByValue=True).get('result',{}).get('value','[]')\n"
+        "print('---BH-INFO---'); print(json.dumps(info)[:8000])\n"
+        "print('---BH-BODY---'); print(text[:60000])\n"
+        "print('---BH-META---'); print(metas[:6000])\n"
+        "print('---BH-END---')\n"
+    )
+    env = {**os.environ, "BU_CDP_URL": "http://127.0.0.1:9222"}
+    try:
+        r = subprocess.run([bh, "-c", script], capture_output=True, text=True, timeout=timeout_s, env=env, check=False)
+    except Exception as e:
+        log(f"browser-harness invocation failed: {e}")
+        return None
+    if r.returncode != 0:
+        log(f"browser-harness exit {r.returncode}: {r.stderr[-300:]}")
+        return None
+    out = r.stdout
+    def slab(marker_a, marker_b):
+        if marker_a not in out or marker_b not in out:
+            return ""
+        return out.split(marker_a, 1)[1].split(marker_b, 1)[0].strip()
+    body = slab("---BH-BODY---", "---BH-META---")
+    metas_raw = slab("---BH-META---", "---BH-END---")
+    info_raw = slab("---BH-INFO---", "---BH-BODY---")
+    try:
+        metas = json.loads(metas_raw) if metas_raw else []
+    except Exception:
+        metas = []
+    meta_map = {(m.get("k") or "").lower(): m.get("v") or "" for m in metas if isinstance(m, dict)}
+    try:
+        info = json.loads(info_raw) if info_raw else {}
+    except Exception:
+        info = {}
+    return {
+        "title": meta_map.get("og:title") or info.get("title", "") or "",
+        "description": meta_map.get("og:description") or meta_map.get("description") or meta_map.get("twitter:description") or "",
+        "author": meta_map.get("author") or meta_map.get("article:author") or meta_map.get("og:site_name") or "",
+        "body": body[:60000],
+        "final_url": info.get("url", url),
+    }
+
+
 SCRIPT_STYLE_RE = re.compile(r"<(script|style)[^>]*>.*?</\1>", re.DOTALL | re.IGNORECASE)
 TAG_RE = re.compile(r"<[^>]+>")
 WS_RE = re.compile(r"\s+")
@@ -184,14 +241,26 @@ def main():
         print(json.dumps({"ok": True, "skill": "ingest-html", "user_message": "ingest-html smoke ok"}))
         return
 
+    html = None
+    final_url = url
     try:
         html, final_url = fetch_html(url)
     except Exception as e:
-        log(f"fetch failed: {e}")
-        print(json.dumps({"ok": False, "reason": "fetch_failed", "user_message": f"🌐 Couldn't fetch the page — {e}"}))
-        sys.exit(1)
+        log(f"static fetch failed: {e}; trying browser-harness")
+    meta = extract(html) if html else {"title": "", "description": "", "author": "", "body": ""}
 
-    meta = extract(html)
+    # If the static fetch produced a thin shell (JS-heavy app, login wall,
+    # bot detection), retry via browser-harness which renders the page.
+    if len(meta.get("body", "") or "") < 600 or not meta.get("title"):
+        log(f"static body thin ({len(meta.get('body','') or '')} chars); falling back to browser-harness")
+        bm = fetch_via_browser(url)
+        if bm and len(bm.get("body", "") or "") >= len(meta.get("body", "") or ""):
+            meta = bm
+            final_url = bm.get("final_url", final_url)
+
+    if not (meta.get("body") or "").strip() and not meta.get("title"):
+        print(json.dumps({"ok": False, "reason": "fetch_failed", "user_message": "🌐 Couldn't fetch the page — both static fetch and browser render returned empty."}))
+        sys.exit(1)
     if not meta["title"]:
         meta["title"] = urllib.parse.urlsplit(final_url).path.strip("/").split("/")[-1] or final_url
     if not meta["author"]:

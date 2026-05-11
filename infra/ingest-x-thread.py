@@ -243,41 +243,57 @@ def meaningful_chars(text):
     return t
 
 
-def fetch_browser_context(url, timeout_s=60):
-    """Use openclaw browser to fetch the rendered tweet page text +
-    image alt-text. Falls back gracefully — returns empty string on
-    any failure so the caller can decide whether the bundle is still
-    usable."""
-    openclaw = "openclaw"
-    if not subprocess.run(["which", openclaw], capture_output=True).returncode == 0:
-        log("openclaw not on PATH; skipping browser fallback")
+def fetch_browser_context(url, timeout_s=90):
+    """Use browser-harness to fetch the rendered tweet page text + image
+    alt-text via the persistent headless Chrome on 127.0.0.1:9222.
+    Falls back gracefully — returns empty string on any failure."""
+    import shutil
+    bh = shutil.which("browser-harness") or os.path.expanduser("~/.local/bin/browser-harness")
+    if not os.path.isfile(bh):
+        log("browser-harness CLI not found; skipping browser fallback")
         return ""
+    script = (
+        "import time, json\n"
+        f"new_tab({url!r})\n"
+        "wait_for_load()\n"
+        "time.sleep(2)\n"  # let X's lazy-load mount the tweet body
+        "info = page_info()\n"
+        # page_info returns dict-like; capture both the body text and
+        # img alt-text via raw CDP, since image-only tweets need the
+        # alt-text to be readable.
+        "alts = cdp('Runtime.evaluate', expression='Array.from(document.querySelectorAll(\\\"img[alt]\\\")).filter(i=>i.alt && i.alt.length>20).map(i=>i.alt).join(\\\"\\\\n---\\\\n\\\")', returnByValue=True).get('result',{}).get('value','')\n"
+        "print('---BH-BODY-START---')\n"
+        "print(json.dumps(info)[:60000])\n"
+        "print('---BH-ALT-START---')\n"
+        "print(alts[:6000])\n"
+        "print('---BH-END---')\n"
+    )
+    env = {**os.environ, "BU_CDP_URL": "http://127.0.0.1:9222"}
     try:
-        subprocess.run(
-            [openclaw, "browser", "useragent",
-             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"],
-            capture_output=True, timeout=10, check=False,
-        )
-        subprocess.run([openclaw, "browser", "open", url], capture_output=True, timeout=30, check=False)
-        # X.com is JS-rendered — wait for networkidle so the post mounts
-        subprocess.run([openclaw, "browser", "wait", "--networkidle"], capture_output=True, timeout=20, check=False)
-        text_r = subprocess.run([openclaw, "browser", "text"], capture_output=True, text=True, timeout=15, check=False)
-        alt_r = subprocess.run(
-            [openclaw, "browser", "js",
-             "Array.from(document.querySelectorAll('img[alt]')).filter(i=>i.alt && i.alt.length>20).map(i=>i.alt).join('\\n---\\n')"],
-            capture_output=True, text=True, timeout=15, check=False,
-        )
-        rendered_text = (text_r.stdout or "").strip()
-        alt_texts = (alt_r.stdout or "").strip()
-        out = []
-        if rendered_text:
-            out.append("RENDERED PAGE TEXT (from headless browser):\n" + rendered_text[:8000])
-        if alt_texts and "Operation timed out" not in alt_texts:
-            out.append("IMAGE ALT TEXT (from headless browser):\n" + alt_texts[:4000])
-        return "\n\n".join(out)
+        r = subprocess.run([bh, "-c", script], capture_output=True, text=True, timeout=timeout_s, env=env, check=False)
     except Exception as e:
-        log(f"browser fallback failed: {e}")
+        log(f"browser-harness invocation failed: {e}")
         return ""
+    if r.returncode != 0:
+        log(f"browser-harness exit {r.returncode}: {r.stderr[-300:]}")
+        return ""
+    out = r.stdout
+    body_marker = "---BH-BODY-START---"
+    alt_marker = "---BH-ALT-START---"
+    end_marker = "---BH-END---"
+    if body_marker not in out:
+        log("browser-harness output missing expected markers")
+        return ""
+    body = out.split(body_marker, 1)[1].split(alt_marker, 1)[0].strip()
+    alts = ""
+    if alt_marker in out:
+        alts = out.split(alt_marker, 1)[1].split(end_marker, 1)[0].strip()
+    parts = []
+    if body:
+        parts.append("RENDERED PAGE INFO (browser-harness page_info):\n" + body[:8000])
+    if alts:
+        parts.append("IMAGE ALT TEXT (browser-harness CDP):\n" + alts[:4000])
+    return "\n\n".join(parts)
 
 
 def analyze(bundle, source_url):
