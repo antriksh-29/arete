@@ -55,7 +55,10 @@ tests:
     skill: water-log
     message: "did I hit my water goal today"
     expects:
-      reply_regex: ['\d+ml|\d+L|\d+\s*l\b']  # ml / L mention
+      # Accept either a numeric volume mention OR the "no data logged"
+      # case — both are correct answers depending on whether anything
+      # was logged today.
+      reply_regex: ['\d+\s*ml|\d+\s*L|\d+\s*l\b|no\s+(water|data|intake)|haven''t logged']
       reply_min_len: 20
 
   - id: activity-stats
