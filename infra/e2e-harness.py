@@ -237,6 +237,12 @@ async def run_test(client, bot, test):
         if bot_replies:
             # Latest at top from get_messages; we want the earliest reply.
             reply = bot_replies[-1]
+            # Snapshot text at capture time. OpenClaw edits its reply
+            # message in place (status ping → partial → final → sometimes
+            # back to a status state). Holding the Message reference and
+            # reading .text later can yield a post-edit value that no
+            # longer matches what passed the status-ping filter.
+            reply_text_snapshot = reply.text or ""
             break
 
     elapsed = round(time.time() - started, 1)
@@ -251,14 +257,14 @@ async def run_test(client, bot, test):
             "reply_text": "",
         }
 
-    failures = run_assertions(reply.text or "", expects)
+    failures = run_assertions(reply_text_snapshot, expects)
     return {
         "id": test["id"],
         "skill": test.get("skill", "?"),
         "pass": len(failures) == 0,
         "elapsed_s": elapsed,
         "failures": failures,
-        "reply_text": (reply.text or "")[:300],
+        "reply_text": reply_text_snapshot[:300],
     }
 
 
