@@ -230,7 +230,11 @@ step "restart openclaw-gateway" restart_gateway
 # + one_liner so the new 4-line render contract has data to render.
 # Idempotent via marker file. Safe to re-run if marker is removed.
 migrate_reading_list_v2() {
-  local marker="$HOME/.brain/.reading-list-v2-migrated"
+  # Marker name carries a generation suffix; bump when the migration
+  # logic itself changes (not when only data shape changes). The first
+  # v2-rev1 deploy preserved stale V1 titles by mistake — rev2 re-runs
+  # against the same rows with the fresh-data-wins fix.
+  local marker="$HOME/.brain/.reading-list-v2-migrated-rev2"
   if [ -f "$marker" ]; then
     echo "  already migrated (marker: $marker)"
     return 0
@@ -240,8 +244,8 @@ migrate_reading_list_v2() {
     echo "  ${yellow}!${rst} $script not present yet — skipping migration this deploy"
     return 0
   fi
-  echo "  running: python3 $script migrate"
-  if out=$(python3 "$script" migrate 2>&1); then
+  echo "  running: python3 $script migrate --force"
+  if out=$(python3 "$script" migrate --force 2>&1); then
     echo "$out"
     mkdir -p "$(dirname "$marker")"
     date -u +"%Y-%m-%dT%H:%M:%SZ" > "$marker"

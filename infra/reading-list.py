@@ -139,9 +139,47 @@ def fetch_title_fallback(url, kind):
     return clean_cell(url)
 
 
+H1_RE = re.compile(r"^#\s+([^\n]+)", re.MULTILINE)
+H1_HANDLE_PREFIX_RE = re.compile(r"^@?[\w_]+:\s*(.+)$")
+ONE_LINE_RE = re.compile(r"##\s*One-line takeaway[^\n]*\n+([^\n]+)", re.IGNORECASE)
+WHY_RE = re.compile(r"##\s*Why this matters[^\n]*\n+([^\n]+)", re.IGNORECASE)
+SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def fetch_brain_page_metadata(slug):
+    """Pull title (H1) + one-line takeaway from a freshly-written brain
+    page. This is the canonical source — the page is what the user
+    actually filters/searches against, so its H1 IS the title and its
+    "## One-line takeaway" (or first sentence of "## Why this matters")
+    IS the bookmark's description."""
+    if not slug:
+        return "", ""
+    r = subprocess.run([GBRAIN, "get", slug], capture_output=True, text=True)
+    if r.returncode != 0:
+        return "", ""
+    page = r.stdout
+    title_m = H1_RE.search(page)
+    title = title_m.group(1).strip() if title_m else ""
+    # Strip leading "handle:" from the H1 for x_thread pages
+    hm = H1_HANDLE_PREFIX_RE.match(title)
+    if hm:
+        title = hm.group(1).strip()
+    one_m = ONE_LINE_RE.search(page)
+    if one_m:
+        one_line = one_m.group(1).strip()
+    else:
+        why_m = WHY_RE.search(page)
+        one_line = SENTENCE_SPLIT_RE.split(why_m.group(1).strip(), 1)[0] if why_m else ""
+    return title, one_line[:240]
+
+
 def run_ingestor(url, kind):
     """Returns {title, posted_by, one_liner, brain_page} — empty strings
-    when the ingestor failed."""
+    when the ingestor failed.
+
+    When the ingestor returns a slug, we read the brain page back to
+    extract the canonical title (H1) and one-liner. The script's JSON
+    is for envelope; the brain page itself is the source of truth."""
     fields = {"title": "", "posted_by": "", "one_liner": "", "brain_page": ""}
 
     if kind == "x_thread":
@@ -153,7 +191,6 @@ def run_ingestor(url, kind):
     elif kind == "html":
         cmd = ["python3", INGEST_HTML, url]
     else:
-        # x_other (profile / hashtag) — no deep ingest available
         log(f"no ingestor for kind={kind}; will use shallow fallback")
         return fields
 
@@ -171,22 +208,24 @@ def run_ingestor(url, kind):
         if not d.get("ok"):
             continue
         fields["brain_page"] = d.get("slug", "")
-        fields["one_liner"] = clean_cell(d.get("insight_one_liner", ""), strip_urls=True)
+        # Per-kind posted_by from the envelope (cheaper than re-parsing)
         if kind == "x_thread":
             handle = d.get("handle", "")
-            fields["posted_by"] = clean_cell(f"@{handle}" if handle else "")
-            # ingest-x's "title" isn't returned; derive from one-liner or
-            # fall back to handle + first words of one-liner
-            fields["title"] = clean_cell(d.get("insight_one_liner", "")) or fields["posted_by"]
+            name = d.get("name", "")
+            fields["posted_by"] = clean_cell(
+                f"{name} (@{handle})" if name and handle else (f"@{handle}" if handle else "")
+            )
         elif kind == "youtube":
             fields["posted_by"] = clean_cell(d.get("channel", ""))
-            fields["title"] = clean_cell(d.get("title", ""))
         elif kind == "pdf":
             fields["posted_by"] = clean_cell(d.get("author", "") or url_host(url))
-            fields["title"] = clean_cell(d.get("title", "") or d.get("slug", "").rsplit("/", 1)[-1])
         elif kind == "html":
             fields["posted_by"] = clean_cell(d.get("author", "") or url_host(url))
-            fields["title"] = clean_cell(d.get("title", ""))
+        # Title + one-liner from the canonical brain page
+        brain_title, brain_oneliner = fetch_brain_page_metadata(fields["brain_page"])
+        env_title = d.get("title", "") or d.get("insight_one_liner", "")
+        fields["title"] = clean_cell(brain_title or env_title)
+        fields["one_liner"] = clean_cell(brain_oneliner or d.get("insight_one_liner", ""), strip_urls=True)
         break
     return fields
 
@@ -375,21 +414,32 @@ def render_page(state):
 
 def render_for_telegram(state):
     """4-line per entry render. The public render contract — every
-    invariant in skills/reading-list/SKILL.md is enforced here."""
+    invariant in skills/reading-list/SKILL.md is enforced here.
+
+    All continuation lines sit at column 0 (no indentation). Some
+    Telegram clients and agent reply pipelines strip leading whitespace,
+    so we use explicit label prefixes ("Posted by:", "About:") and a
+    blank line between entries instead of indentation."""
     lines = ["📚 Bookmarks"]
+
+    def render_entry(r, prefix):
+        title = clean_cell(r.get("title", "")) or "(untitled)"
+        posted_by = clean_cell(r.get("posted_by", "")) or url_host(r["url"])
+        one_liner = clean_cell(r.get("one_liner", ""), strip_urls=True)
+        url = r["url"].strip()
+        block = [f"{prefix} {title}",
+                 f"Posted by: {posted_by}"]
+        if one_liner:
+            block.append(f"About: {one_liner}")
+        block.append(url)
+        return block
+
     if state["queue"]:
         lines.append("")
         lines.append("To read:")
         for i, r in enumerate(state["queue"], 1):
-            title = clean_cell(r.get("title", "")) or "(untitled)"
-            posted_by = clean_cell(r.get("posted_by", "")) or url_host(r["url"])
-            one_liner = clean_cell(r.get("one_liner", ""), strip_urls=True)
-            url = r["url"].strip()
-            lines.append(f"{i}. {title}")
-            lines.append(f"   Posted by: {posted_by}")
-            if one_liner:
-                lines.append(f"   {one_liner}")
-            lines.append(f"   {url}")
+            lines.append("")
+            lines.extend(render_entry(r, f"{i}."))
     else:
         lines.append("")
         lines.append("Queue is empty.")
@@ -397,15 +447,8 @@ def render_for_telegram(state):
         recent = state["read"][-5:]
         lines += ["", "Recently read:"]
         for r in recent:
-            title = clean_cell(r.get("title", "")) or "(untitled)"
-            posted_by = clean_cell(r.get("posted_by", "")) or url_host(r["url"])
-            one_liner = clean_cell(r.get("one_liner", ""), strip_urls=True)
-            url = r["url"].strip()
-            lines.append(f"✓ {title}")
-            lines.append(f"   Posted by: {posted_by}")
-            if one_liner:
-                lines.append(f"   {one_liner}")
-            lines.append(f"   {url}")
+            lines.append("")
+            lines.extend(render_entry(r, "✓"))
     return "\n".join(lines)
 
 
@@ -517,10 +560,15 @@ def cmd_drop(target):
     print(json.dumps({"ok": True, "user_message": f"🗑️  Removed from bookmarks: {item['title'] or item['url']}"}))
 
 
-def cmd_migrate():
+def cmd_migrate(force=False):
     """Walk all rows; for any row missing a brain page or posted_by /
-    one_liner, run the right ingestor and update the row. Idempotent —
-    rows already fully populated are left alone."""
+    one_liner, run the right ingestor and update the row. With --force,
+    re-ingest every row even if it already looks complete.
+
+    When the ingestor succeeds (returns a brain_page slug), its fresh
+    fields ALWAYS win over the stored row's old values — stale V1
+    titles like `@handle: tweet text with t.co URLs` must not bleed
+    forward."""
     state = load_state()
     updated = 0
     skipped = 0
@@ -531,19 +579,27 @@ def cmd_migrate():
             r["url"] = url
             if not r.get("kind"):
                 r["kind"] = url_kind(url)
-            needs = (not r.get("brain_page")) or (not r.get("posted_by")) or (not r.get("one_liner"))
+            needs = force or (not r.get("brain_page")) or (not r.get("posted_by")) or (not r.get("one_liner"))
             if not needs:
                 skipped += 1
                 continue
             f = hydrate_row(url, r["kind"])
             had_brain = bool(f["brain_page"])
-            r["title"] = clean_cell(r.get("title")) or f["title"]
-            r["posted_by"] = f["posted_by"] or r.get("posted_by") or url_host(url)
-            r["one_liner"] = f["one_liner"] or r.get("one_liner", "")
-            r["brain_page"] = f["brain_page"] or r.get("brain_page", "")
             if had_brain:
+                # Ingestor succeeded — its fields win unconditionally.
+                r["title"] = f["title"] or clean_cell(r.get("title"))
+                r["posted_by"] = f["posted_by"] or url_host(url)
+                r["one_liner"] = f["one_liner"]
+                r["brain_page"] = f["brain_page"]
                 updated += 1
             else:
+                # Ingestor failed — keep whatever fresh shallow data
+                # hydrate_row produced, fall back to existing values
+                # so we don't blank a row.
+                r["title"] = f["title"] or clean_cell(r.get("title"))
+                r["posted_by"] = f["posted_by"] or r.get("posted_by") or url_host(url)
+                r["one_liner"] = r.get("one_liner", "")
+                r["brain_page"] = r.get("brain_page", "")
                 failed += 1
     save_state(state)
     print(json.dumps({
@@ -577,10 +633,10 @@ def main():
             sys.exit("Usage: reading-list.py drop <n|slug>")
         cmd_drop(sys.argv[2])
     elif cmd == "migrate":
-        cmd_migrate()
+        cmd_migrate(force="--force" in sys.argv[2:])
     elif cmd == "backfill":
         # Legacy alias — old SKILL.md mentioned `backfill`. Redirect.
-        cmd_migrate()
+        cmd_migrate(force="--force" in sys.argv[2:])
     else:
         sys.exit(f"Unknown command: {cmd}")
 

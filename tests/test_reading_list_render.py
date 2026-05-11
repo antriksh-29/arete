@@ -33,21 +33,28 @@ MD_LINK_RE = re.compile(r"\[[^\]]+\]\([^)]+\)")
 
 
 def _entry_blocks(rendered: str):
-    """Slice render output into queue entries. Each entry starts with
-    'N. ' for queue or '✓ ' for recently read."""
+    """Slice render output into entries. Each entry starts with 'N. '
+    for queue or '✓ ' for recently read; an entry's continuation
+    lines run at column 0 with labels ("Posted by:", "About:") or are
+    the bare canonical URL. A blank line ends an entry."""
     blocks = []
     cur = []
+    in_entry = False
     for line in rendered.splitlines():
-        if re.match(r"^\d+\.\s", line) or line.startswith("✓ "):
+        starter = re.match(r"^\d+\.\s", line) or line.startswith("✓ ")
+        if starter:
             if cur:
                 blocks.append(cur)
             cur = [line]
-        elif cur and line.startswith("   "):
-            cur.append(line)
-        else:
-            if cur:
+            in_entry = True
+            continue
+        if in_entry:
+            if line == "":
                 blocks.append(cur)
                 cur = []
+                in_entry = False
+                continue
+            cur.append(line)
     if cur:
         blocks.append(cur)
     return blocks
@@ -177,6 +184,47 @@ def test_posted_by_falls_back_to_host_when_missing():
     assert "Posted by: example.blog" in out
 
 
+def test_no_leading_whitespace_on_any_line():
+    """Render must not rely on indentation — some Telegram clients and
+    agent reply pipelines strip leading whitespace and would collapse
+    the entry into a single line if we did."""
+    state = {
+        "queue": [{
+            "title": "Founder Mode",
+            "posted_by": "@paulg",
+            "one_liner": "Founders should not act like managers.",
+            "kind": "x_thread",
+            "url": "https://x.com/paulg/status/1",
+            "added": "2026-05-11",
+            "brain_page": "media/social/x-paulg-20260511",
+        }],
+        "read": [],
+    }
+    out = render_for_telegram(state)
+    for line in out.splitlines():
+        assert line == "" or not line.startswith(" "), f"line has leading whitespace: {line!r}"
+
+
+def test_continuation_lines_have_explicit_labels():
+    """Posted-by and one-liner must be label-prefixed so they survive
+    any agent text munging."""
+    state = {
+        "queue": [{
+            "title": "Founder Mode",
+            "posted_by": "@paulg",
+            "one_liner": "Founders should not act like managers.",
+            "kind": "x_thread",
+            "url": "https://x.com/paulg/status/1",
+            "added": "2026-05-11",
+            "brain_page": "media/social/x-paulg-20260511",
+        }],
+        "read": [],
+    }
+    out = render_for_telegram(state)
+    assert "Posted by: @paulg" in out
+    assert "About: Founders should not act like managers." in out
+
+
 def test_one_liner_omitted_line_when_empty():
     state = {
         "queue": [{
@@ -193,8 +241,9 @@ def test_one_liner_omitted_line_when_empty():
     out = render_for_telegram(state)
     blocks = _entry_blocks(out)
     assert len(blocks) == 1
-    # Three lines (title, posted by, url) when one_liner is empty
+    # Three lines (title, posted-by, url) when one_liner is empty
     assert len(blocks[0]) == 3
+    assert "About:" not in out
 
 
 def test_recently_read_renders_with_checkmark():
