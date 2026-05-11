@@ -225,6 +225,35 @@ restart_gateway() {
 }
 step "restart openclaw-gateway" restart_gateway
 
+# ── 5b. one-shot reading-list v2 migration ──────────────────────
+# Hydrates pre-v2 rows on lists/to-read with brain pages + posted_by
+# + one_liner so the new 4-line render contract has data to render.
+# Idempotent via marker file. Safe to re-run if marker is removed.
+migrate_reading_list_v2() {
+  local marker="$HOME/.brain/.reading-list-v2-migrated"
+  if [ -f "$marker" ]; then
+    echo "  already migrated (marker: $marker)"
+    return 0
+  fi
+  local script="$HOME/bin/reading-list.py"
+  if [ ! -x "$script" ]; then
+    echo "  ${yellow}!${rst} $script not present yet — skipping migration this deploy"
+    return 0
+  fi
+  echo "  running: python3 $script migrate"
+  if out=$(python3 "$script" migrate 2>&1); then
+    echo "$out"
+    mkdir -p "$(dirname "$marker")"
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > "$marker"
+    echo "  ${green}✓${rst} migration complete; marker written"
+    return 0
+  fi
+  echo "$out"
+  echo "  ${yellow}!${rst} migration returned non-zero — not writing marker, will retry next deploy"
+  return 1
+}
+step "reading-list v2 migrate" migrate_reading_list_v2
+
 # ── 6. final verification: gbrain smoke-test (informational) ────
 # This step runs gbrain's built-in smoke checks PLUS our drop-in
 # user-test wrappers in ~/.gbrain/smoke-tests.d/. Always returns 0

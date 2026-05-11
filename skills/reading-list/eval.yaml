@@ -1,10 +1,10 @@
-# Eval suite for reading-list.
+# Eval suite for reading-list (v2 — deep-by-default bookmarks).
 skill: reading-list
 script: infra/reading-list.py
-version: 1
+version: 2
 
 triggers:
-  # ── shallow add (default) ──
+  # ── add ──
   - id: rl-001
     utterance: "save this for later"
     has_url: true
@@ -26,22 +26,11 @@ triggers:
     has_url: true
     expect_skill: reading-list
   - id: rl-006
-    utterance: "queue this for reading"
+    utterance: "bookmark this"
     has_url: true
     expect_skill: reading-list
-
-  # ── deep add (explicit absorb) ──
   - id: rl-007
-    utterance: "save this and absorb it"
-    has_url: true
-    expect_skill: reading-list
-    notes: "longer phrase wins over 'absorb' alone (which would route to ingest-* with right URL)"
-  - id: rl-008
-    utterance: "save this deep"
-    has_url: true
-    expect_skill: reading-list
-  - id: rl-009
-    utterance: "save and ingest this"
+    utterance: "queue this for reading"
     has_url: true
     expect_skill: reading-list
 
@@ -58,23 +47,29 @@ triggers:
   - id: rl-013
     utterance: "what should I read"
     expect_skill: reading-list
-
-  # ── mark as read ──
   - id: rl-014
-    utterance: "I read #2"
+    utterance: "show bookmarks"
     expect_skill: reading-list
   - id: rl-015
+    utterance: "show my bookmarks"
+    expect_skill: reading-list
+
+  # ── mark as read ──
+  - id: rl-020
+    utterance: "I read #2"
+    expect_skill: reading-list
+  - id: rl-021
     utterance: "mark #2 as read"
     expect_skill: reading-list
-  - id: rl-016
+  - id: rl-022
     utterance: "I finished Sapiens"
     expect_skill: reading-list
 
   # ── remove ──
-  - id: rl-017
+  - id: rl-030
     utterance: "remove #2 from reading list"
     expect_skill: reading-list
-  - id: rl-018
+  - id: rl-031
     utterance: "drop #2"
     expect_skill: reading-list
 
@@ -85,14 +80,19 @@ triggers:
     expect_skill: ingest-pdf
     notes: "explicit ingest with PDF URL → ingest-pdf, not reading-list"
   - id: rl-neg-002
+    utterance: "ingest this thread"
+    has_url: true
+    expect_skill: ingest-x-thread
+    notes: "explicit ingest with X URL → ingest-x-thread directly (not via reading-list)"
+  - id: rl-neg-003
     utterance: "what does this say"
     has_image: true
     expect_skill: image-ocr
-  - id: rl-neg-003
+  - id: rl-neg-004
     utterance: "yes"
     expect_skill: reading-checkin
     notes: "after 10am check-in → reading-checkin (different skill!)"
-  - id: rl-neg-004
+  - id: rl-neg-005
     utterance: "drank 750ml"
     expect_skill: water-log
 
@@ -101,6 +101,13 @@ outputs:
     cmd: "python3 infra/reading-list.py --smoke"
     expect_json_keys: [ok, user_message]
     expect_ok: true
+
+# Renderer invariants (one URL per entry, no t.co, plain-text title,
+# "Posted by" present, no markdown links) are gated by the unit-test
+# suite at tests/test_reading_list_render.py. The 2026-05-11 screenshot
+# bug (three URLs per entry due to t.co shortlinks bleeding from the
+# tweet body into the title field) lives there as a permanent
+# regression fixture: test_renderer_strips_tco_from_titles.
 
 smoke:
   cmd: "python3 infra/reading-list.py --smoke"

@@ -1,0 +1,62 @@
+# Eval suite for ingest-youtube.
+skill: ingest-youtube
+script: infra/ingest-youtube.py
+version: 1
+
+triggers:
+  # ── YouTube URL + ingest intent ──
+  - id: yt-001
+    utterance: "ingest this"
+    has_url: true
+    expect_skill: ingest-youtube
+    notes: "guarded by youtube_url — youtube.com or youtu.be"
+  - id: yt-002
+    utterance: "absorb this video"
+    has_url: true
+    expect_skill: ingest-youtube
+  - id: yt-003
+    utterance: "remember this video"
+    has_url: true
+    expect_skill: ingest-youtube
+  - id: yt-004
+    utterance: "take notes on this video"
+    has_url: true
+    expect_skill: ingest-youtube
+  - id: yt-005
+    utterance: "what does this video say"
+    has_url: true
+    expect_skill: ingest-youtube
+  - id: yt-006
+    utterance: "summarize this video"
+    has_url: true
+    expect_skill: ingest-youtube
+  - id: yt-007
+    utterance: "watch this for me"
+    has_url: true
+    expect_skill: ingest-youtube
+
+  # ── negative cases ──
+  - id: yt-neg-001
+    utterance: "save this video for later"
+    has_url: true
+    expect_skill: reading-list
+    notes: "save-for-later → reading-list (which itself calls ingest-youtube)"
+  - id: yt-neg-002
+    utterance: "ingest this"
+    has_url: true
+    expect_skill: ingest-x-thread
+    notes: "if URL is x.com, route to ingest-x-thread instead"
+  - id: yt-neg-003
+    utterance: "draft a reply about this video"
+    has_url: true
+    expect_skill: x-draft
+
+outputs:
+  - id: yt-out-smoke
+    cmd: "python3 infra/ingest-youtube.py --smoke"
+    expect_json_keys: [ok, user_message]
+    expect_ok: true
+
+smoke:
+  cmd: "python3 infra/ingest-youtube.py --smoke"
+  expect_exit: 0
