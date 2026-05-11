@@ -460,16 +460,39 @@ def save_state(state):
     git_commit()
 
 
+BRAIN_TRACKED_DIRS = ["lists", "media", "sources", "people", "companies", "concepts"]
+
+
 def git_commit():
+    """Stage every brain directory the bookmark / ingestor flow can
+    touch (not just lists/to-read.md), commit, and push to origin.
+
+    Without staging media/ sources/ people/ etc., new brain pages
+    written by ingest-x-thread / ingest-youtube / ingest-html sit on
+    disk uncommitted — gbrain indexes them locally but the user's
+    GitHub brain repo never sees them."""
     cwd = str(BRAIN_DIR)
     if not (BRAIN_DIR / ".git").exists():
         return
-    subprocess.run(["git", "add", "lists/to-read.md"], cwd=cwd, capture_output=True)
+    existing = [d for d in BRAIN_TRACKED_DIRS if (BRAIN_DIR / d).exists()]
+    if not existing:
+        return
+    subprocess.run(["git", "add", "-A"] + existing, cwd=cwd, capture_output=True)
+    # Skip commit if nothing staged
+    diff = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=cwd)
+    if diff.returncode == 0:
+        return
     subprocess.run(
         ["git", "-c", "user.email=alfred@bot", "-c", "user.name=Alfred",
          "commit", "-m", f"reading-list update {TODAY}"],
-        cwd=cwd, capture_output=True
+        cwd=cwd, capture_output=True,
     )
+    # Push so the GitHub brain repo stays in sync. Non-fatal on failure —
+    # the daily collector cron also pushes, so a transient network
+    # blip just means GitHub catches up a few minutes later.
+    push = subprocess.run(["git", "push", "origin", "main"], cwd=cwd, capture_output=True, text=True)
+    if push.returncode != 0:
+        log(f"git push failed (will retry on next op): {push.stderr[-200:]}")
 
 
 # ----- subcommands -----
