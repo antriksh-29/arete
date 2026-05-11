@@ -69,6 +69,22 @@ tests:
     message: "show reading list"
     expects:
       reply_min_len: 20
+      reply_contains:
+        - "Posted by:"
+      reply_not_contains:
+        - "?si="
+        - "t.co/"
+
+  - id: bookmarks-show
+    skill: reading-list
+    message: "show bookmarks"
+    expects:
+      reply_min_len: 20
+      reply_contains:
+        - "Posted by:"
+      reply_not_contains:
+        - "?si="
+        - "t.co/"
 
   - id: identity-audit
     skill: identity-audit

@@ -558,23 +558,39 @@ The two ingestion scripts are deterministic and write to brain
 themselves — your job is to invoke them and relay the JSON envelope to
 the user in the format specified in each SKILL.md.
 
-### Reading list is a separate intent
+### Reading list / bookmarks is a separate intent
 
-Per `skills/reading-list/SKILL.md`. URLs paired with intent words go
-through the reading-list script — NOT the ingestion router above:
+Per `skills/reading-list/SKILL.md`. "Reading list" and "bookmarks" are
+the same thing — same script, same brain page, same render. URLs
+paired with intent words go through the reading-list script — NOT
+the ingestion router above:
 
 | User intent | Command |
 |---|---|
-| URL + ("save this" / "read later" / "queue this" / "save for later") | `python3 ~/bin/reading-list.py add <url>` (shallow) |
-| URL + ("save deep" / "absorb it" / "save and ingest") | `python3 ~/bin/reading-list.py add <url> --deep` |
-| "show reading list" / "what's queued" / "what should I read next" | `python3 ~/bin/reading-list.py show` |
+| URL + ("save this" / "read later" / "queue this" / "save for later" / "bookmark this") | `python3 ~/bin/reading-list.py add <url>` |
+| "show reading list" / "show bookmarks" / "show my bookmarks" / "what's queued" / "what should I read next" / "list bookmarks" / "share my bookmarks" | `python3 ~/bin/reading-list.py show` |
 | "I read #N" / "mark #N read" / "finished #N" / "I read <url>" | `python3 ~/bin/reading-list.py read <n|url>` |
-| "drop #N" / "remove from reading list" | `python3 ~/bin/reading-list.py drop <n|url>` |
+| "drop #N" / "remove from reading list" / "remove bookmark" | `python3 ~/bin/reading-list.py drop <n|url>` |
+| "migrate bookmarks" / "rebuild bookmarks" | `python3 ~/bin/reading-list.py migrate --force` |
 
-The canonical query path for "what's on my reading list?" is ALWAYS
-`reading-list.py show`. Never use `gbrain query "reading list"` or
-`gbrain search` — they return inconsistent results. The script reads
-the `lists/to-read` brain page directly. Single source of truth.
+**HARD RULE — bookmark queries MUST invoke the script.** When the user
+asks anything that maps to a row in the table above:
+
+1. Run the matching `python3 ~/bin/reading-list.py …` command.
+2. Read the stdout JSON envelope.
+3. Relay the `user_message` field VERBATIM as your Telegram reply.
+
+DO NOT compose a bookmark reply from chat context, prior assistant
+messages, or your memory of what was on the list. Even if the user just
+asked the same question 30 seconds ago — re-run the script. The brain
+page is the single source of truth and it changes under you (ingest,
+add, read, drop). Reconstructing from chat context produces stale URLs
+(missing `normalize_url`), stale titles (missing fresh ingestor data),
+and silently broken `Posted by:` / `About:` lines.
+
+Never use `gbrain query "reading list"`, `gbrain search`, or
+`gbrain get lists/to-read` for the user-facing reply — those return
+inconsistent / stale results. Only `reading-list.py show` is correct.
 
 ### X (Twitter) drafting
 
