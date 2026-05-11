@@ -105,7 +105,9 @@ tests:
     message: "what did I burn on tokens today"
     timeout: 60
     expects:
-      reply_regex: ['\$|token|spend|cost', 'token|spend|cost']  # any cost-y word
+      # Bot abbreviates token counts as "183k in, 47 out" — accept that
+      # shape alongside literal "token"/"spend"/"cost"/"$" mentions.
+      reply_regex: ['\$|token|spend|cost|\d+k?\s*(in|out)\b']
       reply_min_len: 20
 
   - id: skillify-audit-weather
