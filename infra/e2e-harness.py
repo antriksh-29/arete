@@ -156,6 +156,37 @@ def run_assertions(reply_text: str, expects: dict) -> list[str]:
     return failures
 
 
+# ── status-ping filter ──────────────────────────────────────────
+# OpenClaw emits in-flight progress messages from the bot's user_id
+# while a turn is processing. They look like real bot replies over
+# the wire and were tripping our naive "any message from the bot"
+# filter, causing false-positive assertion fails.
+#
+# Empirically observed sentinels (extend as we see new shapes):
+#   "📊 session_status"   — OpenClaw's per-turn status indicator
+#   "⌛", "🤔"             — generic "thinking" emoji
+#   "thinking..."         — text-form indicator
+#
+# Plus a safety net: replies under ~5 chars are almost always noise.
+
+STATUS_SENTINELS = [
+    "📊 session_status",
+    "📊 Session status",
+    "⌛",
+    "🤔",
+    "thinking...",
+    "Thinking...",
+    "processing...",
+]
+
+
+def is_status_ping(text: str | None) -> bool:
+    t = (text or "").strip()
+    if len(t) < 5:
+        return True
+    return any(t.startswith(s) for s in STATUS_SENTINELS)
+
+
 # ── runner ──────────────────────────────────────────────────────
 
 async def run_test(client, bot, test):
@@ -188,14 +219,21 @@ async def run_test(client, bot, test):
     sent = await client.send_message(bot, test["message"])
 
     # Poll for a reply from the bot. Retry every 2s up to timeout.
+    # Bug #2 fix: filter out OpenClaw's status-ping messages
+    # ("📊 session_status", "⌛", "🤔", etc.) so we wait for the actual
+    # final reply instead of grabbing the in-flight progress indicator.
     deadline = time.time() + timeout
     started = time.time()
     reply = None
     while time.time() < deadline:
         await asyncio.sleep(2)
         msgs = await client.get_messages(bot, limit=10, min_id=sent.id)
-        # Filter to bot replies (exclude our own sent message).
-        bot_replies = [m for m in msgs if m.sender_id != sent.sender_id]
+        # Filter to bot replies that aren't status pings.
+        bot_replies = [
+            m for m in msgs
+            if m.sender_id != sent.sender_id
+            and not is_status_ping(m.text)
+        ]
         if bot_replies:
             # Latest at top from get_messages; we want the earliest reply.
             reply = bot_replies[-1]
