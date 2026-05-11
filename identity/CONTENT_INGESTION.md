@@ -66,7 +66,8 @@ every piece of media they showed up in.
 |---|---|---|
 | PDF / book / long doc | `sources/<slug>.md` | Phase 1 (built) |
 | X thread | `media/social/x-<handle>-<YYYYMMDD>.md` | Phase 1 (built) |
-| YouTube video | `media/youtube/<video-slug>.md` | Deferred |
+| YouTube video | `media/youtube/<channel>-<video-id>.md` | Phase 1 (built) |
+| Generic HTML article | `sources/<domain>-<slug>.md` | Phase 1 (built) |
 | Other social (LinkedIn, Threads, etc.) | `media/social/<platform>-<author>-<date>.md` | Deferred |
 | Voice notes | `media/voice/<date>-<topic>.md` | Deferred |
 | Forwarded WhatsApp / iMessage | `media/forwarded/<date>-<sender>.md` | Deferred |
@@ -90,8 +91,8 @@ Intent words that activate ingestion: `ingest`, `absorb`, `read this`,
 |---|---|
 | `*.pdf` URL or PDF Telegram attachment | `/ingest-pdf` |
 | `twitter.com/*` or `x.com/*` | `/ingest-x-thread` |
-| `youtube.com/*` or `youtu.be/*` | (not built — fall back: "YouTube ingestion isn't built yet — paste the key transcript snippet and I'll work from that") |
-| Other HTML article URL | existing essay-extraction path (for podcast or general Q&A) |
+| `youtube.com/*` or `youtu.be/*` | `/ingest-youtube` |
+| Other HTML article URL | `/ingest-html` (static fetch); `/agent-browser` for JS-rendered / login-walled |
 
 ---
 
@@ -119,8 +120,11 @@ When adding a new media type (e.g. when YouTube comes online):
 |---|---|
 | `~/bin/ingest-pdf.py` | PDF URL or local path → analyzed brain page at `sources/<slug>.md` |
 | `~/bin/ingest-x-thread.py` | X thread URL → analyzed brain page at `media/social/x-<handle>-<date>.md` |
+| `~/bin/ingest-youtube.py` | YouTube URL → analyzed brain page at `media/youtube/<channel>-<video-id>.md` |
+| `~/bin/ingest-html.py` | Generic HTML URL → analyzed brain page at `sources/<domain>-<slug>.md` |
+| `~/bin/reading-list.py` | Bookmark manager — every `add` dispatches to one of the above and stores a row on `lists/to-read` |
 
-Both write structured output the agent relays to Telegram in 4-6 lines.
+All four ingestors write structured output the agent relays to Telegram in 4-6 lines.
 Diagnostic information (page counts, token usage, API costs) goes to
 stderr/logs only, never to the user.
 
@@ -130,9 +134,17 @@ stderr/logs only, never to the user.
 
 Same lever as `BRAIN_PROPAGATION.md` for the Gmail workflow: the
 *architectural decisions* that make a system compounding need to be
-captured in identity/, not re-derived per skill. When Phase 2
-(YouTube) lands, the new skill slots into the framework above with
-no re-thinking. When the user shares a media type we haven't seen
+captured in identity/, not re-derived per skill. New media types
+slot into the framework above with no re-thinking.
+
+### Bookmarks are deep, always
+
+As of 2026-05-11, the `/reading-list` skill is **deep-by-default**: every
+URL the user bookmarks runs through the right ingestor and gets its own
+brain page. There is no "shallow row" path anymore. This is the
+content-ingestion principle applied to the queue itself — a bookmark is
+not a stub to revisit, it is a piece of media already absorbed, just
+not yet read end-to-end by the user. When the user shares a media type we haven't seen
 (audio file, screenshot, voice note), the agent reads this doc and
 applies the same three rules to whatever extraction path it can
 construct on the fly.

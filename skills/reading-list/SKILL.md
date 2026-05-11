@@ -1,33 +1,36 @@
 ---
 name: reading-list
-version: 1
+version: 2
 script: infra/reading-list.py
 mutating: true
 cron: null
 eval: skills/reading-list/eval.yaml
-last_audited: 2026-05-08
+last_audited: 2026-05-11
 description: |
-  Reading-list manager. The user wants to queue a URL for later, see what's
-  queued, mark something as read, or drop something. Default is shallow
-  (just title + URL row); explicit "absorb / deep" upgrades to full ingest.
+  Bookmark manager. The user wants to queue a URL for later, see what's
+  queued, mark something as read, or drop something. Every saved URL is
+  ingested deep — we always write a dedicated brain page for it so the
+  list view can show a real one-line description, and the brain stays
+  searchable. There is no "shallow" mode anymore.
   WHEN: Any of "save this", "save for later", "read later", "add to reading
-  list", "queue this", "show reading list", "what's queued", "I read X",
-  "mark X as read", "finished X", "remove X", "drop X".
-  NOT WHEN: User explicitly wants the content absorbed into the brain right
-  now ("ingest", "absorb", "remember this") — that's ingest-pdf or
-  ingest-x-thread directly. NOT WHEN they want to extract text from an image
-  (→ image-ocr).
+  list", "queue this", "bookmark this", "show reading list", "what's
+  queued", "show bookmarks", "I read X", "mark X as read", "finished X",
+  "remove X", "drop X".
+  NOT WHEN: The user wants the content absorbed RIGHT NOW under a different
+  framing ("ingest this thread", "absorb this paper") — those route
+  directly to ingest-x-thread / ingest-pdf. NOT for image OCR (→ image-ocr).
 trigger: |
-  - "save this", "save for later", "read later"
+  - "save this", "save for later", "read later", "bookmark this"
   - "add to reading list", "queue this", "queue for reading"
-  - "save this and absorb it" / "save this deep" → triggers deep ingest
   - "show reading list", "what's on my reading list", "reading queue"
+  - "show bookmarks", "show my bookmarks", "what bookmarks do I have"
   - "I read X" / "mark X as read" / "I finished X"
   - "remove X from reading list" / "drop X"
 writes_to:
   - lists/to-read
-  - sources/
   - media/social/
+  - media/youtube/
+  - sources/
 brain_dirs_read:
   - lists/to-read
 trigger_guard: any_url
@@ -37,29 +40,70 @@ trigger_guard: any_url
 
 Single source of truth: the `lists/to-read` brain page. All operations
 go through `~/bin/reading-list.py` — never edit the page directly, never
-improvise. The script handles the brain page rebuild + git commit so
-data lands in disk + git + R2 backup.
+improvise. The script handles brain page rebuild + git commit so data
+lands in disk + git + R2 backup.
 
-## Lazy by default, eager on explicit ask
+## Deep-by-default
 
-| User intent | What runs | Cost |
+Every `add` runs the right ingestor for the URL's kind and writes a
+dedicated brain page. The row in `lists/to-read` carries the metadata
+needed to render the list view without re-fetching anything.
+
+| URL kind | Ingestor | Brain page slug pattern |
 |---|---|---|
-| "save this", "read later" | `add <url>` (shallow) | Just URL + title fetch (free for HTML, ~$0.005 for X) |
-| "save this and absorb it", "save deep", "save and ingest" | `add <url> --deep` | Above + full ingestion (PDF / X / etc), ~$0.01–0.05 |
+| X / Twitter status | `infra/ingest-x-thread.py` | `media/social/x-<handle>-<YYYYMMDD>` |
+| YouTube video | `infra/ingest-youtube.py` | `media/youtube/<channel>-<video_id>` |
+| PDF | `infra/ingest-pdf.py` | `sources/<slug>` |
+| HTML (everything else) | `infra/ingest-html.py` (uses agent-browser) | `sources/<domain>-<slug>` |
 
-Shallow rows live as table rows on `lists/to-read`. Deep rows ALSO get
-their own `sources/` or `media/social/` page and the row links to it.
+If an ingestor fails, the row is still saved with the fields we have
+(title from `<title>` / oEmbed, `posted_by` from URL host or handle,
+`one_liner` left empty) so the queue never silently drops a save. The
+user is told the brain page is missing so they can retry.
+
+## Output contract — `show` (Telegram)
+
+Each numbered entry renders in **exactly four lines**:
+
+```
+1. <title in plain text — never wrapped in [..](..)>
+   Posted by: <handle, channel name, or domain>
+   <one-line description from the brain page>
+   <single canonical URL — no t.co, no tracking params>
+```
+
+Invariants (asserted by `eval.yaml` and `tests/test_reading_list_render.py`):
+
+- Exactly **one URL** per entry, and it is the canonical URL.
+- Titles are plain text. No `[Title](url)` markdown links.
+- No `t.co/...` shortlinks anywhere in the rendered output.
+- No tracking query params (`?si=...`, `?utm_*`, `?ref=...`).
+- "Posted by:" is always present (falls back to URL host).
+- One-line description is ≤ 200 chars, single line, no trailing URLs.
+
+`Recently read` uses the same 4-line block per entry plus a leading
+`✓` instead of `N.`.
+
+## Row schema on `lists/to-read`
+
+Queue:
+
+```
+| # | Title | Posted by | One-liner | Kind | URL | Added | Brain page |
+```
+
+`Recently read` adds a `Read` column between `Added` and `Brain page`.
+`Title`, `Posted by`, and `One-liner` are stored as plain text — no
+embedded markdown. The script never trusts the page to be hand-edited
+and rewrites it in full on every mutation.
 
 ## Commands
 
 ```bash
-# Add — shallow (default)
+# Add — always deep. Ingestor chosen from URL kind.
 python3 ~/bin/reading-list.py add <url>
 
-# Add — deep (also runs ingest-pdf or ingest-x-thread)
-python3 ~/bin/reading-list.py add <url> --deep
-
-# Show queue + recent reads (numbered, Telegram-formatted)
+# Show queue + recent reads, formatted per the 4-line contract above.
 python3 ~/bin/reading-list.py show
 
 # Mark as read (by row number from `show`, or by URL/slug)
@@ -68,19 +112,21 @@ python3 ~/bin/reading-list.py read <n|url|slug>
 # Remove from queue (same arg shape)
 python3 ~/bin/reading-list.py drop <n|url|slug>
 
-# One-shot migration for legacy rows missing title/kind
-python3 ~/bin/reading-list.py backfill
+# Migrate older rows (v1 shallow / v1 deep) to v2 schema. Idempotent.
+# Re-runs the right ingestor for any row missing a brain page or
+# missing posted_by / one_liner.
+python3 ~/bin/reading-list.py migrate
 ```
 
-Every command prints a single-line JSON envelope on stdout with
-`ok`, `user_message`, and operation-specific fields. Diagnostic logs
-go to stderr.
+Every command prints a single-line JSON envelope on stdout with `ok`,
+`user_message`, and operation-specific fields. Diagnostic logs go to
+stderr.
 
 ## Canonical query path
 
 Always invoke `python3 ~/bin/reading-list.py show`. Do NOT use:
-- `gbrain query "reading list"` — returns no results (page isn't in
-  the embeddings index for that query shape)
+- `gbrain query "reading list"` — page isn't in the embeddings index
+  for that query shape
 - `gbrain search "reading"` — surfaces noise
 - `gbrain list` + grep — non-deterministic, depends on sync state
 
@@ -90,19 +136,16 @@ result every time.
 
 ## Resolver patterns
 
-User says → run:
-
 | Phrase pattern | Command |
 |---|---|
-| URL + ("save this" / "read later" / "queue this") | `add <url>` |
-| URL + ("absorb it" / "and ingest" / "save deep") | `add <url> --deep` |
-| "show reading list" / "what's queued" / "what should I read" | `show` |
+| URL + ("save this" / "read later" / "queue this" / "bookmark this") | `add <url>` |
+| "show reading list" / "show bookmarks" / "what's queued" / "what should I read" | `show` |
 | "I read #2" / "mark #2 as read" / "finished #2" | `read 2` |
 | "I read https://..." / "mark this as read: <url>" | `read <url>` |
 | "drop #2" / "remove #2 from reading list" | `drop 2` |
 
-When showing a list, ALWAYS use the numbered output so the user can
-say "I read #2" without having to remember slugs.
+When showing the list, ALWAYS use the numbered output so the user can
+say "I read #2" without remembering slugs.
 
 ## Telegram reply
 
@@ -112,8 +155,8 @@ info (cost, character count, processing time, brain DB stats).
 ## Architectural rules
 
 Per `identity/CONTENT_INGESTION.md`:
-- Shallow rows = title + URL only, lives only in `lists/to-read`
-- Deep rows = full brain page (sources/ or media/social/) + row in
-  `lists/to-read` linking to the page
-- "I read X" never deletes the underlying brain page (if any) — only
-  flips the reading-list row from Queue to Recently Read
+- Every bookmark has a brain page (deep). No shallow path.
+- "I read X" never deletes the brain page — only flips the row from
+  Queue to Recently read.
+- The list view never re-fetches from the network — `posted_by` and
+  `one_liner` live on the row so `show` is fast and offline-safe.

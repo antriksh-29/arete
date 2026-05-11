@@ -56,7 +56,7 @@ function isConstraintSkill(skillMd) {
 // the matcher disambiguates by inspecting the actual input shape
 // (image attached, URL pattern, etc.).
 const MODALITY_GUARDS = new Set([
-  'image_attached', 'pdf_url', 'x_url', 'any_url',
+  'image_attached', 'pdf_url', 'x_url', 'youtube_url', 'any_url',
 ]);
 
 function extractPhrases(block) {
