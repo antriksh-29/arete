@@ -207,6 +207,13 @@ else
   fi
 fi
 
+# ── 4b. apply managed openclaw.json knobs ───────────────────────
+# Keeps tuned config (e.g. bootstrapTotalMaxChars) in sync without
+# committing the secret-bearing openclaw.json. See script header for
+# rationale. Must run BEFORE the gateway restart below so the new
+# values get picked up.
+step "configure openclaw.json" bash infra/configure-openclaw.sh
+
 # ── 5. restart openclaw-gateway so AGENTS.md / SKILL.md changes take effect ─
 restart_gateway() {
   if ! systemctl --user is-active openclaw-gateway.service >/dev/null 2>&1; then
