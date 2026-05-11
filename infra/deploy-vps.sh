@@ -195,42 +195,93 @@ install_skills() {
 }
 if [ "$SKIP_SKILLS" -eq 1 ]; then skip "openclaw skills"; else step "openclaw skills" install_skills; fi
 
-# ── 3a. install Chromium so openclaw-browser can actually launch ──
+# ── 3a. install Chromium + deps so openclaw-browser can launch ────
 # openclaw's browser plugin needs a Chrome/Chromium/Brave/Edge binary
-# on the host. Without one, `openclaw browser start` returns
-# `No supported browser found` and the agent-browser skill is
-# unreachable. Idempotent: skip if a browser is already present.
+# on the host plus xdg-utils (chromium-browser shell wrapper uses
+# xdg-settings at startup). Idempotent: skip pkgs already installed.
 install_chromium() {
+  local need_pkgs=""
+  local have_browser=0
   for cand in chromium chromium-browser google-chrome chrome brave-browser; do
     if command -v "$cand" >/dev/null 2>&1; then
       echo "  ${green}✓${rst} browser already present: $cand"
-      return 0
+      have_browser=1
+      break
     fi
   done
-  if ! command -v apt-get >/dev/null 2>&1; then
-    echo "  ${yellow}!${rst} no apt-get and no browser binary — install Chrome/Chromium manually"
+  if [ "$have_browser" -eq 0 ]; then
+    need_pkgs="chromium"
+  fi
+  if ! command -v xdg-settings >/dev/null 2>&1; then
+    need_pkgs="$need_pkgs xdg-utils"
+  fi
+  if [ -z "$need_pkgs" ]; then
+    echo "  ${green}✓${rst} all browser packages present"
     return 0
   fi
-  echo "  installing chromium via apt ..."
-  if sudo -n apt-get install -y -q chromium 2>&1 | tail -3; then
-    echo "  ${green}✓${rst} chromium installed"
-  elif sudo -n apt-get install -y -q chromium-browser 2>&1 | tail -3; then
-    echo "  ${green}✓${rst} chromium-browser installed"
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "  ${yellow}!${rst} no apt-get — install manually: $need_pkgs"
+    return 0
+  fi
+  echo "  installing:$need_pkgs"
+  if sudo -n apt-get install -y -q $need_pkgs 2>&1 | tail -3; then
+    echo "  ${green}✓${rst} packages installed"
+  elif [ "$have_browser" -eq 0 ] && sudo -n apt-get install -y -q chromium-browser xdg-utils 2>&1 | tail -3; then
+    echo "  ${green}✓${rst} chromium-browser + xdg-utils installed"
   else
-    echo "  ${yellow}!${rst} chromium install failed (no passwordless sudo?) — non-fatal"
+    echo "  ${yellow}!${rst} package install failed (no passwordless sudo?) — non-fatal"
     return 0
   fi
 }
 step "install chromium" install_chromium
 
-# ── 3b. start openclaw browser + doctor ──────────────────────────
-# `openclaw browser start` is idempotent — if the browser is already
-# running, it's a no-op. Logs the doctor verdict either way so a
-# regression is visible in the deploy run.
+# ── 3b. apply openclaw browser config knobs ──────────────────────
+# noSandbox=true: chromium running under a non-root system user inside
+# a VPS still needs --no-sandbox in many container/VM kernels (the
+# unprivileged_userns_clone sysctl may be off). enabled=true and
+# defaultProfile=openclaw guarantee the plugin is reachable for the
+# agent-browser skill. Edits openclaw.json in place via jq.
+configure_openclaw_browser() {
+  local cfg="$HOME/.openclaw/openclaw.json"
+  if [ ! -f "$cfg" ]; then
+    echo "  ${yellow}!${rst} $cfg missing — skipping browser config patch"
+    return 0
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  ${yellow}!${rst} jq missing — install with: apt-get install -y jq"
+    return 0
+  fi
+  local tmp
+  tmp=$(mktemp)
+  if jq '.browser = (.browser // {}) | .browser.enabled = true | .browser.defaultProfile = "openclaw" | .browser.noSandbox = true' "$cfg" > "$tmp" 2>/dev/null; then
+    if ! cmp -s "$tmp" "$cfg"; then
+      cp "$cfg" "$cfg.bak.$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+      mv "$tmp" "$cfg"
+      echo "  ${green}✓${rst} browser config patched (enabled, noSandbox)"
+    else
+      rm -f "$tmp"
+      echo "  ${green}✓${rst} browser config already correct"
+    fi
+  else
+    rm -f "$tmp"
+    echo "  ${yellow}!${rst} jq edit failed — non-fatal"
+  fi
+  return 0
+}
+step "openclaw browser config" configure_openclaw_browser
+
+# ── 3c. clear stale browser locks + start + doctor ────────────────
+# A previous failed start may leave SingletonLock / SingletonCookie
+# that prevents a fresh start. Safe to remove — they're recreated on
+# successful launch.
 start_openclaw_browser() {
   if ! command -v openclaw >/dev/null 2>&1; then
     echo "  ${yellow}!${rst} openclaw not on PATH — skipping browser start"
     return 0
+  fi
+  local user_data="$HOME/.openclaw/browser/openclaw/user-data"
+  if [ -d "$user_data" ]; then
+    rm -f "$user_data"/Singleton* 2>/dev/null || true
   fi
   openclaw browser start 2>&1 | tail -5 || true
   echo
