@@ -234,7 +234,7 @@ migrate_reading_list_v2() {
   # logic itself changes (not when only data shape changes). The first
   # v2-rev1 deploy preserved stale V1 titles by mistake — rev2 re-runs
   # against the same rows with the fresh-data-wins fix.
-  local marker="$HOME/.brain/.reading-list-v2-migrated-rev2"
+  local marker="$HOME/.brain/.reading-list-v2-migrated-rev3"
   if [ -f "$marker" ]; then
     echo "  already migrated (marker: $marker)"
     return 0
