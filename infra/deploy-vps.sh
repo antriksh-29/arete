@@ -195,41 +195,66 @@ install_skills() {
 }
 if [ "$SKIP_SKILLS" -eq 1 ]; then skip "openclaw skills"; else step "openclaw skills" install_skills; fi
 
-# ── 3a. install Chromium + deps so openclaw-browser can launch ────
-# openclaw's browser plugin needs a Chrome/Chromium/Brave/Edge binary
-# on the host plus xdg-utils (chromium-browser shell wrapper uses
-# xdg-settings at startup). Idempotent: skip pkgs already installed.
+# ── 3a. install Google Chrome (non-snap) + xdg-utils ──────────────
+# openclaw's browser plugin needs an unsandboxed browser. Ubuntu's
+# chromium-browser is a SNAP stub — even with classic confinement, the
+# snap can't write Chromium's SingletonLock to ~/.openclaw/.../user-data,
+# so `openclaw browser start` fails with `Permission denied (13)`.
+# Solution: install google-chrome-stable from Google's apt repo (real
+# native binary, no snap confinement). Idempotent: skip if a non-snap
+# browser is already present.
 install_chromium() {
-  local need_pkgs=""
-  local have_browser=0
-  for cand in chromium chromium-browser google-chrome chrome brave-browser; do
+  local non_snap_browser=""
+  for cand in google-chrome google-chrome-stable chrome brave-browser; do
     if command -v "$cand" >/dev/null 2>&1; then
-      echo "  ${green}✓${rst} browser already present: $cand"
-      have_browser=1
+      non_snap_browser="$cand"
       break
     fi
   done
-  if [ "$have_browser" -eq 0 ]; then
-    need_pkgs="chromium"
+  if [ -z "$non_snap_browser" ] && command -v chromium >/dev/null 2>&1; then
+    local link
+    link=$(readlink -f "$(command -v chromium)" 2>/dev/null || echo "")
+    case "$link" in
+      *snap*) ;;  # snap — skip
+      *) non_snap_browser="chromium" ;;
+    esac
   fi
-  if ! command -v xdg-settings >/dev/null 2>&1; then
-    need_pkgs="$need_pkgs xdg-utils"
-  fi
-  if [ -z "$need_pkgs" ]; then
-    echo "  ${green}✓${rst} all browser packages present"
+  if [ -n "$non_snap_browser" ] && command -v xdg-settings >/dev/null 2>&1; then
+    echo "  ${green}✓${rst} non-snap browser present: $non_snap_browser; xdg-utils OK"
     return 0
   fi
   if ! command -v apt-get >/dev/null 2>&1; then
-    echo "  ${yellow}!${rst} no apt-get — install manually: $need_pkgs"
+    echo "  ${yellow}!${rst} no apt-get — install google-chrome-stable + xdg-utils manually"
     return 0
   fi
-  echo "  installing:$need_pkgs"
-  if sudo -n apt-get install -y -q $need_pkgs 2>&1 | tail -3; then
-    echo "  ${green}✓${rst} packages installed"
-  elif [ "$have_browser" -eq 0 ] && sudo -n apt-get install -y -q chromium-browser xdg-utils 2>&1 | tail -3; then
-    echo "  ${green}✓${rst} chromium-browser + xdg-utils installed"
+  # Make sure xdg-utils is present regardless (chromium-browser wrapper
+  # needs it and so do some Chrome features).
+  if ! command -v xdg-settings >/dev/null 2>&1; then
+    echo "  installing xdg-utils ..."
+    sudo -n apt-get install -y -q xdg-utils 2>&1 | tail -3 || true
+  fi
+  if [ -n "$non_snap_browser" ]; then
+    return 0
+  fi
+  echo "  installing google-chrome-stable (non-snap) ..."
+  # Add Google's signing key + repo if not present, then install.
+  if [ ! -f /etc/apt/sources.list.d/google-chrome.list ]; then
+    sudo -n bash -c '
+      set -e
+      curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
+        | gpg --dearmor -o /etc/apt/trusted.gpg.d/google-chrome.gpg
+      echo "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" \
+        > /etc/apt/sources.list.d/google-chrome.list
+      apt-get update -q
+    ' 2>&1 | tail -5 || {
+      echo "  ${yellow}!${rst} failed to add Google Chrome apt repo — non-fatal"
+      return 0
+    }
+  fi
+  if sudo -n apt-get install -y -q google-chrome-stable 2>&1 | tail -3; then
+    echo "  ${green}✓${rst} google-chrome-stable installed at $(command -v google-chrome)"
   else
-    echo "  ${yellow}!${rst} package install failed (no passwordless sudo?) — non-fatal"
+    echo "  ${yellow}!${rst} google-chrome-stable install failed — non-fatal"
     return 0
   fi
 }
@@ -280,8 +305,13 @@ start_openclaw_browser() {
     return 0
   fi
   local user_data="$HOME/.openclaw/browser/openclaw/user-data"
+  # Previous failed starts (especially when the snap chromium was in
+  # play) leave a partially-initialised user-data tree with files
+  # owned by the snap's mount namespace. Wipe it cleanly so the
+  # non-snap chrome can rebuild from scratch.
   if [ -d "$user_data" ]; then
-    rm -f "$user_data"/Singleton* 2>/dev/null || true
+    rm -rf "$user_data" 2>/dev/null || true
+    mkdir -p "$user_data"
   fi
   openclaw browser start 2>&1 | tail -5 || true
   echo
