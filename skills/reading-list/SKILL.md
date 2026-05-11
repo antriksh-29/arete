@@ -63,16 +63,17 @@ user is told the brain page is missing so they can retry.
 
 ## Output contract — `show` (Telegram)
 
-Each numbered entry renders in **exactly four lines**:
+Each entry renders as three or four lines, **all at column 0** (no
+indentation), with a blank line between entries:
 
 ```
 1. <title in plain text — never wrapped in [..](..)>
-   Posted by: <handle, channel name, or domain>
-   <one-line description from the brain page>
-   <single canonical URL — no t.co, no tracking params>
+Posted by: <handle, channel name, or domain>
+About: <one-line description from the brain page>     ← omitted if blank
+<single canonical URL — no t.co, no tracking params>
 ```
 
-Invariants (asserted by `eval.yaml` and `tests/test_reading_list_render.py`):
+Invariants (asserted by `tests/test_reading_list_render.py`):
 
 - Exactly **one URL** per entry, and it is the canonical URL.
 - Titles are plain text. No `[Title](url)` markdown links.
@@ -80,9 +81,12 @@ Invariants (asserted by `eval.yaml` and `tests/test_reading_list_render.py`):
 - No tracking query params (`?si=...`, `?utm_*`, `?ref=...`).
 - "Posted by:" is always present (falls back to URL host).
 - One-line description is ≤ 200 chars, single line, no trailing URLs.
+- **No line has leading whitespace.** Some Telegram clients and agent
+  reply pipelines strip indentation; we use explicit "Posted by:" /
+  "About:" labels and a blank-line separator instead.
 
-`Recently read` uses the same 4-line block per entry plus a leading
-`✓` instead of `N.`.
+`Recently read` uses the same block per entry with a leading `✓`
+instead of `N.`.
 
 ## Row schema on `lists/to-read`
 
