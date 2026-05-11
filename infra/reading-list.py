@@ -279,11 +279,18 @@ def looks_like_header(cells):
 
 
 def load_state():
+    """Read the bookmark state. The file on disk is the source of truth
+    — it's what save_state wrote, what git pushed to GitHub, and what
+    survives across gbrain index rebuilds. We fall back to `gbrain get`
+    only when the file is missing (fresh VPS, restored from R2)."""
     state = {"queue": [], "read": []}
-    r = subprocess.run([GBRAIN, "get", LIST_SLUG], capture_output=True, text=True)
-    if r.returncode != 0:
-        return state
-    text = r.stdout
+    if LIST_PATH.exists():
+        text = LIST_PATH.read_text()
+    else:
+        r = subprocess.run([GBRAIN, "get", LIST_SLUG], capture_output=True, text=True)
+        if r.returncode != 0:
+            return state
+        text = r.stdout
     has_queue_heading = "## Queue" in text or "## To Read" in text
     section = "queue" if not has_queue_heading else None
     for line in text.splitlines():
