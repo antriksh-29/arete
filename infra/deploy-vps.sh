@@ -195,6 +195,51 @@ install_skills() {
 }
 if [ "$SKIP_SKILLS" -eq 1 ]; then skip "openclaw skills"; else step "openclaw skills" install_skills; fi
 
+# ── 3a. install Chromium so openclaw-browser can actually launch ──
+# openclaw's browser plugin needs a Chrome/Chromium/Brave/Edge binary
+# on the host. Without one, `openclaw browser start` returns
+# `No supported browser found` and the agent-browser skill is
+# unreachable. Idempotent: skip if a browser is already present.
+install_chromium() {
+  for cand in chromium chromium-browser google-chrome chrome brave-browser; do
+    if command -v "$cand" >/dev/null 2>&1; then
+      echo "  ${green}✓${rst} browser already present: $cand"
+      return 0
+    fi
+  done
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "  ${yellow}!${rst} no apt-get and no browser binary — install Chrome/Chromium manually"
+    return 0
+  fi
+  echo "  installing chromium via apt ..."
+  if sudo -n apt-get install -y -q chromium 2>&1 | tail -3; then
+    echo "  ${green}✓${rst} chromium installed"
+  elif sudo -n apt-get install -y -q chromium-browser 2>&1 | tail -3; then
+    echo "  ${green}✓${rst} chromium-browser installed"
+  else
+    echo "  ${yellow}!${rst} chromium install failed (no passwordless sudo?) — non-fatal"
+    return 0
+  fi
+}
+step "install chromium" install_chromium
+
+# ── 3b. start openclaw browser + doctor ──────────────────────────
+# `openclaw browser start` is idempotent — if the browser is already
+# running, it's a no-op. Logs the doctor verdict either way so a
+# regression is visible in the deploy run.
+start_openclaw_browser() {
+  if ! command -v openclaw >/dev/null 2>&1; then
+    echo "  ${yellow}!${rst} openclaw not on PATH — skipping browser start"
+    return 0
+  fi
+  openclaw browser start 2>&1 | tail -5 || true
+  echo
+  echo "  doctor:"
+  openclaw browser doctor 2>&1 | head -10 | sed 's/^/    /'
+  return 0
+}
+step "openclaw browser start" start_openclaw_browser
+
 # ── 4. dream-cycle autopilot ────────────────────────────────────
 if [ "$SKIP_DREAM" -eq 1 ]; then
   skip "dream-cycle autopilot"
