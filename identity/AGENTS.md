@@ -564,6 +564,27 @@ The two ingestion scripts are deterministic and write to brain
 themselves — your job is to invoke them and relay the JSON envelope to
 the user in the format specified in each SKILL.md.
 
+### Site login (cookie-based auth for browser-harness)
+
+Per `skills/site-login/SKILL.md`. For auth-walled sites that don't
+expose a usable API (LinkedIn, paid Substack tier, private Notion,
+logged-in X timelines), the agent collects a cookie JSON blob from the
+user on Telegram, stores it under `SITE_COOKIES__<domain>` in the
+vault, and any future workflow against that site authenticates by
+running `browser-login.py inject <domain>` before navigating.
+
+| User intent | Command |
+|---|---|
+| "login to <site>" / "import cookies for <site>" | Reply with cookie-export instructions; on next message, write the JSON blob to `/tmp/site-login-<domain>.json`, then run `python3 ~/bin/browser-login.py store <domain> /tmp/site-login-<domain>.json` followed by `python3 ~/bin/browser-login.py test <domain> [<probe-url>]` |
+| "test my <site> login" | `python3 ~/bin/browser-login.py test <domain>` |
+| "what sites am I logged into" | `python3 ~/bin/browser-login.py list` |
+| "remove cookies for <site>" / "log out of <site>" | `python3 ~/bin/browser-login.py remove <domain>` |
+
+Password-paste login is NOT supported. If the user asks to "login with
+my password", point them at the cookie path and explain the threat
+model (Telegram retains messages; cookies are revocable per-site,
+passwords aren't).
+
 ### Reading list / bookmarks is a separate intent
 
 Per `skills/reading-list/SKILL.md`. "Reading list" and "bookmarks" are
