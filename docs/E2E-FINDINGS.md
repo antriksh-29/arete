@@ -1,5 +1,25 @@
 # E2E harness findings — 2026-05-10
 
+> **STATUS (2026-05-11): step B complete — all three bugs resolved.**
+>
+> - **Bug #1 (silent-hang):** fixed in PR #24 by lowering
+>   `agents.defaults.bootstrapTotalMaxChars` from 200000 → 60000 via the
+>   new `infra/configure-openclaw.sh` (idempotent, wired into
+>   `deploy-vps.sh`). Per-turn context dropped ~70%, keeping the bot
+>   safely under the gpt-5.4-mini 200K TPM ceiling.
+> - **Bug #2 (status-ping leak):** fixed in two passes —
+>   `is_status_ping()` filter (PR #24) plus a `reply.text` snapshot at
+>   capture time (PR #29) so subsequent in-place edits by OpenClaw
+>   can't poison the assertion.
+> - **Bug #3 (flaky weather-today):** resolved as a side-effect of #1.
+>
+> Validation evidence: 5× consecutive step-A 3-test runs + a full
+> 14-test suite landed 14/14 effective (one transient self-throttle on
+> weather-today passed on a solo retry 30s later). Zero silent-hangs
+> across 30+ turns. The original investigation below is preserved for
+> reference; do **not** re-investigate without first re-confirming a
+> regression with a fresh harness run.
+
 First three real-bot runs of `infra/e2e-harness.py` surfaced three
 distinct issues. The harness machinery itself works (Telethon driver,
 YAML parser, assertion engine, summarizer, session refresh, friendly
