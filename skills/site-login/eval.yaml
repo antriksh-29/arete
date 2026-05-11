@@ -1,0 +1,65 @@
+# Eval suite for site-login.
+skill: site-login
+script: infra/browser-login.py
+version: 1
+
+triggers:
+  - id: sl-001
+    utterance: "login to linkedin"
+    expect_skill: site-login
+  - id: sl-002
+    utterance: "log into linkedin"
+    expect_skill: site-login
+  - id: sl-003
+    utterance: "import cookies for linkedin"
+    expect_skill: site-login
+  - id: sl-004
+    utterance: "set up auth for linkedin.com"
+    expect_skill: site-login
+  - id: sl-005
+    utterance: "store my linkedin credentials"
+    expect_skill: site-login
+  - id: sl-006
+    utterance: "save my linkedin session"
+    expect_skill: site-login
+  - id: sl-007
+    utterance: "what sites am I logged into"
+    expect_skill: site-login
+  - id: sl-008
+    utterance: "list site cookies"
+    expect_skill: site-login
+  - id: sl-009
+    utterance: "test my linkedin login"
+    expect_skill: site-login
+  - id: sl-010
+    utterance: "is my linkedin session valid"
+    expect_skill: site-login
+  - id: sl-011
+    utterance: "remove cookies for linkedin"
+    expect_skill: site-login
+  - id: sl-012
+    utterance: "log out of linkedin"
+    expect_skill: site-login
+
+  # ── negative cases ──
+  - id: sl-neg-001
+    utterance: "search linkedin for founders in Bangalore"
+    expect_skill: agent-browser
+    notes: "doing a thing on a site — not setting up auth"
+  - id: sl-neg-002
+    utterance: "save this for later"
+    has_url: true
+    expect_skill: reading-list
+  - id: sl-neg-003
+    utterance: "browse to https://linkedin.com"
+    expect_skill: agent-browser
+
+outputs:
+  - id: sl-out-smoke
+    cmd: "python3 infra/browser-login.py --smoke"
+    expect_json_keys: [ok, user_message]
+    expect_ok: true
+
+smoke:
+  cmd: "python3 infra/browser-login.py --smoke"
+  expect_exit: 0

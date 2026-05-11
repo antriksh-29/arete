@@ -32,7 +32,7 @@ trigger: |
   - "go to <site> and tell me <X>"
   - "fill the form on <url> with <values>"
   - "click '<label>' on <url>"
-  - "log into <site>" / "open <auth-walled url>"
+  - "open <auth-walled url>" (for using the site after /site-login set up its cookies)
 writes_to: []
 brain_dirs_read: []
 ---
