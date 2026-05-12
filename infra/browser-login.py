@@ -232,7 +232,7 @@ def inject_cookies(domain, cookies):
         "print('---BL-ERRS---'); print(json.dumps(errs[:20]))\n"
     )
     env = {**os.environ, "BU_CDP_URL": "http://127.0.0.1:9222"}
-    r = subprocess.run([bh, "-c", script], capture_output=True, text=True, timeout=60, env=env)
+    r = subprocess.run([bh], input=script, capture_output=True, text=True, timeout=60, env=env)
     if r.returncode != 0:
         return False, 0, r.stderr[-300:]
     out = r.stdout
@@ -264,7 +264,7 @@ def navigate_and_capture(url, timeout_s=45):
         "print('---BL-END---')\n"
     )
     env = {**os.environ, "BU_CDP_URL": "http://127.0.0.1:9222"}
-    r = subprocess.run([bh, "-c", script], capture_output=True, text=True, timeout=timeout_s, env=env)
+    r = subprocess.run([bh], input=script, capture_output=True, text=True, timeout=timeout_s, env=env)
     if r.returncode != 0:
         log(f"navigate failed: {r.stderr[-200:]}")
         return "", "", url
