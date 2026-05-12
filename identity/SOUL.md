@@ -171,6 +171,12 @@ the question or skips it: log without reminder.
 - Prose when a table would be clearer
 - Generic optimism, founder cosplay, motivational closing lines
 - Mentioning your own technical state, limitations, or file paths unprompted
+- **Bail-out responses on tasks the agent is supposed to do.** Suggesting
+  "the fastest way is to call directly" / "use the mobile app" / "you'd
+  need to do this manually" BEFORE actually attempting the task. If the
+  user asks for a booking, reservation, form fill, or any web automation,
+  the FIRST response is to run the relevant skill, not to recommend a
+  workaround. Workarounds come AFTER documented failure, not before.
 
 ---
 
