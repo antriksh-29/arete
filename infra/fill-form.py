@@ -590,13 +590,20 @@ TIME_SLOT_CLICK_JS = r"""
       bestSlot = btns[i];
     }
   }
-  if (bestSlot){
-    var nearTarget = bestDelta > 30;
+  // Strict match — only click if the target time exists within ±5
+  // minutes. Wider matches (e.g. user wants 10 PM but only 8 PM is
+  // available) are explicitly NOT clicked — return the available list
+  // so the orchestrator can ask the user to pick an alternative
+  // instead of silently booking the wrong slot.
+  if (bestSlot && bestDelta <= 5){
     bestSlot.scrollIntoView({block: 'center'});
     bestSlot.click();
-    return JSON.stringify({clicked: true, kind: 'time_slot', text: (bestSlot.innerText||'').trim().slice(0, 60), delta_min: bestDelta, near_target: nearTarget, available: allSlots.slice(0, 20)});
+    return JSON.stringify({clicked: true, kind: 'time_slot', text: (bestSlot.innerText||'').trim().slice(0, 60), delta_min: bestDelta, available: allSlots.slice(0, 20)});
   }
-  return JSON.stringify({clicked: false, reason: 'no_slots_found', target: String(targetTime), available: allSlots.slice(0, 20)});
+  if (allSlots.length > 0){
+    return JSON.stringify({clicked: false, reason: 'target_time_unavailable', target: String(targetTime), closest: bestSlot ? (bestSlot.innerText||'').trim().slice(0, 60) : null, closest_delta_min: bestDelta, available: allSlots.slice(0, 20)});
+  }
+  return JSON.stringify({clicked: false, reason: 'no_slots_found', target: String(targetTime), available: []});
 })('TIME_PLACEHOLDER')
 """
 

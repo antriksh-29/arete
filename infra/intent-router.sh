@@ -107,6 +107,29 @@ EOF
   exit 0
 fi
 
+# ── BOOKING TIME-PICK ──────────────────────────────────────────
+# After a needs_time_choice envelope, the user replies with just a
+# time ("10 PM", "9:30pm", "10:00"). Detect when the message is
+# *mostly* just a time and route to book-reservation.py --pick-time.
+TRIM=$(echo "$MSG" | xargs)
+if [ ${#TRIM} -lt 25 ]; then
+  if echo "$TRIM" | grep -qiE '^[0-9]{1,2}(:[0-9]{2})?\s*(am|pm)?$'; then
+    cat <<EOF
+INTENT=booking_pick_time
+TIME=${TRIM}
+
+REQUIRED_ACTION=Run: python3 ~/bin/book-reservation.py --pick-time "${TRIM}"
+Relay the envelope's user_message verbatim. The script loads the
+most recent needs_time_choice state and re-drives the same platform
+with the new time.
+
+BANNED_RESPONSES:
+- Any reply that doesn't include the book-reservation.py --pick-time invocation when there's a pending needs_time_choice state.
+EOF
+    exit 0
+  fi
+fi
+
 # ── DEFAULT: chat ──────────────────────────────────────────────
 echo "INTENT=chat"
 echo "REASON=no_actionable_intent_detected"

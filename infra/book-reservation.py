@@ -429,7 +429,21 @@ def drive(url: str, intent: dict, platform: str, max_steps: int = 14) -> dict:
     env["platform"] = platform
     env["url"] = url
     env["needs_otp"] = _detect_otp_screen(env)
+    env["target_time_unavailable"], env["available_slots"] = _detect_time_mismatch(env)
     return env
+
+
+def _detect_time_mismatch(env: dict) -> tuple[bool, list[str]]:
+    """Inspect step records for a `target_time_unavailable` time-slot
+    attempt result. fill-form reports this when no slot is within
+    ±5 min of the user's target — instead of silently picking the
+    closest (which previously booked the wrong day), the orchestrator
+    surfaces the available list back to the user."""
+    for r in env.get("step_records", []):
+        ts = r.get("time_slot_attempt") or {}
+        if ts.get("reason") == "target_time_unavailable":
+            return True, ts.get("available", [])
+    return False, []
 
 
 def _detect_otp_screen(env: dict) -> bool:
@@ -523,6 +537,22 @@ def book(message: str) -> dict:
         attempts.append(env)
         # Did we actually fill anything?
         filled = env.get("filled", []) or []
+        # Target time isn't in the slot grid for this platform — surface
+        # the available slots to the user BEFORE silently picking the
+        # wrong day or a closest-but-wrong slot.
+        if env.get("target_time_unavailable"):
+            state_path = save_state(intent, env)
+            slots = env.get("available_slots") or []
+            slots_str = ", ".join(slots[:12]) if slots else "(none)"
+            return _envelope(state="needs_time_choice", intent=intent, attempts=attempts,
+                             screenshot=env.get("screenshot"), state_file=state_path,
+                             platform=name, available_slots=slots,
+                             user_message=(
+                                 f"📅 {intent['venue']} via {name.upper()}: your requested time "
+                                 f"({intent.get('time')}) isn't in the slot grid right now. "
+                                 f"Available: {slots_str}.\n\n"
+                                 f"Reply with the slot you want (e.g. \"9:30 PM\" or \"10 PM\"), "
+                                 f"or \"try another platform\" to fall through."))
         if env.get("needs_otp"):
             state_path = save_state(intent, env)
             return _envelope(state="otp_pending", intent=intent, attempts=attempts,
@@ -545,6 +575,54 @@ def book(message: str) -> dict:
     return _envelope(state="all_platforms_failed", intent=intent, attempts=attempts,
                      user_message=(f"❌ Tried GMR + District + Zomato + EazyDiner + Swiggy for {intent['venue']}. "
                                    f"None reached a fillable booking page. Phone fallback: try calling the venue directly."))
+
+
+def pick_time(new_time: str) -> dict:
+    """User picked a time from the offered slot list. Re-drive the same
+    platform with the new time. The platform's GMR URL stays the same;
+    only the answers' Time changes."""
+    state = load_latest_state()
+    if not state:
+        return _envelope(state="no_state", user_message="No paused booking found to retry.")
+    env = state.get("last_envelope", {})
+    url = env.get("url")
+    platform = env.get("platform", "?")
+    intent = state.get("intent", {})
+    if not url:
+        return _envelope(state="no_state", user_message="Paused booking found but no URL.")
+    intent = dict(intent)
+    intent["time"] = new_time
+    log(f"retrying {platform} with new time: {new_time}")
+    env2 = drive(url, intent, platform, max_steps=18)
+    filled = env2.get("filled", []) or []
+    if env2.get("target_time_unavailable"):
+        slots = env2.get("available_slots") or []
+        slots_str = ", ".join(slots[:12]) if slots else "(none)"
+        state_path = save_state(intent, env2)
+        return _envelope(state="needs_time_choice", intent=intent,
+                         screenshot=env2.get("screenshot"), state_file=state_path,
+                         platform=platform, available_slots=slots,
+                         user_message=(
+                             f"📅 {intent.get('venue')} via {platform.upper()}: '{new_time}' "
+                             f"still isn't available. Slots: {slots_str}. Reply with one of these "
+                             f"or 'try another platform'."))
+    if env2.get("needs_otp"):
+        state_path = save_state(intent, env2)
+        return _envelope(state="otp_pending", intent=intent,
+                         screenshot=env2.get("screenshot"), state_file=state_path,
+                         platform=platform,
+                         user_message=(f"📅 {intent.get('venue')} via {platform.upper()}: OTP screen "
+                                       f"reached. Paste the code to continue."))
+    if filled and not env2.get("errors"):
+        state_path = save_state(intent, env2)
+        return _envelope(state="confirm_ready", intent=intent,
+                         screenshot=env2.get("screenshot"), state_file=state_path,
+                         platform=platform,
+                         user_message=(f"📅 {intent.get('venue')} via {platform.upper()} at {new_time}: "
+                                       f"review the screenshot. Reply 'confirm' to submit, or 'cancel'."))
+    return _envelope(state="failed", attempts=[env2],
+                     user_message=(f"Retry on {platform} with time {new_time} didn't fill the form. "
+                                   f"Try another platform or another time."))
 
 
 def resume(otp: str) -> dict:
@@ -592,9 +670,15 @@ def _envelope(**kwargs) -> dict:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        sys.exit('Usage: book-reservation.py "<message>" | --resume "<otp>" | --smoke')
+        sys.exit('Usage: book-reservation.py "<message>" | --resume "<otp>" | --pick-time "<time>" | --smoke')
     if sys.argv[1] == "--smoke":
         print(json.dumps({"ok": True, "skill": "book-reservation", "user_message": "book-reservation smoke ok"}))
+        return
+    if sys.argv[1] == "--pick-time":
+        if len(sys.argv) < 3:
+            sys.exit("Usage: book-reservation.py --pick-time <time>")
+        env = pick_time(sys.argv[2])
+        print(json.dumps(env))
         return
     if sys.argv[1] == "--resume":
         if len(sys.argv) < 3:
