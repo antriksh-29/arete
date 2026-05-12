@@ -506,6 +506,103 @@ NEXT_CLICK_JS = r"""
 # on restaurant aggregators (Zomato, District, OpenTable, Tock) and
 # hotel booking landing pages: a single "Book a Table" / "Reserve" /
 # "Make a reservation" / "Book now" CTA.
+# Picks the booking date by opening the Date dropdown (GMR widget,
+# District, OpenTable, Tock all follow this pattern) and clicking the
+# option matching the target. Target is one of: "today", "tomorrow",
+# or an ISO date "YYYY-MM-DD" — converted to the human label the
+# dropdown actually shows ("Today", "Tomorrow", "Wed, May 14", etc.).
+#
+# Why this matters: GMR's widget defaults to "Tomorrow" on first load
+# (verified via user mobile screenshot). Without this step the script
+# books the wrong day even if the time-slot click succeeds.
+DATE_DROPDOWN_JS = r"""
+(function(targetDate){
+""" + FRAMES_HELPER + r"""
+  // Build the list of labels we'll accept as a match for the target.
+  // targetDate is "today", "tomorrow", or "YYYY-MM-DD".
+  var t = String(targetDate || '').toLowerCase().trim();
+  var labels = [];
+  if (t === 'today' || t === 'tonight') labels = ['today'];
+  else if (t === 'tomorrow') labels = ['tomorrow'];
+  else if (/^\d{4}-\d{2}-\d{2}$/.test(t)){
+    // Build "Mon, May 14" / "May 14" / "14 May" forms.
+    var d = new Date(t + 'T00:00:00');
+    var months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    var wd = ['sun','mon','tue','wed','thu','fri','sat'];
+    var mm = months[d.getMonth()], dd = d.getDate(), wn = wd[d.getDay()];
+    labels = [
+      wn+', '+mm+' '+dd, mm+' '+dd, dd+' '+mm,
+      wn+' '+mm+' '+dd,
+    ];
+    // Also accept "Today"/"Tomorrow" if the date IS today/tomorrow.
+    var now = new Date(); now.setHours(0,0,0,0);
+    var diff = Math.round((d - now) / (24*3600*1000));
+    if (diff === 0) labels.push('today');
+    else if (diff === 1) labels.push('tomorrow');
+  } else {
+    return JSON.stringify({clicked: false, reason: 'unparseable_target', target: t});
+  }
+  // Find the Date dropdown — its label says "Date" and it has a
+  // selectable trigger (button / combobox / input).
+  var triggers = queryAll('button, [role="combobox"], [role="button"], select, input[readonly]');
+  function nearLabel(el, words){
+    // Walk up 4 ancestors looking for text "date" / "Tarih" / "fecha".
+    var n = el; var depth = 0;
+    while (n && depth < 4){
+      var txt = (n.innerText || n.textContent || '').toLowerCase();
+      if (words.some(function(w){return txt.indexOf(w) >= 0;})) return true;
+      n = n.parentElement; depth++;
+    }
+    return false;
+  }
+  var dateTrigger = triggers.find(function(el){
+    var r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    var lab = (el.getAttribute('aria-label') || '').toLowerCase();
+    if (lab.indexOf('date') >= 0) return true;
+    // Fallback — short trigger whose nearby text includes "Date"
+    var t2 = (el.innerText || '').trim();
+    if (t2.length < 40 && nearLabel(el, ['date'])) return true;
+    return false;
+  });
+  if (!dateTrigger){
+    return JSON.stringify({clicked: false, reason: 'no_date_dropdown'});
+  }
+  // Check if the dropdown's current value already matches the target
+  // (avoid an unnecessary click that re-opens the menu).
+  var current = (dateTrigger.innerText || dateTrigger.value || '').trim().toLowerCase();
+  if (labels.some(function(L){return current.indexOf(L) >= 0;})){
+    return JSON.stringify({clicked: false, reason: 'already_selected', current: current});
+  }
+  dateTrigger.scrollIntoView({block: 'center'});
+  dateTrigger.click();
+  // Wait 600ms (synchronously via busy loop — we're in a single CDP
+  // call) for the option list to render. browser-harness will sleep
+  // afterwards so 600ms is enough for most popovers.
+  var end = Date.now() + 600;
+  while (Date.now() < end){}
+  // Look for option that matches one of our labels.
+  var options = queryAll('[role="option"], li, [role="menuitem"], div[tabindex="0"]');
+  var pick = null;
+  for (var i = 0; i < options.length && !pick; i++){
+    var ot = (options[i].innerText || '').trim().toLowerCase();
+    if (!ot || ot.length > 50) continue;
+    for (var j = 0; j < labels.length; j++){
+      if (ot.indexOf(labels[j]) >= 0){
+        pick = options[i]; break;
+      }
+    }
+  }
+  if (!pick){
+    return JSON.stringify({clicked: false, reason: 'date_option_not_found', target: t, labels_tried: labels});
+  }
+  pick.scrollIntoView({block: 'center'});
+  pick.click();
+  return JSON.stringify({clicked: true, kind: 'date_dropdown', target: t, picked: (pick.innerText||'').trim().slice(0, 40)});
+})('DATE_PLACEHOLDER')
+"""
+
+
 # Clicks a Lunch/Dinner/Brunch meal-period selector. Returns whether
 # anything was clicked. Used as a separate step before time-slot
 # matching, so the page has time to refresh slots between clicks.
@@ -1092,6 +1189,7 @@ def build_driver_script(url, all_answers, submit, shot_path, max_steps=6):
     offer_radio_click_js = OFFER_RADIO_CLICK_JS
     time_slot_click_js = TIME_SLOT_CLICK_JS
     meal_period_click_js = MEAL_PERIOD_CLICK_JS
+    date_dropdown_js = DATE_DROPDOWN_JS
     provider_pick_js = PROVIDER_PICK_JS
     shot_after_submit = shot_path.replace(".png", "-after-submit.png")
     shot_step_prefix = shot_path.replace(".png", "-step")
@@ -1235,6 +1333,24 @@ for step in range({max_steps}):
         # have form fields to fill, slot grids visible on the side
         # (e.g., GMR widget under the EazyDiner modal) are noise.
         ts_answer_allowed = (not plan)
+
+        # (a0) Date dropdown — GMR / OpenTable / Tock widgets default
+        #      to today OR tomorrow depending on the time of day.
+        #      Click the dropdown and pick the user's target date BEFORE
+        #      reading the slot grid. ONE click per run.
+        d_answer = None
+        for k in all_answers:
+            nk = norm(k)
+            if nk == 'date' or 'date' in nk.split():
+                d_answer = all_answers[k]; break
+        if ts_answer_allowed and d_answer and not any(r.get('date_dropdown_clicked') for r in step_records):
+            dd_js = ({date_dropdown_js!r}).replace('DATE_PLACEHOLDER', str(d_answer).replace("'", ""))
+            dd = cdp('Runtime.evaluate', expression=dd_js, returnByValue=True)
+            dd_result = json.loads(dd.get('result', {{}}).get('value', '{{}}'))
+            step_records[-1]['date_dropdown_clicked'] = dd_result
+            if dd_result.get('clicked'):
+                time.sleep(4)  # let the slot grid refresh for the new date
+                continue
 
         # (a) If we have a time target AND haven't already done a
         #     meal-period click, try clicking Lunch/Dinner/Brunch first
