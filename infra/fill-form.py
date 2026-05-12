@@ -486,7 +486,7 @@ TIME_SLOT_CLICK_JS = r"""
 CTA_CLICK_JS = r"""
 (function(){
   var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"], input[type="button"], a'));
-  var ctaRe = /^(book(\s+a\s+table)?|reserve(\s+a\s+table)?|make\s+(a\s+)?reservation|book\s+now|order\s+(now|online)|reserve\s+now|table\s+booking|tisch\s+reservieren|tisch\s+buchen|reservar|réserver|prenotare)\b/i;
+  var ctaRe = /^(book(\s+a\s+table)?|reserve(\s+a\s+table)?|make\s+(a\s+)?reservation|book\s+now|order\s+(now|online)|reserve\s+now|table\s+booking|proceed(\s+to\s+(book|checkout|payment))?|continue\s+to\s+(book|checkout)|confirm\s+(and\s+)?(book|booking|reservation)|tisch\s+reservieren|tisch\s+buchen|reservar|réserver|prenotare)\b/i;
   var consentRe = /^(accept(\s+all)?|alle\s+akzeptieren|akzeptieren|tout\s+accepter|aceptar(\s+todo)?|accetta(\s+tutto)?|reject|alle\s+ablehnen)\b/i;
   var visible = btns.filter(function(x){
     var r = x.getBoundingClientRect();
