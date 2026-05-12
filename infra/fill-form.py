@@ -782,6 +782,83 @@ MEAL_PERIOD_CLICK_JS = r"""
 })('TIME_PLACEHOLDER')
 """
 
+# Opens the Time-preference dropdown and picks an option matching the
+# user's target time. On GMR's widget the Time combobox (role=combobox,
+# aria-haspopup=listbox) reveals every 30-min slot from midnight to
+# midnight — far more than the visible slot grid. After this click the
+# slot grid refreshes around the picked time.
+TIME_DROPDOWN_JS = r"""
+(function(targetTime){
+""" + FRAMES_HELPER + r"""
+  function parse24h(s){
+    var m = (s||'').match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+    if (!m) return null;
+    var h = parseInt(m[1], 10);
+    var mm = m[2] ? parseInt(m[2], 10) : 0;
+    var ap = (m[3] || '').toLowerCase();
+    if (ap === 'pm' && h < 12) h += 12;
+    if (ap === 'am' && h === 12) h = 0;
+    return h * 60 + mm;
+  }
+  var want = parse24h(String(targetTime));
+  if (want === null) return JSON.stringify({clicked: false, reason: 'unparseable_time'});
+
+  // Find the Time combobox — distinguished by current text matching
+  // a time like "7:00 pm". Avoid the Party combobox (text is a digit
+  // like "2") and any other comboboxes.
+  var triggers = queryAll('[role="combobox"], button')
+    .filter(function(b){
+      var r = b.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return false;
+      var s = window.getComputedStyle(b);
+      return s.display !== 'none' && s.visibility !== 'hidden';
+    });
+  var timeTrigger = triggers.find(function(b){
+    var t = (b.innerText || '').trim();
+    return /^\d{1,2}(:\d{2})?\s*(am|pm)\b/i.test(t);
+  });
+  if (!timeTrigger) return JSON.stringify({clicked: false, reason: 'no_time_dropdown'});
+
+  // If already showing target time, skip
+  var current = (timeTrigger.innerText || '').trim();
+  if (parse24h(current) === want){
+    return JSON.stringify({clicked: false, reason: 'already_selected', current: current});
+  }
+  timeTrigger.scrollIntoView({block: 'center'});
+  timeTrigger.click();
+  var end = Date.now() + 600;
+  while (Date.now() < end){}
+  // Look for option with matching parsed time.
+  var options = queryAll('[role="option"], li, [role="menuitem"], [role="button"]')
+    .filter(function(o){
+      var r = o.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return false;
+      var t = (o.innerText || '').trim();
+      return t.length < 20 && /\d{1,2}(:\d{2})?\s*(am|pm)/i.test(t);
+    });
+  var match = null, bestDelta = 1e9;
+  for (var i = 0; i < options.length; i++){
+    var t = (options[i].innerText || '').trim();
+    var v = parse24h(t);
+    if (v === null) continue;
+    var d = Math.abs(v - want);
+    if (d < bestDelta && d <= 5){
+      bestDelta = d;
+      match = options[i];
+    }
+  }
+  if (!match){
+    return JSON.stringify({clicked: false, reason: 'no_matching_time_option',
+                            target: String(targetTime), options_seen: options.length});
+  }
+  match.scrollIntoView({block: 'center'});
+  match.click();
+  return JSON.stringify({clicked: true, kind: 'time_dropdown', target: String(targetTime),
+                          picked: (match.innerText||'').trim()});
+})('TIME_PLACEHOLDER')
+"""
+
+
 # Picks a time-slot button matching the user's requested time. Pure
 # slot click — assumes meal period has already been selected. Returns
 # the list of visible slot texts if no match within tolerance, so the
@@ -1339,6 +1416,7 @@ def build_driver_script(url, all_answers, submit, shot_path, max_steps=6):
     time_slot_click_js = TIME_SLOT_CLICK_JS
     meal_period_click_js = MEAL_PERIOD_CLICK_JS
     date_dropdown_js = DATE_DROPDOWN_JS
+    time_dropdown_js = TIME_DROPDOWN_JS
     provider_pick_js = PROVIDER_PICK_JS
     shot_after_submit = shot_path.replace(".png", "-after-submit.png")
     shot_step_prefix = shot_path.replace(".png", "-step")
@@ -1456,12 +1534,16 @@ for step in range({max_steps}):
     step_records.append({{'step': step, 'fields_seen': len(headings),
                           'plan_size': len(plan), 'verify_state': verify}})
 
-    # 5. Look for Next button. Only fire if we actually filled fields
-    #    this iteration — otherwise a generic "Continue" on a booking
-    #    widget loops forever without picking a time slot first.
-    if plan:
+    # 5. Look for Next button. Fire when we filled fields this step
+    #    OR when the previous step clicked a time-slot — both are
+    #    "we just provided input, advance the wizard" states. Guard
+    #    against generic Continue loops by gating on a recent action.
+    just_clicked_slot = bool(step_records[-2:-1] and
+                             step_records[-2:-1][0].get('time_slot_attempt', {{}}).get('clicked'))
+    if plan or just_clicked_slot:
         nb = cdp('Runtime.evaluate', expression={next_click_js!r}, returnByValue=True)
         nb_result = json.loads(nb.get('result', {{}}).get('value', '{{}}'))
+        step_records[-1]['next_clicked'] = nb_result
         if nb_result.get('clicked'):
             time.sleep(3)  # let next page load
             continue
@@ -1501,6 +1583,20 @@ for step in range({max_steps}):
                 time.sleep(4)  # let the slot grid refresh for the new date
                 continue
 
+        # (a1) Time dropdown — GMR's Time combobox reveals every 30-min
+        #      slot from midnight to midnight (the visible grid is only
+        #      a subset near the current preference). Open the dropdown
+        #      and pick the user's target time so the slot grid
+        #      refreshes around it. ONE click per run.
+        if ts_answer_allowed and ts_answer and not any(r.get('time_dropdown_clicked') for r in step_records):
+            td_js = ({time_dropdown_js!r}).replace('TIME_PLACEHOLDER', str(ts_answer).replace("'", ""))
+            td = cdp('Runtime.evaluate', expression=td_js, returnByValue=True)
+            td_result = json.loads(td.get('result', {{}}).get('value', '{{}}'))
+            step_records[-1]['time_dropdown_clicked'] = td_result
+            if td_result.get('clicked'):
+                time.sleep(4)  # let the slot grid refresh
+                continue
+
         # (a) If we have a time target AND haven't already done a
         #     meal-period click, try clicking Lunch/Dinner/Brunch first
         #     so the slot list refreshes. ONE meal-period click per run.
@@ -1513,8 +1609,13 @@ for step in range({max_steps}):
                 time.sleep(4)  # let the time-slot row refresh
                 continue
 
-        # (b) Time-slot button
-        if ts_answer_allowed and ts_answer:
+        # (b) Time-slot button. Skip if we already clicked a matching
+        #     slot in the previous step — the URL-change reset can
+        #     re-enable this key but we don't want to re-click forever;
+        #     fall through to CTA / Continue so we actually advance.
+        prev_ts_clicked = bool(step_records and step_records[-2:-1]
+                                and step_records[-2:-1][0].get('time_slot_attempt', {{}}).get('clicked'))
+        if ts_answer_allowed and ts_answer and not prev_ts_clicked:
             ts_js = ({time_slot_click_js!r}).replace('TIME_PLACEHOLDER', str(ts_answer).replace("'", ""))
             ts = cdp('Runtime.evaluate', expression=ts_js, returnByValue=True)
             ts_result = json.loads(ts.get('result', {{}}).get('value', '{{}}'))
