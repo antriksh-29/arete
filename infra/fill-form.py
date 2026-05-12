@@ -891,8 +891,31 @@ def build_driver_script(url, all_answers, submit, shot_path, max_steps=6):
 import json, time, re
 
 NORM_RE = re.compile(r'[^\\w\\s]')
+SYNONYMS = {{
+    'mobile': 'phone', 'cell': 'phone', 'cellular': 'phone', 'tel': 'phone',
+    'telephone': 'phone', 'mobil': 'phone', 'handy': 'phone', 'telefon': 'phone',
+    'telefono': 'phone', 'celular': 'phone', 'movil': 'phone',
+    'email': 'email', 'mail': 'email', 'courriel': 'email',
+    'fullname': 'name', 'surname': 'name', 'firstname': 'name', 'lastname': 'name',
+    'nachname': 'name', 'vorname': 'name', 'nom': 'name', 'apellido': 'name',
+    'guests': 'party', 'people': 'party', 'diners': 'party',
+    'personen': 'party', 'personas': 'party',
+    # noise words — drop entirely
+    'enter': '', 'your': '', 'please': '', 'the': '',
+    'no': '', 'of': '', 'number': '', 'address': '',
+}}
+
 def norm(s):
-    return NORM_RE.sub(' ', (s or '').lower()).strip()
+    out = NORM_RE.sub(' ', (s or '').lower()).strip()
+    parts = out.split()
+    canon = []
+    for p in parts:
+        if p in SYNONYMS:
+            v = SYNONYMS[p]
+            if v: canon.append(v)
+        else:
+            canon.append(p)
+    return ' '.join(canon).strip()
 
 
 def soft_match(a, b):
