@@ -658,6 +658,62 @@ def pick_time(new_time: str) -> dict:
                                    f"Try another platform or another time."))
 
 
+def submit() -> dict:
+    """User said 'confirm'. Re-open the booking URL, re-fill (idempotent
+    via existing answers), and explicitly click the Continue / Submit
+    button so the booking actually advances to the next step (auth /
+    OTP / final confirmation). Pass --submit to fill-form so it doesn't
+    just stop after fill but runs the submit sequence too."""
+    state = load_latest_state()
+    if not state:
+        return _envelope(state="no_state",
+                         user_message="No paused booking to confirm. Start a new booking.")
+    env = state.get("last_envelope", {})
+    url = env.get("url")
+    platform = env.get("platform", "?")
+    intent = state.get("intent", {})
+    if not url:
+        return _envelope(state="no_state",
+                         user_message="Paused booking found but no URL to confirm.")
+    answers = _answers_for(intent)
+    answers_path = f"/tmp/booking-submit-{int(time.time())}.json"
+    Path(answers_path).write_text(json.dumps(answers, indent=2))
+    shot_path = f"/tmp/booking-submit-{platform}-{int(time.time())}.png"
+    cmd = ["python3", FILL_FORM, url, answers_path,
+           "--max-steps", "32",
+           "--screenshot", shot_path,
+           "--submit"]
+    log(f"submitting {platform}")
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=360)
+    except subprocess.TimeoutExpired:
+        return _envelope(state="failed", user_message="Submit step timed out.")
+    last = (out.stdout.strip().splitlines() or [""])[-1]
+    try:
+        env2 = json.loads(last)
+    except json.JSONDecodeError:
+        return _envelope(state="failed", user_message="Submit produced no envelope.")
+    env2["platform"] = platform
+    # Detect OTP after submit (the most common next stage)
+    if _detect_otp_screen(env2):
+        save_state(intent, env2)
+        return _envelope(state="otp_pending", intent=intent, platform=platform,
+                         screenshot=env2.get("screenshot"),
+                         user_message=(f"📅 {intent.get('venue')} submitted. "
+                                       f"OTP screen — paste the code you received."))
+    if env2.get("submitted"):
+        return _envelope(state="completed", intent=intent, platform=platform,
+                         screenshot=env2.get("screenshot"),
+                         user_message=(f"✅ {intent.get('venue')} booked via {platform.upper()} "
+                                       f"for {intent.get('date')} at {intent.get('time')}. "
+                                       f"Screenshot shows the confirmation page."))
+    return _envelope(state="confirm_ready", intent=intent, platform=platform,
+                     screenshot=env2.get("screenshot"),
+                     user_message=(f"📅 {intent.get('venue')} — submit attempted but no "
+                                   f"confirmation detected. Check the screenshot; the next "
+                                   f"step may be sign-in or OTP."))
+
+
 def resume(otp: str) -> dict:
     state = load_latest_state()
     if not state:
@@ -711,6 +767,10 @@ def main() -> None:
         if len(sys.argv) < 3:
             sys.exit("Usage: book-reservation.py --pick-time <time>")
         env = pick_time(sys.argv[2])
+        print(json.dumps(env))
+        return
+    if sys.argv[1] == "--submit":
+        env = submit()
         print(json.dumps(env))
         return
     if sys.argv[1] == "--resume":

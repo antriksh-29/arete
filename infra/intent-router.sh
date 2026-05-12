@@ -107,6 +107,26 @@ EOF
   exit 0
 fi
 
+# ── BOOKING CONFIRM ────────────────────────────────────────────
+# After state=confirm_ready, the user replies "confirm" / "yes book" /
+# "go ahead" / "please book" — route to book-reservation.py --submit
+# so the script actually clicks the platform's final Continue/Submit.
+if echo "$LMSG" | grep -qE '^[[:space:]]*(confirm|yes\b|go ahead|book it|please book|submit it|do it)( - please book| please book| and book)?[[:space:]]*\.?\??!?[[:space:]]*$'; then
+  cat <<EOF
+INTENT=booking_confirm
+
+REQUIRED_ACTION=Run: python3 ~/bin/book-reservation.py --submit
+Relay the envelope's user_message verbatim. The script loads the
+most recent confirm_ready/needs_time_choice state and clicks the
+final Continue/Submit on the platform.
+
+BANNED_RESPONSES:
+- Any reply that says the booking "got cut off" without a fresh --submit attempt.
+- Acknowledgements like "I'll submit now" without actually running the script.
+EOF
+  exit 0
+fi
+
 # ── BOOKING TIME-PICK ──────────────────────────────────────────
 # After a needs_time_choice envelope, the user replies with just a
 # time ("10 PM", "9:30pm", "10:00"). Detect when the message is
