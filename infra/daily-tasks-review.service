@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily Tasks - Evening Review (10 PM IST)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/botuser/bin/daily-tasks-review-trigger.sh
+StandardOutput=journal
+StandardError=journal
