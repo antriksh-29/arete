@@ -65,25 +65,14 @@ PARTY=${PARTY:-UNPARSED — ask user}
 TIME=${TIME:-UNPARSED — ask user}
 DAY=${DAY:-UNPARSED — assume today}
 
-REQUIRED_ACTION=Invoke /fill-form via fill-form.py NOW. Do NOT compose a text reply first. Do NOT suggest calling, emailing, or using the mobile app. Do NOT ask whether to proceed — proceed.
+REQUIRED_ACTION=Invoke /book-reservation NOW. The skill handles parsing, URL discovery, platform fallback (GMR → District → Zomato → EazyDiner → Swiggy), screenshots, and OTP relay. Do NOT compose a text reply first. Do NOT suggest calling, emailing, or using the mobile app.
 
 EXECUTION_RECIPE:
-1. Search Google for the Google Maps Reserve URL of the venue:
-   pattern is https://www.google.com/maps/reserve/v/dine/c/<id>?source=pa&hl=en-IN
-   Use: python3 -c "import urllib.parse,urllib.request,re; q=urllib.parse.quote('${VENUE:-VENUE} reserve a table site:google.com/maps'); html=urllib.request.urlopen('https://www.google.com/search?q='+q,timeout=10).read().decode('utf-8','ignore'); m=re.search(r'https://www\.google\.com/maps/reserve/v/dine/c/[A-Za-z0-9]+', html); print(m.group(0) if m else 'NOT_FOUND')"
-2. If found, compose answers JSON to /tmp/booking-\$(date +%s).json with these keys (USER.md provides Name/Phone/Email):
-   {"Time": "${TIME}", "Date": "today/tomorrow → YYYY-MM-DD", "Party size": "${PARTY}",
-    "Guests": "${PARTY}", "Name": "Antriksh Jain", "Phone": "+918310872480",
-    "Email": "antriksh1980@gmail.com", "provider_preference": "eazydiner,swiggy"}
-3. Run: python3 ~/bin/fill-form.py "<gmr-url>" /tmp/booking-<ts>.json --max-steps 12
-4. The script auto-delivers screenshots via send-telegram-photo.sh — no need to send manually.
-5. If GMR fails (no URL found, or fill-form returns 0 fields_filled), FALL THROUGH to:
-   - District: https://www.district.in/dining/<city>/<venue-slug>/book?date=YYYY-MM-DD&guests=N
-   - Zomato:   https://www.zomato.com/<city>/<slug>/book
-   - EazyDiner: https://www.eazydiner.com/<city>/<slug>
-   Try each in sequence, never stop at the first failure.
-6. When the screenshot shows an OTP entry screen, ask user "OTP sent — paste it back" and ENTER the OTP they paste via fill-form (Rule §2 Exception 2 allows this).
-7. STOP before the final confirm-booking click — let the user review.
+1. Run: python3 ~/bin/book-reservation.py "<the user's exact message verbatim>"
+2. The script auto-delivers screenshots via send-telegram-photo.sh throughout the flow.
+3. Relay the envelope's user_message field VERBATIM as your reply.
+4. If state=otp_pending in the envelope, the user's next message will be the OTP. Pass it as: python3 ~/bin/book-reservation.py --resume "<otp digits>"
+5. The script STOPS before the final confirm-booking click — the user reviews the screenshot then replies 'confirm' to submit.
 
 BANNED_RESPONSES:
 - "The fastest route is to call directly"
