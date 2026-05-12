@@ -1,0 +1,54 @@
+# Eval suite for fill-form.
+skill: fill-form
+script: infra/fill-form.py
+version: 1
+
+triggers:
+  - id: ff-001
+    utterance: "fill this form"
+    has_url: true
+    expect_skill: fill-form
+  - id: ff-002
+    utterance: "fill out this form for me"
+    has_url: true
+    expect_skill: fill-form
+  - id: ff-003
+    utterance: "fill the google form"
+    has_url: true
+    expect_skill: fill-form
+  - id: ff-004
+    utterance: "submit this form on my behalf"
+    has_url: true
+    expect_skill: fill-form
+  - id: ff-005
+    utterance: "register me at"
+    has_url: true
+    expect_skill: fill-form
+  - id: ff-006
+    utterance: "answer this form with my details"
+    has_url: true
+    expect_skill: fill-form
+
+  # ── negative cases ──
+  - id: ff-neg-001
+    utterance: "what fields does this form have"
+    has_url: true
+    expect_skill: agent-browser
+    notes: "viewing form structure — not filling it"
+  - id: ff-neg-002
+    utterance: "save this form for later"
+    has_url: true
+    expect_skill: reading-list
+  - id: ff-neg-003
+    utterance: "login to google forms"
+    expect_skill: site-login
+
+outputs:
+  - id: ff-out-smoke
+    cmd: "python3 infra/fill-form.py --smoke"
+    expect_json_keys: [ok, user_message]
+    expect_ok: true
+
+smoke:
+  cmd: "python3 infra/fill-form.py --smoke"
+  expect_exit: 0
