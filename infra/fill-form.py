@@ -384,6 +384,46 @@ NEXT_CLICK_JS = r"""
 })()
 """
 
+# When the discovery pass sees 0 actionable fields, look for a CTA
+# that opens the actual booking/order/reservation form. Common pattern
+# on restaurant aggregators (Zomato, District, OpenTable, Tock) and
+# hotel booking landing pages: a single "Book a Table" / "Reserve" /
+# "Make a reservation" / "Book now" CTA.
+CTA_CLICK_JS = r"""
+(function(){
+  var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"], input[type="button"], a'));
+  var ctaRe = /^(book(\s+a\s+table)?|reserve(\s+a\s+table)?|make\s+(a\s+)?reservation|book\s+now|order\s+(now|online)|reserve\s+now|table\s+booking|tisch\s+reservieren|tisch\s+buchen|reservar|réserver|prenotare)\b/i;
+  var consentRe = /^(accept(\s+all)?|alle\s+akzeptieren|akzeptieren|tout\s+accepter|aceptar(\s+todo)?|accetta(\s+tutto)?|reject|alle\s+ablehnen)\b/i;
+  var visible = btns.filter(function(x){
+    var r = x.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return false;
+    var s = window.getComputedStyle(x);
+    return s.visibility !== 'hidden' && s.display !== 'none' && (r.bottom > 0 && r.top < (window.innerHeight + 500));
+  });
+  // First — handle consent walls (Google/EU GDPR pages). Prefer "Accept all" so the page proceeds.
+  var consent = visible.find(function(x){
+    var t = (x.innerText || x.value || '').trim();
+    return /^(accept(\s+all)?|alle\s+akzeptieren|akzeptieren|tout\s+accepter|aceptar(\s+todo)?|accetta)\b/i.test(t);
+  });
+  if (consent){
+    consent.scrollIntoView({block: 'center'});
+    consent.click();
+    return JSON.stringify({clicked: true, kind: 'consent', text: (consent.innerText||consent.value||'').trim()});
+  }
+  // Booking CTA
+  var cta = visible.find(function(x){
+    var t = (x.innerText || x.value || '').trim();
+    return ctaRe.test(t);
+  });
+  if (cta){
+    cta.scrollIntoView({block: 'center'});
+    cta.click();
+    return JSON.stringify({clicked: true, kind: 'cta', text: (cta.innerText||cta.value||'').trim()});
+  }
+  return JSON.stringify({clicked: false});
+})()
+"""
+
 
 # Single JS function that drives every fill step inside the page — no
 # cached coordinates, scrolls each element into view before clicking,
@@ -672,6 +712,7 @@ def build_driver_script(url, all_answers, submit, shot_path, max_steps=6):
     exec_js_tpl = EXECUTE_PLAN_JS
     verify_js = VERIFY_JS
     next_click_js = NEXT_CLICK_JS
+    cta_click_js = CTA_CLICK_JS
     shot_after_submit = shot_path.replace(".png", "-after-submit.png")
     shot_step_prefix = shot_path.replace(".png", "-step")
     return f"""
@@ -758,7 +799,21 @@ for step in range({max_steps}):
     if nb_result.get('clicked'):
         time.sleep(3)  # let next page load
         continue
-    break  # no Next button found; we're on the final page
+
+    # 6. If we saw 0 actionable fields this step, the URL might be a
+    #    landing page where the form is behind a CTA / consent wall.
+    #    Try clicking "Accept all" (consent) or "Book a Table" / "Reserve"
+    #    (CTA), then re-loop.
+    if not plan and not (verify.get('texts') or verify.get('radios') or verify.get('checks') or verify.get('selects')):
+        cta_js = {cta_click_js!r}
+        cc = cdp('Runtime.evaluate', expression=cta_js, returnByValue=True)
+        cc_result = json.loads(cc.get('result', {{}}).get('value', '{{}}'))
+        if cc_result.get('clicked'):
+            step_records[-1]['cta_clicked'] = cc_result
+            time.sleep(4)  # let the form/modal/next page render
+            continue
+
+    break  # no Next button, no actionable CTA; we're stuck or done
 
 # Final screenshot
 capture_screenshot({shot_path!r})
