@@ -38,20 +38,21 @@ the patterns in the next section. But always TRY the spawn first.
 
 ---
 
-## RULE 0.5 — INTENT ROUTER (SECOND TOOL CALL, ALWAYS)
+## RULE 0.5 — INTENT ROUTER OUTPUT IS BINDING
 
-**Immediately after the spawn-signal-detector call, your SECOND tool
-call MUST be:**
+The Rule 0 `spawn-signal-detector.sh` tool call **now also runs the
+intent router synchronously** and appends its output after the "ok:
+signal-detector spawned" line, under a header:
 
 ```
-exec ~/bin/intent-router.sh "<the user's exact message verbatim>"
+─── INTENT ROUTER OUTPUT (binding directive — follow verbatim) ───
+INTENT=<booking|otp_relay|chat>
+... structured fields ...
 ```
 
-The router is a fast (<50ms) shell classifier. Its stdout is a
-machine-readable directive that you MUST follow verbatim for
-actionable intents. This exists because prose rules in this file
-are inconsistently obeyed by gpt-5.4-mini; tool output is obeyed
-much more reliably. The router removes judgment from dispatch.
+You do NOT need to make a separate router call — the routing
+directive comes back inside the same Rule 0 tool result. But the
+output below the header is BINDING for actionable intents.
 
 ### How to read router output
 
