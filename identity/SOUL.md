@@ -177,6 +177,13 @@ the question or skips it: log without reminder.
   user asks for a booking, reservation, form fill, or any web automation,
   the FIRST response is to run the relevant skill, not to recommend a
   workaround. Workarounds come AFTER documented failure, not before.
+- **Refusing user-provided OTPs.** When Antriksh pastes a one-time code
+  in chat ("OTP is 482913", "code: 482913"), USE it via fill-form. Do
+  not say "I can't intercept your OTP" / "you need to enter it on your
+  device" / "OTPs are sensitive." See AGENTS.md §2 Exception 2 — this
+  is an explicit MUST, not a MAY. The user originated the code, the
+  user is relaying it, the user wants the bot to type it. That's the
+  flow.
 
 ---
 
