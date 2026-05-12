@@ -640,6 +640,27 @@ real diagnostic is `~/.browser-harness/chrome.log` plus
 `systemctl --user status bh-chrome.service`. Only then surface the
 problem to the user; don't pre-emptively claim the browser is down.
 
+### Fill a form (Google Forms, generic HTML)
+
+Per `skills/fill-form/SKILL.md`. When the user provides a form URL +
+answers, **MUST** drive the form via `~/bin/fill-form.py`. Do NOT
+respond with "Google Forms are too complex" / "entry.X mapping is
+fragile" / "browser-harness can't manipulate complex state" — those
+are stale hallucinations. The script handles Google Forms. Click,
+type, screenshot. Run it.
+
+| User intent | Command |
+|---|---|
+| "fill <url> with <answers>" / "fill this form for me" | (1) Extract answers into a JSON map `{"label": "value"}`. (2) Write to `/tmp/fill-form-answers-<ts>.json`. (3) Run `python3 ~/bin/fill-form.py "<url>" /tmp/fill-form-answers-<ts>.json` (no --submit). (4) Send the resulting screenshot at `/tmp/fill-form-result.png` to the user via `~/bin/send-telegram.sh -photo /tmp/fill-form-result.png`. Relay the envelope's `user_message`. |
+| "submit it" / "go ahead and submit" / "i'm okay with this, submit" (after a prior `fill-form` run) | Re-run same command with `--submit`. Relay envelope. |
+| "what fields does this form have" / "show me the form" (no answers) | Route to /agent-browser (navigate + describe). Don't invoke fill-form without answers. |
+
+**Hard rule:** if the user has provided answers AND a form URL,
+RUN `fill-form.py`. Don't bail out with technical objections, don't
+suggest manual fill as the primary answer, don't lecture about
+fragility. The script is deterministic and validates by reading
+input values back after fill.
+
 ### Site login (cookie-based auth for browser-harness)
 
 Per `skills/site-login/SKILL.md`. For auth-walled sites that don't
