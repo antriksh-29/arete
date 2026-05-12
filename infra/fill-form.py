@@ -389,12 +389,51 @@ NEXT_CLICK_JS = r"""
 # on restaurant aggregators (Zomato, District, OpenTable, Tock) and
 # hotel booking landing pages: a single "Book a Table" / "Reserve" /
 # "Make a reservation" / "Book now" CTA.
-# Picks a time-slot or meal-period button on booking widgets that
-# use button grids instead of <select> / <input type=time> (District,
-# OpenTable, Resy, EatApp etc). Targets a specific time the user
-# requested by parsing free text like "9 PM tonight", "21:00",
-# "9:30 pm". For ambiguous "tonight" / "evening" / "dinner" requests,
-# clicks Dinner first.
+# Clicks a Lunch/Dinner/Brunch meal-period selector. Returns whether
+# anything was clicked. Used as a separate step before time-slot
+# matching, so the page has time to refresh slots between clicks.
+MEAL_PERIOD_CLICK_JS = r"""
+(function(targetTime){
+  function visibleButtons(){
+    return Array.from(document.querySelectorAll('button, [role="button"], a, div[tabindex="0"]'))
+      .filter(function(b){
+        var r = b.getBoundingClientRect();
+        var s = window.getComputedStyle(b);
+        return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
+      });
+  }
+  function parse24h(s){
+    var m = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+    if (!m) return null;
+    var h = parseInt(m[1], 10);
+    var mm = m[2] ? parseInt(m[2], 10) : 0;
+    var ap = (m[3] || '').toLowerCase();
+    if (ap === 'pm' && h < 12) h += 12;
+    if (ap === 'am' && h === 12) h = 0;
+    return h * 60 + mm;
+  }
+  var want = parse24h(String(targetTime));
+  if (want === null) return JSON.stringify({clicked: false, reason: 'unparseable_time'});
+  var meal = null, mealName = '';
+  if (want >= 16 * 60) { meal = /^(dinner|abendessen|cena|dîner)\b/i; mealName = 'Dinner'; }
+  else if (want >= 11 * 60) { meal = /^(lunch|mittagessen|almuerzo|déjeuner|pranzo)\b/i; mealName = 'Lunch'; }
+  else { meal = /^(brunch|breakfast|frühstück|desayuno|petit\s+déjeuner|colazione)\b/i; mealName = 'Brunch'; }
+  var btns = visibleButtons();
+  var mb = btns.find(function(b){ return meal.test((b.innerText||'').trim()); });
+  if (!mb) return JSON.stringify({clicked: false, reason: 'no_meal_button', wanted: mealName});
+  var cls = (mb.className || '') + ' ' + (mb.getAttribute('aria-pressed') || '');
+  var selected = /selected|active|pressed|true/i.test(cls);
+  if (selected) return JSON.stringify({clicked: false, reason: 'already_selected', wanted: mealName});
+  mb.scrollIntoView({block: 'center'});
+  mb.click();
+  return JSON.stringify({clicked: true, kind: 'meal_period', text: (mb.innerText||'').trim(), wanted: mealName});
+})('TIME_PLACEHOLDER')
+"""
+
+# Picks a time-slot button matching the user's requested time. Pure
+# slot click — assumes meal period has already been selected. Returns
+# the list of visible slot texts if no match within tolerance, so the
+# user can see what's available.
 TIME_SLOT_CLICK_JS = r"""
 (function(targetTime){
   function visibleButtons(){
@@ -406,7 +445,6 @@ TIME_SLOT_CLICK_JS = r"""
       });
   }
   function parse24h(s){
-    // Accepts "9 PM", "9:30 pm", "21:00", "21", "09:30"
     var m = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
     if (!m) return null;
     var h = parseInt(m[1], 10);
@@ -418,34 +456,15 @@ TIME_SLOT_CLICK_JS = r"""
   }
   var want = parse24h(String(targetTime));
   if (want === null) return JSON.stringify({clicked: false, reason: 'unparseable_time', target: String(targetTime)});
-  // First — if we see Lunch/Dinner/Brunch buttons, click the one matching
-  // the requested time of day (>=16:00 → Dinner, 6:00-11:00 → Brunch
-  // or Lunch, else Lunch).
-  var meal = null;
-  if (want >= 16 * 60) meal = /^(dinner|abendessen|cena|dîner)\b/i;
-  else if (want >= 11 * 60) meal = /^(lunch|mittagessen|almuerzo|déjeuner|pranzo)\b/i;
-  else if (want < 11 * 60) meal = /^(brunch|breakfast|frühstück|desayuno|petit\s+déjeuner|colazione)\b/i;
-  if (meal){
-    var btns1 = visibleButtons();
-    var mb = btns1.find(function(b){ return meal.test((b.innerText||'').trim()); });
-    if (mb){
-      // Only click if not already selected (avoid double-toggle).
-      var cls = (mb.className || '') + ' ' + (mb.getAttribute('aria-pressed') || '');
-      var selected = /selected|active|pressed|true/i.test(cls);
-      if (!selected) mb.click();
-    }
-  }
-  // Now look for the time-slot button matching `want`. Slot text looks
-  // like "9:00 PM", "9:00 PM\n1 offer", "21:00".
   var btns = visibleButtons();
-  var bestSlot = null;
-  var bestDelta = 1e9;
+  var bestSlot = null, bestDelta = 1e9;
   for (var i = 0; i < btns.length; i++){
     var t = (btns[i].innerText || '').trim();
+    if (t.length > 40) continue;  // ignore long buttons (search box etc)
     var tm = parse24h(t);
     if (tm === null) continue;
     var delta = Math.abs(tm - want);
-    if (delta < bestDelta && delta <= 30){  // within 30 min tolerance
+    if (delta < bestDelta && delta <= 30){
       bestDelta = delta;
       bestSlot = btns[i];
     }
@@ -455,10 +474,9 @@ TIME_SLOT_CLICK_JS = r"""
     bestSlot.click();
     return JSON.stringify({clicked: true, kind: 'time_slot', text: (bestSlot.innerText||'').trim().slice(0, 60), delta_min: bestDelta});
   }
-  // No slot within tolerance — surface what's available so the user can adjust
   var available = btns.map(function(b){
     var t = (b.innerText||'').trim();
-    return parse24h(t) !== null ? t.slice(0, 60) : null;
+    return (t.length < 40 && parse24h(t) !== null) ? t.slice(0, 60) : null;
   }).filter(Boolean).slice(0, 20);
   return JSON.stringify({clicked: false, reason: 'no_slot_within_tolerance', target: String(targetTime), available: available});
 })('TIME_PLACEHOLDER')
@@ -790,6 +808,7 @@ def build_driver_script(url, all_answers, submit, shot_path, max_steps=6):
     next_click_js = NEXT_CLICK_JS
     cta_click_js = CTA_CLICK_JS
     time_slot_click_js = TIME_SLOT_CLICK_JS
+    meal_period_click_js = MEAL_PERIOD_CLICK_JS
     shot_after_submit = shot_path.replace(".png", "-after-submit.png")
     shot_step_prefix = shot_path.replace(".png", "-step")
     return f"""
@@ -884,26 +903,41 @@ for step in range({max_steps}):
     #    (b) Click an "Accept all" consent button
     #    (c) Click a "Book a Table" / "Reserve" CTA
     if not plan:
-        # (a) Time-slot button — look for an answer key signaling time
         ts_answer = None
         for k in all_answers:
             if k in used_keys: continue
             nk = norm(k)
             if any(w in nk for w in ['time', 'slot', 'when', 'hour']):
-                ts_answer = all_answers[k]; used_keys.add(k); break
+                ts_answer = all_answers[k]; break  # do NOT consume yet — we may try twice
+
+        # (a) If we have a time target AND haven't already done a
+        #     meal-period click, try clicking Lunch/Dinner/Brunch first
+        #     so the slot list refreshes. ONE meal-period click per run.
+        if ts_answer and not any(r.get('meal_period_clicked') for r in step_records):
+            mp_js = ({meal_period_click_js!r}).replace('TIME_PLACEHOLDER', str(ts_answer).replace("'", ""))
+            mp = cdp('Runtime.evaluate', expression=mp_js, returnByValue=True)
+            mp_result = json.loads(mp.get('result', {{}}).get('value', '{{}}'))
+            step_records[-1]['meal_period_clicked'] = mp_result
+            if mp_result.get('clicked'):
+                time.sleep(4)  # let the time-slot row refresh
+                continue
+
+        # (b) Time-slot button
         if ts_answer:
             ts_js = ({time_slot_click_js!r}).replace('TIME_PLACEHOLDER', str(ts_answer).replace("'", ""))
             ts = cdp('Runtime.evaluate', expression=ts_js, returnByValue=True)
             ts_result = json.loads(ts.get('result', {{}}).get('value', '{{}}'))
             step_records[-1]['time_slot_attempt'] = ts_result
             if ts_result.get('clicked'):
+                used_keys.add(k)
                 all_filled.append({{'heading': 'time_slot', 'mode': 'click', 'value': ts_result.get('text'), 'step': step}})
                 time.sleep(3)
                 continue
             else:
                 all_errors.append({{'heading': 'time_slot', 'reason': ts_result.get('reason', 'no_slot_click'),
                                     'available': ts_result.get('available', []), 'step': step}})
-        # (b)+(c) CTA / consent
+
+        # (c) CTA / consent
         cta_js = {cta_click_js!r}
         cc = cdp('Runtime.evaluate', expression=cta_js, returnByValue=True)
         cc_result = json.loads(cc.get('result', {{}}).get('value', '{{}}'))
