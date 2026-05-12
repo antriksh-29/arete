@@ -175,6 +175,93 @@ VERIFY_JS = r"""
 """
 
 
+# Single JS function that drives every fill step inside the page — no
+# cached coordinates, scrolls each element into view before clicking,
+# uses the native value-setter so React/Angular's controlled inputs
+# pick up the change.
+EXECUTE_PLAN_JS = r"""
+(function(plan){
+  function norm(s){ return (s||'').toLowerCase().replace(/[^\w\s]/g,' ').replace(/\s+/g,' ').trim(); }
+  function softMatch(a, b){
+    var na = norm(a), nb = norm(b);
+    if (!na || !nb) return false;
+    if (na === nb || na.indexOf(nb) >= 0 || nb.indexOf(na) >= 0) return true;
+    var ta = new Set(na.split(' ').filter(function(t){return t.length>2;}));
+    var tb = new Set(nb.split(' ').filter(function(t){return t.length>2;}));
+    var overlap = 0;
+    ta.forEach(function(t){ if (tb.has(t)) overlap++; });
+    return overlap >= 1;
+  }
+  function findItem(heading){
+    var items = Array.from(document.querySelectorAll('div[role="listitem"]'));
+    var target = norm(heading);
+    return items.find(function(li){
+      var h = li.querySelector('[role="heading"], legend');
+      if (!h) return false;
+      var ht = norm(h.innerText);
+      return ht === target || ht.indexOf(target) >= 0 || target.indexOf(ht) >= 0;
+    });
+  }
+  function setNativeValue(el, value){
+    var proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    var setter = Object.getOwnPropertyDescriptor(proto, 'value');
+    if (setter && setter.set) setter.set.call(el, value);
+    else el.value = value;
+    el.dispatchEvent(new Event('input', {bubbles: true}));
+    el.dispatchEvent(new Event('change', {bubbles: true}));
+  }
+  var filled = [];
+  var errors = [];
+  for (var i = 0; i < plan.length; i++){
+    var step = plan[i];
+    try {
+      var li = findItem(step.heading);
+      if (!li){ errors.push({heading: step.heading, reason: 'item_not_found'}); continue; }
+      li.scrollIntoView({block: 'center'});
+      var input = li.querySelector('input[type="text"], input[type="email"], input[type="url"], input[type="tel"], textarea');
+      if (input){
+        input.focus();
+        setNativeValue(input, String(step.answer));
+        filled.push({heading: step.heading, mode: 'text', value: String(step.answer).slice(0, 80)});
+        continue;
+      }
+      var radios = Array.from(li.querySelectorAll('[role="radio"]'));
+      if (radios.length){
+        var match = null;
+        for (var r = 0; r < radios.length; r++){
+          var label = radios[r].getAttribute('data-value') || radios[r].getAttribute('aria-label') || radios[r].innerText;
+          if (softMatch(label, step.answer)) { match = radios[r]; break; }
+        }
+        if (match){ match.click(); filled.push({heading: step.heading, mode: 'radio', value: match.getAttribute('data-value') || match.innerText}); }
+        else { errors.push({heading: step.heading, reason: 'no_radio_match', answer: String(step.answer),
+                            options: radios.map(function(rr){return (rr.getAttribute('data-value')||rr.innerText||'').trim();})}); }
+        continue;
+      }
+      var checkboxes = Array.from(li.querySelectorAll('[role="checkbox"]'));
+      if (checkboxes.length){
+        var parts = String(step.answer).split(/[,;]|\sand\s/).map(function(p){return p.trim();}).filter(Boolean);
+        var clicked = [];
+        for (var c = 0; c < checkboxes.length; c++){
+          var lbl = checkboxes[c].getAttribute('data-answer-value') || checkboxes[c].getAttribute('aria-label') || checkboxes[c].innerText;
+          for (var p = 0; p < parts.length; p++){
+            if (softMatch(lbl, parts[p])) { checkboxes[c].click(); clicked.push(lbl.trim()); break; }
+          }
+        }
+        if (clicked.length){ filled.push({heading: step.heading, mode: 'checkbox', value: clicked}); }
+        else { errors.push({heading: step.heading, reason: 'no_checkbox_match', answer: String(step.answer),
+                            options: checkboxes.map(function(cc){return (cc.getAttribute('data-answer-value')||cc.innerText||'').trim();})}); }
+        continue;
+      }
+      errors.push({heading: step.heading, reason: 'no_input_radio_or_checkbox'});
+    } catch (e) {
+      errors.push({heading: step.heading, reason: 'js_exception', error: String(e)});
+    }
+  }
+  return JSON.stringify({filled: filled, errors: errors});
+})(PLAN_PLACEHOLDER)
+"""
+
+
 def build_driver_script(url, fill_plan, submit, shot_path):
     """Build the single browser-harness script that:
        1. new_tab + wait
@@ -187,88 +274,24 @@ def build_driver_script(url, fill_plan, submit, shot_path):
        7. print final envelope JSON between ---FINAL--- markers
     """
     plan_json = json.dumps(fill_plan)
+    # Inject the plan into the JS template
+    execute_js = EXECUTE_PLAN_JS.replace("PLAN_PLACEHOLDER", plan_json)
+    shot_after_submit = shot_path.replace(".png", "-after-submit.png")
     return f"""
 import json, time
 new_tab({url!r})
 wait_for_load()
 time.sleep(4)
 
-# Re-query fields fresh in this same session so coordinates are current.
-fields_js = {FIELDS_JS!r}
-r = cdp("Runtime.evaluate", expression=fields_js, returnByValue=True)
-fields_raw = r.get("result", {{}}).get("value", "[]")
-fields = json.loads(fields_raw)
-print("---FIELDS-COUNT---")
-print(len(fields))
+# Single CDP call that processes the entire fill plan inside the page.
+# Scrolls each element into view, uses native value-setters, clicks
+# options directly — no coord caching, no offscreen clicks.
+r = cdp("Runtime.evaluate", expression={execute_js!r}, returnByValue=True)
+plan_raw = r.get("result", {{}}).get("value", "{{}}")
+plan_result = json.loads(plan_raw)
+time.sleep(1)
 
-# Index fields by heading so we can apply the outer plan.
-by_heading = {{f["heading"]: f for f in fields}}
-
-plan = json.loads({plan_json!r})
-applied = []
-errors = []
-for step in plan:
-    heading = step["heading"]
-    answer = step["answer"]
-    f = by_heading.get(heading)
-    if not f:
-        errors.append({{"heading": heading, "reason": "heading_not_in_dom"}})
-        continue
-    try:
-        if f["input"]:
-            click_at_xy(int(f["input"]["x"]), int(f["input"]["y"]))
-            time.sleep(0.3)
-            type_text(str(answer))
-            time.sleep(0.3)
-            applied.append({{"heading": heading, "mode": "text", "value": str(answer)[:80]}})
-            continue
-        if f["radios"]:
-            # Choose option matching the answer (substring / token overlap)
-            ans = str(answer).lower().strip()
-            choice = None
-            for r in f["radios"]:
-                t = r["text"].lower().strip()
-                if t == ans or ans in t or t in ans:
-                    choice = r
-                    break
-            if not choice:
-                a_tok = set(w for w in ans.replace(",", " ").split() if len(w) > 2)
-                best = (0, None)
-                for r in f["radios"]:
-                    t_tok = set(w for w in r["text"].lower().split() if len(w) > 2)
-                    n = len(a_tok & t_tok)
-                    if n > best[0]:
-                        best = (n, r)
-                choice = best[1] if best[0] >= 1 else None
-            if choice:
-                click_at_xy(int(choice["x"]), int(choice["y"]))
-                time.sleep(0.3)
-                applied.append({{"heading": heading, "mode": "radio", "value": choice["text"]}})
-            else:
-                errors.append({{"heading": heading, "reason": "no_radio_match",
-                                "answer": str(answer), "options": [r["text"] for r in f["radios"]]}})
-            continue
-        if f["checkboxes"]:
-            # Comma-separated answer -> multi-check
-            parts = [p.strip().lower() for p in str(answer).replace(";", ",").split(",") if p.strip()]
-            clicked = []
-            for c in f["checkboxes"]:
-                ct = c["text"].lower().strip()
-                if any(p == ct or p in ct or ct in p for p in parts):
-                    click_at_xy(int(c["x"]), int(c["y"]))
-                    time.sleep(0.2)
-                    clicked.append(c["text"])
-            if clicked:
-                applied.append({{"heading": heading, "mode": "checkbox", "value": clicked}})
-            else:
-                errors.append({{"heading": heading, "reason": "no_checkbox_match",
-                                "answer": str(answer), "options": [c["text"] for c in f["checkboxes"]]}})
-            continue
-        errors.append({{"heading": heading, "reason": "no_input_radio_or_checkbox_detected"}})
-    except Exception as e:
-        errors.append({{"heading": heading, "reason": "fill_exception", "error": str(e)}})
-
-# Read back what's actually set on the page.
+# Verification: read back what's actually set.
 verify_js = {VERIFY_JS!r}
 v = cdp("Runtime.evaluate", expression=verify_js, returnByValue=True)
 verify_raw = v.get("result", {{}}).get("value", "{{}}")
@@ -280,20 +303,28 @@ submitted = False
 submit = {submit!r}
 if submit:
     submit_js = {SUBMIT_JS!r}
-    s = cdp("Runtime.evaluate", expression=submit_js, returnByValue=True)
-    s_raw = s.get("result", {{}}).get("value", "null")
-    s_obj = json.loads(s_raw) if s_raw != "null" else None
-    if s_obj:
-        click_at_xy(int(s_obj["x"]), int(s_obj["y"]))
+    # Use direct .click() rather than coords so scroll position doesn't matter
+    submit_exec = '''
+(function(){{
+  var btns = Array.from(document.querySelectorAll('[role=\"button\"], button, input[type=\"submit\"]'));
+  var b = btns.find(function(x){{ return /^(submit|send|gönder|enviar)\\\\b/i.test(((x.innerText||x.value||'').trim())); }});
+  if (!b) return JSON.stringify(false);
+  b.scrollIntoView({{block: 'center'}});
+  b.click();
+  return JSON.stringify(true);
+}})()'''
+    s = cdp("Runtime.evaluate", expression=submit_exec, returnByValue=True)
+    s_raw = s.get("result", {{}}).get("value", "false")
+    submitted = (s_raw == "true")
+    if submitted:
         time.sleep(3)
-        capture_screenshot({shot_path.replace(".png", "-after-submit.png")!r})
-        submitted = True
+        capture_screenshot({shot_after_submit!r})
 
 print("---FINAL---")
 print(json.dumps({{
-    "fields_detected": len(fields),
-    "filled": applied,
-    "errors": errors,
+    "fields_detected": len(json.loads({plan_json!r})),
+    "filled": plan_result.get("filled", []),
+    "errors": plan_result.get("errors", []),
     "verification": verify,
     "submitted": submitted,
 }}))
