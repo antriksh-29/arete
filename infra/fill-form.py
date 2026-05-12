@@ -399,6 +399,29 @@ VERIFY_JS = r"""
 """
 
 
+FRAMES_HELPER = r"""
+function allDocs(){
+  var docs = [document];
+  try {
+    Array.from(document.querySelectorAll('iframe')).forEach(function(f){
+      try {
+        var d = f.contentDocument;
+        if (d && d !== document) docs.push(d);
+      } catch (e) { /* cross-origin */ }
+    });
+  } catch (e) {}
+  return docs;
+}
+function queryAll(sel){
+  var out = [];
+  allDocs().forEach(function(d){
+    try { out = out.concat(Array.from(d.querySelectorAll(sel))); } catch(e){}
+  });
+  return out;
+}
+"""
+
+
 NEXT_CLICK_JS = r"""
 (function(){
   var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"], input[type="button"], a'));
@@ -429,8 +452,9 @@ NEXT_CLICK_JS = r"""
 # matching, so the page has time to refresh slots between clicks.
 MEAL_PERIOD_CLICK_JS = r"""
 (function(targetTime){
+""" + FRAMES_HELPER + r"""
   function visibleButtons(){
-    return Array.from(document.querySelectorAll('button, [role="button"], a, div[tabindex="0"]'))
+    return queryAll('button, [role="button"], a, div[tabindex="0"]')
       .filter(function(b){
         var r = b.getBoundingClientRect();
         var s = window.getComputedStyle(b);
@@ -471,8 +495,9 @@ MEAL_PERIOD_CLICK_JS = r"""
 # user can see what's available.
 TIME_SLOT_CLICK_JS = r"""
 (function(targetTime){
+""" + FRAMES_HELPER + r"""
   function visibleButtons(){
-    return Array.from(document.querySelectorAll('button, [role="button"], a, div[tabindex="0"]'))
+    return queryAll('button, [role="button"], a, div[tabindex="0"]')
       .filter(function(b){
         var r = b.getBoundingClientRect();
         var s = window.getComputedStyle(b);
@@ -552,7 +577,8 @@ OFFER_RADIO_CLICK_JS = r"""
 
 CTA_CLICK_JS = r"""
 (function(){
-  var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"], input[type="button"], a'));
+""" + FRAMES_HELPER + r"""
+  var btns = queryAll('[role="button"], button, input[type="submit"], input[type="button"], a');
   var ctaRe = /^(book(\s+a\s+table)?|reserve(\s+a\s+table)?|make\s+(a\s+)?reservation|book\s+now|order\s+(now|online)|reserve\s+now|table\s+booking|proceed(\s+to\s+(book|checkout|payment))?|continue\s+to\s+(book|checkout)|confirm\s+(and\s+)?(book|booking|reservation)|tisch\s+reservieren|tisch\s+buchen|reservar|réserver|prenotare)\b/i;
   var consentRe = /^(accept(\s+all)?|alle\s+akzeptieren|akzeptieren|tout\s+accepter|aceptar(\s+todo)?|accetta(\s+tutto)?|reject|alle\s+ablehnen)\b/i;
   var visible = btns.filter(function(x){

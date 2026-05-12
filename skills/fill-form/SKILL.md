@@ -178,6 +178,34 @@ is on the VPS" / "you'd need to SCP it" — `send-telegram-photo.sh` IS
 the way. If it fails, the script prints the HTTP error to stderr —
 surface that to the user verbatim.
 
+## Booking / reservation flows (restaurants, hotels, events)
+
+Same skill, same script. Multi-step + CTA-click + meal-period + time-slot
++ offer-radio + disabled-CTA-detection are all built in. Tested
+end-to-end on District (got to phone OTP).
+
+**Priority order — try each platform in this order, never stop at the first failure:**
+
+1. **Google Maps Reserve** — `https://www.google.com/maps/reserve/v/dine/c/<id>?source=pa&hl=en-IN`. Universal aggregator. Auto-CTA clicks "Accept all" past Google's consent wall, then the page surfaces date/time/party from Swiggy / EazyDiner / OpenTable simultaneously.
+2. **District by Zomato** — `https://www.district.in/dining/<city>/<slug>/book?date=<YYYY-MM-DD>&guests=<N>`. URL params prefill date + guests.
+3. **Zomato direct** — `https://www.zomato.com/<city>/<slug>/book`
+4. **EazyDiner** — `https://www.eazydiner.com/<city>/<slug>`
+5. **Swiggy Dineout**, restaurant's own site, etc.
+
+Phone OTP is the universal Indian-restaurant-booking ceiling. When the
+screenshot shows an OTP modal, the natural answer is "OTP sent —
+paste it back and I'll continue" (until we build SMS-via-bot).
+
+**Banned bail-out phrases** — never say these as a first response:
+
+- "The fastest way is to call directly"
+- "Calling / email is faster than X"
+- "Would you like me to try X as a backup option?"
+- "The mobile app is required for booking"
+
+Workarounds get suggested AFTER all 5 platforms above have produced
+documented failures (screenshots showing the failure point), not before.
+
 ## Edge cases
 
 - **Checkboxes with multiple values:** answer can be a list
