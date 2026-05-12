@@ -209,13 +209,36 @@ FIELDS_JS = r"""
       return;
     }
     if (el.type === 'radio') {
-      // Group by name; collapse into a single field with radios
+      // Group by name. The group's heading should be the fieldset's
+      // <legend>, NOT the first radio's individual label (that's the
+      // option text). Falls back to aria-labelledby on the fieldset,
+      // then to the individual label as a last resort.
       var name = el.getAttribute('name');
       var groupKey = 'radio-group|' + (name || heading);
       if (seen.has(groupKey)) return; seen.add(groupKey);
+      var fs = el.closest('fieldset');
+      var groupHeading = '';
+      if (fs){
+        var lg = fs.querySelector('legend');
+        if (lg && lg.innerText.trim()) groupHeading = lg.innerText.trim();
+      }
+      if (!groupHeading){
+        // aria-labelledby on a wrapper, or an ancestor [role=radiogroup]
+        var rg = el.closest('[role="radiogroup"]');
+        if (rg){
+          var lblid = rg.getAttribute('aria-labelledby');
+          if (lblid){
+            var lab = document.getElementById(lblid);
+            if (lab && lab.innerText.trim()) groupHeading = lab.innerText.trim();
+          }
+          var lab2 = rg.getAttribute('aria-label');
+          if (!groupHeading && lab2) groupHeading = lab2.trim();
+        }
+      }
+      if (!groupHeading) groupHeading = heading;
       var siblings = name ? Array.from(document.querySelectorAll('input[type="radio"][name="'+name+'"]')) : [el];
       fields.push({
-        heading: heading,
+        heading: groupHeading,
         input_type: null,
         select_options: [],
         radios: siblings.map(function(s){
@@ -227,11 +250,34 @@ FIELDS_JS = r"""
       return;
     }
     if (el.type === 'checkbox') {
+      // Checkbox groups: if there's a name and multiple checkboxes
+      // share it, collapse into a single field. Otherwise treat as a
+      // single yes/no checkbox.
+      var name = el.getAttribute('name');
+      var fs = el.closest('fieldset');
+      var groupHeading = '';
+      if (fs){
+        var lg = fs.querySelector('legend');
+        if (lg && lg.innerText.trim()) groupHeading = lg.innerText.trim();
+      }
+      if (name){
+        var sibs = Array.from(document.querySelectorAll('input[type="checkbox"][name="'+name+'"]'));
+        if (sibs.length > 1) {
+          var groupKey = 'cb-group|' + name;
+          if (seen.has(groupKey)) return; seen.add(groupKey);
+          fields.push({
+            heading: groupHeading || heading,
+            input_type: null, select_options: [], radios: [],
+            checkboxes: sibs.map(function(c){
+              var t = labelFor(c) || c.value || '';
+              return {text: t.trim()};
+            }).filter(function(c){return c.text;}),
+          });
+          return;
+        }
+      }
       fields.push({
-        heading: heading,
-        input_type: null,
-        select_options: [],
-        radios: [],
+        heading: heading, input_type: null, select_options: [], radios: [],
         checkboxes: [{text: heading}],
       });
       return;
@@ -281,13 +327,39 @@ SUBMIT_JS = r"""
 
 VERIFY_JS = r"""
 (function(){
-  var texts = Array.from(document.querySelectorAll('input[type="text"], input[type="email"], input[type="url"], textarea'))
-    .map(function(i){ return i.value; }).filter(function(v){ return v && v.length > 0; });
+  function labelFor(el){
+    if (el.id){
+      var lab = document.querySelector('label[for="'+el.id+'"]');
+      if (lab && lab.innerText.trim()) return lab.innerText.trim();
+    }
+    var p = el.closest('label');
+    if (p && p.innerText.trim()) return p.innerText.trim();
+    return el.getAttribute('aria-label') || el.value || el.getAttribute('name') || '';
+  }
+  // All data-bearing text-like inputs
+  var texts = Array.from(document.querySelectorAll(
+    'input[type="text"], input[type="email"], input[type="url"], input[type="tel"], ' +
+    'input[type="number"], input[type="date"], input[type="time"], input[type="datetime-local"], ' +
+    'input[type="search"], input[type="password"], textarea, input:not([type])'
+  )).map(function(i){ return i.value; }).filter(function(v){ return v && v.length > 0; });
+  // ARIA + HTML radios that are now checked
   var radios = Array.from(document.querySelectorAll('[role="radio"][aria-checked="true"]'))
     .map(function(r){ return (r.getAttribute('data-value') || r.innerText || '').trim(); });
+  Array.from(document.querySelectorAll('input[type="radio"]:checked')).forEach(function(r){
+    radios.push(labelFor(r));
+  });
+  // ARIA + HTML checkboxes that are now checked
   var checks = Array.from(document.querySelectorAll('[role="checkbox"][aria-checked="true"]'))
     .map(function(c){ return (c.getAttribute('data-answer-value') || c.innerText || '').trim(); });
-  return JSON.stringify({texts: texts, radios: radios, checks: checks});
+  Array.from(document.querySelectorAll('input[type="checkbox"]:checked')).forEach(function(c){
+    checks.push(labelFor(c));
+  });
+  // Native select selected values
+  var selects = Array.from(document.querySelectorAll('select')).map(function(s){
+    var o = s.options[s.selectedIndex];
+    return o ? (o.text || o.value || '').trim() : '';
+  }).filter(Boolean);
+  return JSON.stringify({texts: texts, radios: radios, checks: checks, selects: selects});
 })()
 """
 
@@ -363,6 +435,36 @@ EXECUTE_PLAN_JS = r"""
       return lbl && (lbl === target || lbl.indexOf(target) >= 0 || target.indexOf(lbl) >= 0);
     });
   }
+  function findGroupByHeading(heading){
+    // Match a radio/checkbox group by its <fieldset><legend>...</legend>
+    // or [role=radiogroup][aria-labelledby/aria-label].
+    var target = norm(heading);
+    var fieldsets = Array.from(document.querySelectorAll('fieldset'));
+    for (var i = 0; i < fieldsets.length; i++) {
+      var fs = fieldsets[i];
+      var lg = fs.querySelector('legend');
+      if (lg && softMatch(lg.innerText, heading)){
+        return {
+          radios: Array.from(fs.querySelectorAll('input[type="radio"]')),
+          checks: Array.from(fs.querySelectorAll('input[type="checkbox"]')),
+        };
+      }
+    }
+    var rgs = Array.from(document.querySelectorAll('[role="radiogroup"]'));
+    for (var j = 0; j < rgs.length; j++){
+      var rg = rgs[j];
+      var lblid = rg.getAttribute('aria-labelledby');
+      var lab = lblid ? document.getElementById(lblid) : null;
+      var lbl = (lab && lab.innerText) ? lab.innerText : (rg.getAttribute('aria-label') || '');
+      if (lbl && softMatch(lbl, heading)){
+        return {
+          radios: Array.from(rg.querySelectorAll('input[type="radio"], [role="radio"]')),
+          checks: [],
+        };
+      }
+    }
+    return null;
+  }
   function findItem(heading){
     var items = Array.from(document.querySelectorAll('div[role="listitem"]'));
     var target = norm(heading);
@@ -398,10 +500,43 @@ EXECUTE_PLAN_JS = r"""
     var step = plan[i];
     try {
       // Try Google-Forms-style listitem first; fall back to plain
-      // <label for=X> + input[id=X] / <select> pair if no listitem.
+      // <label for=X> + input[id=X] / <select> pair if no listitem;
+      // then fieldset-legend / role=radiogroup group lookup.
       var li = findItem(step.heading);
       // Plain-input path
       if (!li){
+        // Try group lookup BEFORE per-input lookup so "Pizza Size"
+        // picks the fieldset, not a single radio's individual label
+        var group = findGroupByHeading(step.heading);
+        if (group){
+          group.radios[0] && group.radios[0].scrollIntoView({block: 'center'});
+          var match = group.radios.find(function(r){ return softMatch(labelFor(r) || r.value, step.answer); });
+          if (match){
+            match.click();
+            filled.push({heading: step.heading, mode: 'radio', value: labelFor(match) || match.value});
+            continue;
+          }
+          // For checkbox groups: comma-split the answer and check matching ones
+          if (group.checks.length){
+            var parts = String(step.answer).split(/[,;]|\sand\s/).map(function(s){return s.trim();}).filter(Boolean);
+            var clicked = [];
+            for (var ci = 0; ci < group.checks.length; ci++){
+              var c = group.checks[ci];
+              for (var pi = 0; pi < parts.length; pi++){
+                if (softMatch(labelFor(c) || c.value, parts[pi])) {
+                  if (!c.checked) c.click();
+                  clicked.push(labelFor(c) || c.value);
+                  break;
+                }
+              }
+            }
+            if (clicked.length){ filled.push({heading: step.heading, mode: 'checkbox', value: clicked}); continue; }
+          }
+          errors.push({heading: step.heading, reason: 'no_group_option_match', answer: String(step.answer),
+                       options: group.radios.map(function(r){return labelFor(r) || r.value;}).concat(
+                                group.checks.map(function(c){return labelFor(c) || c.value;}))});
+          continue;
+        }
         var plainInput = findInputByLabel(step.heading);
         if (plainInput){
           plainInput.scrollIntoView({block: 'center'});
