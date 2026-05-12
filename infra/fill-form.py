@@ -880,9 +880,17 @@ TIME_SLOT_CLICK_JS = r"""
         while (n && n !== document.body){
           var role = n.getAttribute && n.getAttribute('role');
           if (role === 'grid' || role === 'gridcell' || role === 'application') return false;
+          if (role === 'listbox' || role === 'menu' || role === 'option' || role === 'menuitem') return false;
           if (n.tagName === 'TABLE') return false;
           n = n.parentElement;
         }
+        // Also exclude buttons that ARE listbox options themselves —
+        // the GMR Time dropdown opens a listbox where each option has
+        // a time string like "10:00 pm" and matches our parser. Without
+        // this, the dropdown's 10 PM option gets clicked instead of
+        // a real grid slot, and the booking commits the default slot.
+        var brole = b.getAttribute && b.getAttribute('role');
+        if (brole === 'option' || brole === 'menuitem') return false;
         return true;
       });
   }
@@ -1543,7 +1551,11 @@ for step in range({max_steps}):
     text_fills = []
     if plan:
         text_fills = [f for f in plan_result.get('filled', []) if f.get('mode') == 'text']
-    if plan and len(text_fills) >= 2 and not plan_result.get('errors'):
+    if plan and len(text_fills) >= 2 and not plan_result.get('errors') and not {submit!r}:
+        # In review mode (no --submit): stop here so the user sees the
+        # filled form, not a downstream modal-loop iteration.
+        # In submit mode (--submit): keep going so NEXT_CLICK can fire
+        # on the Continue button and push past the form.
         time.sleep(2)
         capture_screenshot(shot_p)  # re-capture after settle
         break
@@ -1703,7 +1715,17 @@ if submit:
     submit_exec = '''
 (function(){{
   var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"]'));
-  var b = btns.find(function(x){{ return /^(submit|send|senden|gönder|enviar|envoyer|invia|送信|book|reserve|confirm|complete|place order|pay)\\b/i.test(((x.innerText||x.value||'').trim())); }});
+  var primaryRe = /^(submit|send|senden|gönder|enviar|envoyer|invia|送信|book|reserve|confirm|complete|place\s+order|pay|continue|next|proceed|weiter|suivant|siguiente|continuar|avanti)\b/i;
+  var visible = btns.filter(function(x){{
+    var r = x.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    var s = window.getComputedStyle(x);
+    if (s.display === 'none' || s.visibility === 'hidden') return false;
+    if (x.disabled || x.getAttribute('aria-disabled') === 'true') return false;
+    if (parseFloat(s.opacity) < 0.5) return false;
+    return true;
+  }});
+  var b = visible.find(function(x){{ return primaryRe.test(((x.innerText||x.value||'').trim())); }});
   if (!b) return JSON.stringify(false);
   b.scrollIntoView({{block: 'center'}});
   b.click();
@@ -1780,7 +1802,12 @@ def main():
     photo_send_err = ""
     send_helper = os.path.expanduser("~/bin/send-telegram-photo.sh")
     if os.path.isfile(send_helper) and os.path.isfile(shot_path):
-        caption = "form filled — review before submit" if not submit else "form submitted — confirmation page"
+        if not submit:
+            caption = "form filled — review before submit"
+        elif result.get("submitted"):
+            caption = "submit click fired — verify on screenshot"
+        else:
+            caption = "submit attempted — no submit/continue button matched; screenshot may still be the filled form"
         ps_path = shot_path.replace(".png", "-after-submit.png") if (submit and result.get("submitted")) else shot_path
         try:
             r = subprocess.run([send_helper, ps_path, caption], capture_output=True, text=True, timeout=30)

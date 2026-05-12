@@ -42,9 +42,11 @@ USER_DEFAULTS = {
     # Sourced from USER.md / brain — kept here so the orchestrator
     # works even when those aren't accessible. Override per-message
     # via the parsed intent.
-    "Name": "Antriksh Jain",
+    # Key names chosen to map UNAMBIGUOUSLY to platform form headings.
+    # Avoid "Name" / "Last name" — they fuzz-match "First name" /
+    # "Surname" the wrong way and cross-fill the values.
     "First name": "Antriksh",
-    "Phone": "+918310872480",
+    "Surname": "Jain",
     "Phone number": "+918310872480",
     "Email": "antriksh1980@gmail.com",
 }
@@ -694,6 +696,21 @@ def submit() -> dict:
     except json.JSONDecodeError:
         return _envelope(state="failed", user_message="Submit produced no envelope.")
     env2["platform"] = platform
+    # Hard-stop: if any time-slot attempt returned target_time_unavailable
+    # the platform's slot grid doesn't have the user's time. Refuse to
+    # submit (otherwise the booking commits the default-selected slot,
+    # which is NOT what the user asked for). Surface alternatives.
+    tu, slots = _detect_time_mismatch(env2)
+    if tu:
+        save_state(intent, env2)
+        slots_str = ", ".join(slots[:12]) if slots else "(none)"
+        return _envelope(state="needs_time_choice", intent=intent, platform=platform,
+                         screenshot=env2.get("screenshot"), available_slots=slots,
+                         user_message=(
+                             f"⚠️ {intent.get('venue')} on {platform.upper()}: target "
+                             f"{intent.get('time')} on {intent.get('date')} is not in the "
+                             f"slot grid. Available: {slots_str}. Reply with one of these "
+                             f"times to book, or 'try another platform'."))
     # Detect OTP after submit (the most common next stage)
     if _detect_otp_screen(env2):
         save_state(intent, env2)
