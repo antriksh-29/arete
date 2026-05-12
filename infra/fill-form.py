@@ -1534,6 +1534,20 @@ for step in range({max_steps}):
     step_records.append({{'step': step, 'fields_seen': len(headings),
                           'plan_size': len(plan), 'verify_state': verify}})
 
+    # If we just filled multi-field text inputs (Name/Phone/Email),
+    # we've reached the human-confirm boundary on the booking flow
+    # (provider's contact-info modal). Stop here so the screenshot
+    # the user sees is the filled form, not a subsequent modal-loop
+    # iteration. The orchestrator decides next: wait for confirm, OTP,
+    # or fall through to another platform.
+    text_fills = []
+    if plan:
+        text_fills = [f for f in plan_result.get('filled', []) if f.get('mode') == 'text']
+    if plan and len(text_fills) >= 2 and not plan_result.get('errors'):
+        time.sleep(2)
+        capture_screenshot(shot_p)  # re-capture after settle
+        break
+
     # 5. Look for Next button. Fire when we filled fields this step
     #    OR when the previous step clicked a time-slot — both are
     #    "we just provided input, advance the wizard" states. Guard

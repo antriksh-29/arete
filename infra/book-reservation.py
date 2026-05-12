@@ -550,7 +550,7 @@ def book(message: str) -> dict:
                          user_message=f"Got '{intent['venue']}' — how many people?")
 
     platforms = [
-        ("gmr",       find_gmr_url,       lambda url: drive(url, intent, "gmr", max_steps=18)),
+        ("gmr",       find_gmr_url,       lambda url: drive(url, intent, "gmr", max_steps=28)),
         ("district",  lambda v: find_district_url(v, intent.get("date"), intent.get("party")),
                                                   lambda url: drive(url, intent, "district", max_steps=14)),
         ("zomato",    find_zomato_url,    lambda url: drive(url, intent, "zomato", max_steps=14)),
@@ -676,7 +676,7 @@ def resume(otp: str) -> dict:
     answers_path = f"/tmp/booking-resume-{int(time.time())}.json"
     Path(answers_path).write_text(json.dumps(answers, indent=2))
     shot_path = f"/tmp/booking-resume-{platform}-{int(time.time())}.png"
-    cmd = ["python3", FILL_FORM, url, answers_path, "--max-steps", "8", "--screenshot", shot_path]
+    cmd = ["python3", FILL_FORM, url, answers_path, "--max-steps", "16", "--screenshot", shot_path]
     log(f"resuming {platform} with OTP")
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=240)
