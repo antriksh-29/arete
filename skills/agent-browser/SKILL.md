@@ -115,6 +115,21 @@ For now (2026-05-11), the VPS Chrome is unauthenticated. Anything
 behind a login wall returns the login page. Use approach (2) to log
 into specific sites the bot needs.
 
+## Delivering screenshots to the user
+
+Any time a flow produces a screenshot for the user (`/agent-browser`
+screenshot intent, `/fill-form` result, error diagnostics, etc.), the
+agent **MUST** send it inline via:
+
+```bash
+~/bin/send-telegram-photo.sh /tmp/<path>.png "<optional caption>"
+```
+
+The script wraps Telegram's `sendPhoto` (with `sendDocument` fallback
+for files >10MB). Do NOT say "the screenshot is on the VPS" or
+"media failed" — that's a stale failure mode from before this script
+existed. Telegram delivery is one shell call.
+
 ## Trust rules (still mandatory)
 
 Per `identity/AGENTS.md` hard rule #4:
