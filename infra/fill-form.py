@@ -36,9 +36,44 @@ def log(msg):
 
 _NORM = re.compile(r"[^\w\s]")
 
+# Synonym table — match common label variants to a canonical form so
+# answer key "Phone" matches form field "Enter mobile number" / "Cell" /
+# "Telefone" / "Tel." etc. Both keys and headings get normalized
+# through this before matching.
+_SYNONYMS = {
+    # phone/mobile family
+    "mobile": "phone", "cell": "phone", "cellular": "phone", "tel": "phone",
+    "telephone": "phone", "mobil": "phone", "handy": "phone", "telefon": "phone",
+    "telefono": "phone", "celular": "phone", "movil": "phone",
+    # email family
+    "email": "email", "e mail": "email", "mail": "email", "courriel": "email",
+    # name family
+    "fullname": "name", "full name": "name", "your name": "name", "given name": "name",
+    "first name": "name", "last name": "name", "first": "name", "surname": "name",
+    "nachname": "name", "vorname": "name", "nom": "name", "apellido": "name",
+    # date/time
+    "datum": "date", "fecha": "date", "tarih": "date",
+    "uhrzeit": "time", "hora": "time",
+    # party size
+    "guests": "party", "people": "party", "diners": "party", "no of guests": "party",
+    "personen": "party", "personas": "party",
+    # noise words to strip — replaced with empty
+    "enter": "", "your": "", "please": "", "the": "", "a ": " ", " an ": " ",
+}
+
 
 def _norm(s):
-    return _NORM.sub(" ", (s or "").lower()).strip()
+    out = _NORM.sub(" ", (s or "").lower()).strip()
+    # Token-level synonym substitution
+    parts = out.split()
+    canonical = []
+    for p in parts:
+        if p in _SYNONYMS:
+            v = _SYNONYMS[p]
+            if v: canonical.append(v)
+        else:
+            canonical.append(p)
+    return " ".join(canonical).strip()
 
 
 def build_match_map(answers, headings):
