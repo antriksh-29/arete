@@ -575,10 +575,23 @@ running `browser-login.py inject <domain>` before navigating.
 
 | User intent | Command |
 |---|---|
-| "login to <site>" / "import cookies for <site>" | Reply with cookie-export instructions; on next message, write the JSON blob to `/tmp/site-login-<domain>.json`, then run `python3 ~/bin/browser-login.py store <domain> /tmp/site-login-<domain>.json` followed by `python3 ~/bin/browser-login.py test <domain> [<probe-url>]` |
+| "login to <site>" / "import cookies for <site>" | Reply with the Network-tab cookie-export instructions (see below). On the next message — JSON, cookies.txt, OR a raw `Cookie:` header — write the entire blob VERBATIM to `/tmp/site-login-<domain>.txt`, then run `python3 ~/bin/browser-login.py store <domain> /tmp/site-login-<domain>.txt` followed by `python3 ~/bin/browser-login.py test <domain> [<probe-url>]` |
 | "test my <site> login" | `python3 ~/bin/browser-login.py test <domain>` |
 | "what sites am I logged into" | `python3 ~/bin/browser-login.py list` |
 | "remove cookies for <site>" / "log out of <site>" | `python3 ~/bin/browser-login.py remove <domain>` |
+
+**Cookie-export instructions to send the user** (extension-free, works in any browser):
+
+> 🔒 Cookie import for &lt;domain&gt; — no extension required.
+>
+> 1. Open https://&lt;domain&gt; in your browser (logged in).
+> 2. F12 → Network tab → reload the page (Cmd+R / Ctrl+R).
+> 3. Click the FIRST request in the network list.
+> 4. Right panel → Headers → Request Headers → find the line starting with `cookie:`.
+> 5. Right-click that line → Copy value.
+> 6. Paste here.
+
+DO NOT recommend extensions ("Get cookies.txt LOCALLY", "Cookie-Editor", "EditThisCookie") as the primary path — the user has asked us not to.
 
 Password-paste login is NOT supported. If the user asks to "login with
 my password", point them at the cookie path and explain the threat

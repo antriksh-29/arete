@@ -55,26 +55,28 @@ the target site's own session management page at any time.
 
 ```
 You:  login to linkedin
-Bot:  🔒 Cookie import for linkedin.com
-      Export cookies for *.linkedin.com from your browser:
-      • Easiest: install the "Get cookies.txt LOCALLY" Chrome extension,
-        open linkedin.com, click the extension, click "Export",
-        choose JSON format, copy the result.
-      • Or: DevTools → Application → Cookies → linkedin.com →
-        select all → copy as JSON.
-      Paste the JSON blob here and I'll store it.
+Bot:  🔒 Cookie import for linkedin.com — no extension required.
 
-You:  [pastes ~5KB JSON]
-Bot:  Saving to /tmp/site-login-linkedin.com.json…
-      Running: ~/bin/browser-login.py store linkedin.com /tmp/site-login-linkedin.com.json
-      → 🔒 Stored 47 cookies for linkedin.com.
-      → Earliest expiry: 2026-08-09T12:34:56+00:00.
+      1. Open https://linkedin.com in your browser (logged in).
+      2. F12 → Network tab → reload the page (Cmd+R / Ctrl+R).
+      3. Click the FIRST request in the network list.
+      4. Right panel → Headers → Request Headers → find the line
+         starting with `cookie:` (or `Cookie:`).
+      5. Right-click that line → Copy value.
+      6. Paste here.
+
+      The Cookie header contains every cookie the browser actually
+      sends — including httpOnly ones (which is why a JS console
+      snippet can't capture them).
+
+You:  JSESSIONID=ajax:...; bcookie=v=2&...; li_at=AQEDARw...; liap=true; lidc=...
+Bot:  Saving to /tmp/site-login-linkedin.com.txt…
+      Running: ~/bin/browser-login.py store linkedin.com /tmp/site-login-linkedin.com.txt
+      → 🔒 Stored 23 cookies for linkedin.com.
       Testing now…
-      Running: ~/bin/browser-login.py test linkedin.com https://linkedin.com/feed
       → Looks logged in: True
       → Title: Feed | LinkedIn
-      → First 400 chars: <snippet that includes your name>
-      ✓ All set. Future LinkedIn workflows will use this session.
+      ✓ All set.
 ```
 
 ## Agent script of record
@@ -91,18 +93,28 @@ follows this script — no improvisation:
 
 ## Accepted cookie formats
 
-The `parse_cookies()` function accepts three shapes, in order:
+The `parse_cookies()` function tries four shapes in order, picking
+whichever matches:
 
-1. **EditThisCookie / DevTools JSON array** — list of objects with
-   `name`, `value`, `domain`, `path`, `secure`, `httpOnly`, `sameSite`,
-   `expirationDate`. Most extension exports use this.
+1. **JSON array** — list of objects with `name`, `value`, `domain`,
+   `path`, `secure`, `httpOnly`, `sameSite`, `expirationDate`. Output
+   format of extensions like "Get cookies.txt LOCALLY" or
+   "Cookie-Editor". The richest shape — every CDP field is set.
 2. **Netscape `cookies.txt`** — tab-separated `domain flag path
-   secure expiry name value` lines.
-3. **Flat name→value map** — `{"sessionid": "...", "csrftoken": "..."}`.
-   Use only when you've manually pulled values from DevTools.
+   secure expiry name value` lines. Output format of curl / wget /
+   yt-dlp cookie jars.
+3. **Flat JSON map** — `{"li_at": "...", "JSESSIONID": "..."}`.
+4. **HTTP `Cookie:` request header** — `name=value; name=value; ...`.
+   THIS IS THE RECOMMENDED PATH. Captured by copying the `cookie:`
+   line from DevTools → Network tab → Headers → Request Headers.
+   No extension required, works in any browser, and includes
+   httpOnly cookies (the auth ones).
 
-Missing fields are filled with sensible defaults (`path=/`,
-`secure=True`, no expiry → session cookie).
+For format 4, the parser attaches the user-supplied domain to every
+cookie since the header doesn't carry domain info. Path defaults to
+`/`; `secure`, `httpOnly`, `sameSite` are left unset — fine for
+CDP `Network.setCookie` because the browser doesn't enforce those on
+re-injection (only when JS would read them).
 
 ## Probe URLs (per-domain hints)
 
