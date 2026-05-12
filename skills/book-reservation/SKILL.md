@@ -106,6 +106,28 @@ URL discovery is via Google search inside the script (no MCP needed).
 The script reuses fill-form.py for all actual form drives — this
 skill is the orchestrator, fill-form is the executor.
 
+## Date + time dropdown handling (CRITICAL)
+
+GMR / OpenTable / Tock / District widgets show Party / Date / Time
+dropdowns at the top. The default Date is **not always today** —
+GMR in particular defaults to "Tomorrow" depending on the current
+time. fill-form.py MUST explicitly click the Date dropdown and
+select the target date BEFORE reading the time-slot grid.
+
+Wired in fill-form's driver loop as step (a0) — fires once per run
+when an answer key `Date` is present. After the click, sleeps 4
+seconds for the slot grid to refresh, then re-enters the loop.
+
+Same applies to the Time dropdown when the visible slot grid
+doesn't include the user's target — the dropdown often has more
+options than the grid. fill-form's time-slot match is strict
+(±5 min); if no exact slot, the orchestrator surfaces
+`needs_time_choice` with the available list.
+
+Past bug this prevents: silently booking Wed 8 PM when the user
+asked "today at 10 PM" because the widget defaulted to Tomorrow
+and 10 PM wasn't in tomorrow's grid.
+
 ## OTP handling
 
 Permitted per AGENTS.md §2 Exception 2 — user-originated OTPs in
