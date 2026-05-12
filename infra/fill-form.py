@@ -483,6 +483,38 @@ TIME_SLOT_CLICK_JS = r"""
 """
 
 
+# If the only thing blocking the primary CTA is an unselected
+# "offer" / "discount" radio (District / Zomato style), click the
+# first visible unselected radio on the page. Pure heuristic — only
+# fires when other fill paths have produced 0 plan and CTA hasn't
+# advanced.
+OFFER_RADIO_CLICK_JS = r"""
+(function(){
+  var radios = Array.from(document.querySelectorAll('input[type="radio"]:not(:checked)'))
+    .filter(function(r){
+      var rect = r.getBoundingClientRect();
+      var s = window.getComputedStyle(r);
+      return rect.width > 0 && rect.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
+    });
+  if (!radios.length) return JSON.stringify({clicked: false, reason: 'no_unselected_radio'});
+  var r = radios[0];
+  r.scrollIntoView({block: 'center'});
+  r.click();
+  // Read back label for diagnostics
+  var lab = null;
+  if (r.id) {
+    var l = document.querySelector('label[for="'+r.id+'"]');
+    if (l) lab = l.innerText.trim();
+  }
+  if (!lab) {
+    var p = r.closest('label, [role="radio"]');
+    if (p) lab = p.innerText.trim();
+  }
+  return JSON.stringify({clicked: true, kind: 'offer_radio', label: (lab || r.value || '').slice(0, 80)});
+})()
+"""
+
+
 CTA_CLICK_JS = r"""
 (function(){
   var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"], input[type="button"], a'));
@@ -510,6 +542,14 @@ CTA_CLICK_JS = r"""
     return ctaRe.test(t);
   });
   if (cta){
+    var disabled = cta.disabled === true || cta.getAttribute('aria-disabled') === 'true' || cta.getAttribute('disabled') !== null;
+    if (!disabled){
+      var cs = window.getComputedStyle(cta);
+      if (parseFloat(cs.opacity) < 0.6 || cs.pointerEvents === 'none') disabled = true;
+    }
+    if (disabled){
+      return JSON.stringify({clicked: false, reason: 'cta_disabled', text: (cta.innerText||cta.value||'').trim()});
+    }
     cta.scrollIntoView({block: 'center'});
     cta.click();
     return JSON.stringify({clicked: true, kind: 'cta', text: (cta.innerText||cta.value||'').trim()});
@@ -807,6 +847,7 @@ def build_driver_script(url, all_answers, submit, shot_path, max_steps=6):
     verify_js = VERIFY_JS
     next_click_js = NEXT_CLICK_JS
     cta_click_js = CTA_CLICK_JS
+    offer_radio_click_js = OFFER_RADIO_CLICK_JS
     time_slot_click_js = TIME_SLOT_CLICK_JS
     meal_period_click_js = MEAL_PERIOD_CLICK_JS
     shot_after_submit = shot_path.replace(".png", "-after-submit.png")
@@ -943,8 +984,32 @@ for step in range({max_steps}):
         cc_result = json.loads(cc.get('result', {{}}).get('value', '{{}}'))
         if cc_result.get('clicked'):
             step_records[-1]['cta_clicked'] = cc_result
+            # Loop detection: if we just clicked the SAME CTA text 2 steps
+            # in a row without progress (same fields_seen), stop — clicks
+            # are being silently rejected (auth wall, etc).
+            prev = step_records[-2] if len(step_records) >= 2 else None
+            if prev and prev.get('cta_clicked', {{}}).get('text') == cc_result.get('text') and prev.get('fields_seen') == step_records[-1].get('fields_seen'):
+                all_errors.append({{'heading': cc_result.get('text'), 'reason': 'cta_no_progress',
+                                    'step': step, 'note': 'Clicked same CTA twice with no DOM change — likely auth wall, disabled state, or modal-only flow'}})
+                break
             time.sleep(4)
             continue
+        if cc_result.get('reason') == 'cta_disabled':
+            # CTA exists but greyed out — try clicking the first visible
+            # unselected radio (offer/promo radios on booking pages),
+            # then retry CTA next iteration.
+            offer_js = {offer_radio_click_js!r}
+            of = cdp('Runtime.evaluate', expression=offer_js, returnByValue=True)
+            of_result = json.loads(of.get('result', {{}}).get('value', '{{}}'))
+            step_records[-1]['offer_radio_clicked'] = of_result
+            if of_result.get('clicked'):
+                time.sleep(2)
+                continue
+            # Nothing else to unblock — surface the disabled CTA
+            all_errors.append({{'heading': cc_result.get('text'), 'reason': 'cta_disabled_no_unblock',
+                                'step': step,
+                                'note': 'Primary CTA is disabled and no required radio/checkbox found to unblock it. Likely auth wall or app-only flow.'}})
+            break
 
     break  # no Next button, no actionable CTA; we're stuck or done
 
