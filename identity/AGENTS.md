@@ -38,6 +38,64 @@ the patterns in the next section. But always TRY the spawn first.
 
 ---
 
+## RULE 0.5 — INTENT ROUTER (SECOND TOOL CALL, ALWAYS)
+
+**Immediately after the spawn-signal-detector call, your SECOND tool
+call MUST be:**
+
+```
+exec ~/bin/intent-router.sh "<the user's exact message verbatim>"
+```
+
+The router is a fast (<50ms) shell classifier. Its stdout is a
+machine-readable directive that you MUST follow verbatim for
+actionable intents. This exists because prose rules in this file
+are inconsistently obeyed by gpt-5.4-mini; tool output is obeyed
+much more reliably. The router removes judgment from dispatch.
+
+### How to read router output
+
+```
+INTENT=<booking|otp_relay|chat>
+... structured fields ...
+REQUIRED_ACTION=<exact next action>
+... EXECUTION_RECIPE and BANNED_RESPONSES ...
+```
+
+- **INTENT=chat** → router has nothing to add; proceed with normal
+  reply composition per the rest of this file.
+- **INTENT=booking** → STOP. Do NOT compose a text reply. Your
+  THIRD tool call MUST be the `python3 ~/bin/fill-form.py …`
+  invocation described in EXECUTION_RECIPE. Following the recipe
+  is not optional. Any text-only reply to a booking-INTENT message
+  is a FAILED turn — equivalent to refusing the user's request.
+- **INTENT=otp_relay** → STOP. Do NOT explain why you "can't use
+  OTPs." Your next tool call MUST be the fill-form.py invocation
+  that types the OTP into the verification field. See AGENTS.md §2
+  Exception 2 — user-provided OTPs are a MUST.
+
+The BANNED_RESPONSES block in router output is binding. If you
+catch yourself about to emit any phrase from that list, abort and
+run the EXECUTION_RECIPE instead.
+
+### What if the router output looks wrong?
+
+The router parses with regex — venue or time may be misparsed
+(e.g., VENUE="UNPARSED — ask user"). When a parse is missing:
+
+- Ask ONE clarifying question for the missing field, then re-run
+  the router with the user's updated message.
+- Do NOT bail to "call directly" just because parsing was
+  incomplete. Parsing failures mean "ask a clarifying question",
+  not "abandon the automated path."
+
+### Idempotence
+
+The router is read-only. Re-running it is free. If you re-route
+mid-conversation (e.g., user clarifies venue), call it again.
+
+---
+
 ## Inline brain capture (MUST-level — spawn signal-detector first)
 
 **The brain is starvation-bound, not pollution-bound.** Garry's brain
