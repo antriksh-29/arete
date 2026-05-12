@@ -78,25 +78,56 @@ For any user message of the form "fill <url> with <answers>":
    python3 ~/bin/fill-form.py "<url>" /tmp/fill-form-answers-<ts>.json --submit
    ```
 
-## DO NOT bail out
+## DO NOT bail out — universal coverage
 
-The agent has historically bailed on form-fill requests with reasons
-like:
+The agent has historically bailed on form-fill / booking / reservation
+requests with reasons like:
 
 - *"Google Forms uses synthetic event dispatch and complex internal
-  state that browser-harness can't easily manipulate"* — FALSE. Click
-  and type. That's it.
-- *"Google Forms doesn't support URL-based prefill"* — irrelevant; we
-  don't use prefill, we drive the form interactively.
-- *"I'd need to reverse-engineer the entry.X mapping which is
-  fragile"* — also irrelevant; we don't use entry IDs, we use the
-  visible question labels.
-- *"Filling via automated script injection is fragile"* — the script
-  is deterministic and validates by reading the input `.value` back
-  after fill.
+  state that browser-harness can't easily manipulate"* — FALSE.
+- *"Google Maps reservation system needs consent. This gets complex.
+  Fastest option is to call directly or email."* — FALSE. Run the
+  script. The user already gave consent by asking.
+- *"This is a multi-step form / wizard / booking flow that I can't
+  reliably automate."* — FALSE. The script loops up to 6 steps,
+  detects Next/Continue/Weiter/Suivant/Siguiente/Avanti/次へ buttons
+  in any of those languages, advances, and re-fills the next page
+  with remaining answers.
+- *"The form requires login / has anti-bot protections"* — only some
+  do. RUN the script first and see what actually happens. Many sites
+  the bot has refused on are completely accessible.
+- *"Hotel / restaurant / event reservation systems are too complex"*
+  — they're plain HTML behind a frontend framework. Script handles
+  text inputs, textareas, date/time/number/tel/email inputs, native
+  selects, radio groups, checkbox groups, and aria-label-only widgets.
+- *"I should suggest the phone number / email path instead"* — only
+  AFTER the script run actually fails for a documented reason
+  (Cloudflare wall, auth wall, captcha). Not as the first response.
 
-These are stale-memory hallucinations. The script works. RUN IT.
-Don't apologize, don't suggest manual fill as the primary answer.
+These are stale-memory hallucinations. The script handles:
+
+| Pattern | Handled? |
+|---|---|
+| Google Forms (`div[role=listitem]` + heading + inputs/radios/checkboxes) | ✓ |
+| Generic HTML forms (`<label for=X>` + `<input id=X>`) | ✓ |
+| `<select>` dropdowns | ✓ (matches option text fuzzily) |
+| `<input type=date|time|number|tel|email|url>` | ✓ |
+| Radio groups (HTML `<input type=radio>` or ARIA `[role=radio]`) | ✓ |
+| Checkbox groups (HTML or ARIA) | ✓ |
+| Custom widgets with only `aria-label` | ✓ (label resolver chain) |
+| Multi-step / wizard forms with Next buttons | ✓ (up to `--max-steps`, default 6) |
+| Reservation booking flows (date/time/party-size pickers as page steps) | ✓ when they're HTML-based |
+| Submit buttons in multiple languages | ✓ (English, German, Spanish, Portuguese, Italian, French, Japanese, Chinese) |
+
+The script also auto-delivers the screenshot via
+`send-telegram-photo.sh` after each run. The agent does NOT need to
+worry about photo delivery — it's automatic.
+
+**If the script returns errors**, surface them VERBATIM. The error
+JSON includes step number, heading, reason, and (for radio/select)
+the available options. Don't paraphrase — let the user see exactly
+which field on which step failed and what the available choices
+were.
 
 ## Output envelope
 

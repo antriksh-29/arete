@@ -111,44 +111,158 @@ def bh_run(script, timeout=180):
     return r.stdout
 
 
-# JS expression that walks the form and returns a JSON array of
-# {heading, input_box: {x,y}|null, radios: [{text,x,y}], checkboxes: [...]}.
+# Field discovery — covers Google Forms (div[role=listitem]) AND
+# generic HTML forms (<label for=X> + input[id=X], or <input
+# placeholder=X>), AND custom widgets that just have aria-label.
+# Returns one entry per detected question with text/radios/checkboxes/
+# select-options/date-input metadata.
 FIELDS_JS = r"""
 (function(){
-  function bb(el){ var r = el.getBoundingClientRect(); return {x: r.x + r.width/2, y: r.y + r.height/2}; }
-  function getHeading(li){
-    var h = li.querySelector('[role="heading"], legend');
-    if (h && (h.innerText||'').trim()) return (h.innerText||'').trim().replace(/\s*\*\s*$/, '');
-    // Fallback: aria-labelledby chain
-    var input = li.querySelector('input, textarea');
-    if (input) {
-      var ids = (input.getAttribute('aria-labelledby')||'').split(/\s+/);
-      for (var i=0;i<ids.length;i++){
-        var lab = document.getElementById(ids[i]);
-        if (lab && (lab.innerText||'').trim()) return (lab.innerText||'').trim();
-      }
+  function visible(el){
+    if (!el) return false;
+    var r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return false;
+    var s = window.getComputedStyle(el);
+    return s.visibility !== 'hidden' && s.display !== 'none';
+  }
+  function labelFor(el){
+    // Direct <label for=...>
+    if (el.id){
+      var lab = document.querySelector('label[for="'+el.id+'"]');
+      if (lab && lab.innerText.trim()) return lab.innerText.trim();
     }
+    // aria-labelledby chain
+    var lbid = el.getAttribute('aria-labelledby');
+    if (lbid){
+      var parts = lbid.split(/\s+/).map(function(x){
+        var n = document.getElementById(x);
+        return n ? (n.innerText||'').trim() : '';
+      }).filter(Boolean);
+      if (parts.length) return parts.join(' ').trim();
+    }
+    // aria-label
+    var al = el.getAttribute('aria-label');
+    if (al && al.trim()) return al.trim();
+    // Wrapping <label>
+    var p = el.closest('label');
+    if (p && p.innerText.trim()) return p.innerText.trim();
+    // placeholder
+    var ph = el.getAttribute('placeholder');
+    if (ph && ph.trim()) return ph.trim();
+    // name attribute as a last resort
+    var n = el.getAttribute('name');
+    if (n) return n;
     return '';
   }
+  var seen = new Set();
   var fields = [];
-  // Google Forms primary structure: each question is a div[role=listitem]
-  var items = Array.from(document.querySelectorAll('div[role="listitem"]'));
-  items.forEach(function(li){
-    var heading = getHeading(li);
+  // Pass 1 — Google Forms-style listitems (rich heading + radios/checkboxes)
+  Array.from(document.querySelectorAll('div[role="listitem"]')).forEach(function(li){
+    if (!visible(li)) return;
+    var h = li.querySelector('[role="heading"], legend');
+    var heading = h && h.innerText.trim() ? h.innerText.trim().replace(/\s*\*\s*$/, '') : '';
+    if (!heading) {
+      var input = li.querySelector('input, textarea, select');
+      if (input) heading = labelFor(input);
+    }
     if (!heading) return;
-    var input = li.querySelector('input[type="text"], input[type="email"], input[type="url"], input[type="tel"], textarea');
-    var inputBox = input ? bb(input) : null;
-    var radios = Array.from(li.querySelectorAll('[role="radio"]')).map(function(r){
-      var t = (r.getAttribute('data-value') || r.getAttribute('aria-label') || r.innerText || '').trim();
-      return {text: t, x: bb(r).x, y: bb(r).y};
-    }).filter(function(r){return r.text.length > 0;});
-    var checkboxes = Array.from(li.querySelectorAll('[role="checkbox"]')).map(function(c){
-      var t = (c.getAttribute('data-answer-value') || c.getAttribute('aria-label') || c.innerText || '').trim();
-      return {text: t, x: bb(c).x, y: bb(c).y};
-    }).filter(function(c){return c.text.length > 0;});
-    fields.push({heading: heading, input: inputBox, radios: radios, checkboxes: checkboxes});
+    var key = 'gf|' + heading;
+    if (seen.has(key)) return; seen.add(key);
+    var input = li.querySelector('input[type="text"], input[type="email"], input[type="url"], input[type="tel"], input[type="number"], input[type="date"], input[type="time"], input[type="datetime-local"], textarea');
+    var select = li.querySelector('select');
+    var radios = Array.from(li.querySelectorAll('[role="radio"], input[type="radio"]')).map(function(r){
+      var t = (r.getAttribute('data-value') || r.getAttribute('aria-label') || labelFor(r) || r.value || '').trim();
+      return {text: t};
+    }).filter(function(r){return r.text.length>0;});
+    var checkboxes = Array.from(li.querySelectorAll('[role="checkbox"], input[type="checkbox"]')).map(function(c){
+      var t = (c.getAttribute('data-answer-value') || c.getAttribute('aria-label') || labelFor(c) || c.value || '').trim();
+      return {text: t};
+    }).filter(function(c){return c.text.length>0;});
+    fields.push({
+      heading: heading,
+      input_type: input ? input.type || 'text' : (select ? 'select' : null),
+      select_options: select ? Array.from(select.options).map(function(o){return {text: o.text.trim(), value: o.value};}).filter(function(o){return o.text;}) : [],
+      radios: radios,
+      checkboxes: checkboxes,
+    });
+  });
+  // Pass 2 — Plain HTML inputs not inside a listitem (generic forms,
+  // checkout pages, hotel booking pages, etc.). Skip ones we already
+  // captured.
+  Array.from(document.querySelectorAll('input, textarea, select')).forEach(function(el){
+    if (!visible(el)) return;
+    if (el.type === 'hidden' || el.type === 'submit' || el.type === 'button' || el.type === 'reset' || el.type === 'file') return;
+    if (el.closest('div[role="listitem"]')) return;
+    var heading = labelFor(el);
+    if (!heading) return;
+    var key = 'plain|' + heading;
+    if (seen.has(key)) return; seen.add(key);
+    if (el.tagName === 'SELECT') {
+      fields.push({
+        heading: heading, input_type: 'select',
+        select_options: Array.from(el.options).map(function(o){return {text: o.text.trim(), value: o.value};}).filter(function(o){return o.text;}),
+        radios: [], checkboxes: [],
+      });
+      return;
+    }
+    if (el.type === 'radio') {
+      // Group by name; collapse into a single field with radios
+      var name = el.getAttribute('name');
+      var groupKey = 'radio-group|' + (name || heading);
+      if (seen.has(groupKey)) return; seen.add(groupKey);
+      var siblings = name ? Array.from(document.querySelectorAll('input[type="radio"][name="'+name+'"]')) : [el];
+      fields.push({
+        heading: heading,
+        input_type: null,
+        select_options: [],
+        radios: siblings.map(function(s){
+          var t = labelFor(s) || s.value || '';
+          return {text: t.trim()};
+        }).filter(function(s){return s.text;}),
+        checkboxes: [],
+      });
+      return;
+    }
+    if (el.type === 'checkbox') {
+      fields.push({
+        heading: heading,
+        input_type: null,
+        select_options: [],
+        radios: [],
+        checkboxes: [{text: heading}],
+      });
+      return;
+    }
+    fields.push({
+      heading: heading,
+      input_type: el.type || 'text',
+      select_options: [], radios: [], checkboxes: [],
+    });
   });
   return JSON.stringify(fields);
+})()
+"""
+
+# Find Next/Continue button so we can advance through multi-step flows
+# WITHOUT clicking Submit. Distinguished from submit by text.
+NEXT_BUTTON_JS = r"""
+(function(){
+  var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"], input[type="button"], a'))
+    .filter(function(b){
+      var r = b.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) return false;
+      var s = window.getComputedStyle(b);
+      return s.visibility !== 'hidden' && s.display !== 'none';
+    });
+  // Match Next/Continue/Forward in multiple languages, but NOT Submit/Send
+  var nextRe = /^(next|continue|weiter|suivant|siguiente|continuar|continua|avanti|次へ|下一步|→)\b/i;
+  var submitRe = /^(submit|send|senden|gönder|enviar|envoyer|invia|送信)\b/i;
+  var b = btns.find(function(x){
+    var t = (x.innerText || x.value || '').trim();
+    return nextRe.test(t) && !submitRe.test(t);
+  });
+  if (!b) return JSON.stringify(null);
+  return JSON.stringify({text: (b.innerText||b.value||'').trim()});
 })()
 """
 
@@ -175,6 +289,27 @@ VERIFY_JS = r"""
 """
 
 
+NEXT_CLICK_JS = r"""
+(function(){
+  var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"], input[type="button"], a'));
+  var nextRe = /^(next|continue|weiter|suivant|siguiente|continuar|continua|avanti|次へ|下一步|→)\b/i;
+  var submitRe = /^(submit|send|senden|gönder|enviar|envoyer|invia|送信)\b/i;
+  var b = btns.find(function(x){
+    var r = x.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return false;
+    var s = window.getComputedStyle(x);
+    if (s.visibility === 'hidden' || s.display === 'none') return false;
+    var t = (x.innerText || x.value || '').trim();
+    return nextRe.test(t) && !submitRe.test(t);
+  });
+  if (!b) return JSON.stringify({clicked: false});
+  b.scrollIntoView({block: 'center'});
+  b.click();
+  return JSON.stringify({clicked: true, text: (b.innerText||b.value||'').trim()});
+})()
+"""
+
+
 # Single JS function that drives every fill step inside the page — no
 # cached coordinates, scrolls each element into view before clicking,
 # uses the native value-setter so React/Angular's controlled inputs
@@ -191,6 +326,39 @@ EXECUTE_PLAN_JS = r"""
     var overlap = 0;
     ta.forEach(function(t){ if (tb.has(t)) overlap++; });
     return overlap >= 1;
+  }
+  function labelFor(el){
+    if (el.id){
+      var lab = document.querySelector('label[for="'+el.id+'"]');
+      if (lab && lab.innerText.trim()) return lab.innerText.trim();
+    }
+    var lbid = el.getAttribute('aria-labelledby');
+    if (lbid){
+      var parts = lbid.split(/\s+/).map(function(x){
+        var n = document.getElementById(x);
+        return n ? (n.innerText||'').trim() : '';
+      }).filter(Boolean);
+      if (parts.length) return parts.join(' ').trim();
+    }
+    var al = el.getAttribute('aria-label');
+    if (al && al.trim()) return al.trim();
+    var p = el.closest('label');
+    if (p && p.innerText.trim()) return p.innerText.trim();
+    var ph = el.getAttribute('placeholder');
+    if (ph && ph.trim()) return ph.trim();
+    var n = el.getAttribute('name');
+    return n || '';
+  }
+  function findInputByLabel(heading){
+    var target = norm(heading);
+    var inputs = Array.from(document.querySelectorAll('input, textarea, select'));
+    return inputs.find(function(el){
+      if (el.type === 'hidden' || el.type === 'submit' || el.type === 'button') return false;
+      var r = el.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) return false;
+      var lbl = norm(labelFor(el));
+      return lbl && (lbl === target || lbl.indexOf(target) >= 0 || target.indexOf(lbl) >= 0);
+    });
   }
   function findItem(heading){
     var items = Array.from(document.querySelectorAll('div[role="listitem"]'));
@@ -210,18 +378,77 @@ EXECUTE_PLAN_JS = r"""
     el.dispatchEvent(new Event('input', {bubbles: true}));
     el.dispatchEvent(new Event('change', {bubbles: true}));
   }
+  function setSelectValue(sel, value){
+    var target = norm(value);
+    var match = Array.from(sel.options).find(function(o){
+      return softMatch(o.text, value) || norm(o.value) === target;
+    });
+    if (!match) return false;
+    sel.value = match.value;
+    sel.dispatchEvent(new Event('input', {bubbles: true}));
+    sel.dispatchEvent(new Event('change', {bubbles: true}));
+    return true;
+  }
   var filled = [];
   var errors = [];
   for (var i = 0; i < plan.length; i++){
     var step = plan[i];
     try {
+      // Try Google-Forms-style listitem first; fall back to plain
+      // <label for=X> + input[id=X] / <select> pair if no listitem.
       var li = findItem(step.heading);
-      if (!li){ errors.push({heading: step.heading, reason: 'item_not_found'}); continue; }
+      // Plain-input path
+      if (!li){
+        var plainInput = findInputByLabel(step.heading);
+        if (plainInput){
+          plainInput.scrollIntoView({block: 'center'});
+          if (plainInput.tagName === 'SELECT'){
+            var ok = setSelectValue(plainInput, step.answer);
+            if (ok) filled.push({heading: step.heading, mode: 'select', value: String(step.answer)});
+            else errors.push({heading: step.heading, reason: 'no_select_option', answer: String(step.answer),
+                              options: Array.from(plainInput.options).map(function(o){return o.text;})});
+          } else if (plainInput.type === 'checkbox') {
+            var want = /^(yes|true|on|1|checked|✓)$/i.test(String(step.answer).trim());
+            if (want !== plainInput.checked) plainInput.click();
+            filled.push({heading: step.heading, mode: 'checkbox', value: want});
+          } else if (plainInput.type === 'radio') {
+            // Group lookup: same name with matching label
+            var name = plainInput.getAttribute('name');
+            var siblings = name ? Array.from(document.querySelectorAll('input[type="radio"][name="'+name+'"]')) : [plainInput];
+            var match = siblings.find(function(s){ return softMatch(labelFor(s) || s.value, step.answer); });
+            if (match){ match.click(); filled.push({heading: step.heading, mode: 'radio', value: labelFor(match)||match.value}); }
+            else errors.push({heading: step.heading, reason: 'no_radio_match', answer: String(step.answer)});
+          } else {
+            plainInput.focus();
+            setNativeValue(plainInput, String(step.answer));
+            filled.push({heading: step.heading, mode: 'text', input_type: plainInput.type, value: String(step.answer).slice(0, 80)});
+          }
+          continue;
+        }
+        errors.push({heading: step.heading, reason: 'item_not_found'});
+        continue;
+      }
       li.scrollIntoView({block: 'center'});
-      var input = li.querySelector('input[type="text"], input[type="email"], input[type="url"], input[type="tel"], textarea');
+      var input = li.querySelector('input[type="text"], input[type="email"], input[type="url"], input[type="tel"], input[type="number"], input[type="date"], input[type="time"], input[type="datetime-local"], textarea');
+      var liSelect = li.querySelector('select');
       if (input){
         input.focus();
         setNativeValue(input, String(step.answer));
+        filled.push({heading: step.heading, mode: 'text', input_type: input.type, value: String(step.answer).slice(0, 80)});
+        continue;
+      }
+      if (liSelect){
+        var ok = setSelectValue(liSelect, step.answer);
+        if (ok) filled.push({heading: step.heading, mode: 'select', value: String(step.answer)});
+        else errors.push({heading: step.heading, reason: 'no_select_option', answer: String(step.answer),
+                          options: Array.from(liSelect.options).map(function(o){return o.text;})});
+        continue;
+      }
+      // Old listitem text path (preserved as fallback)
+      var oldInput = li.querySelector('input[type="text"], input[type="email"], input[type="url"], input[type="tel"], textarea');
+      if (oldInput){
+        oldInput.focus();
+        setNativeValue(oldInput, String(step.answer));
         filled.push({heading: step.heading, mode: 'text', value: String(step.answer).slice(0, 80)});
         continue;
       }
@@ -262,71 +489,152 @@ EXECUTE_PLAN_JS = r"""
 """
 
 
-def build_driver_script(url, fill_plan, submit, shot_path):
-    """Build the single browser-harness script that:
-       1. new_tab + wait
-       2. CDP get fields (writes ---FIELDS--- marker so outer Python could
-          re-plan if needed — here we already have a fill_plan)
-       3. For each plan step, click coords + type / click option
-       4. CDP read back state
-       5. screenshot
-       6. optional submit
-       7. print final envelope JSON between ---FINAL--- markers
+def build_driver_script(url, all_answers, submit, shot_path, max_steps=6):
+    """Build a browser-harness script that runs a multi-step fill loop:
+        1. new_tab + wait
+        2. Loop up to max_steps:
+           a. discover all visible fields on the current page
+           b. fuzzy-match remaining unfilled answers to those fields
+           c. apply the plan via in-page JS (scroll + native setter +
+              click)
+           d. verify what got set; capture screenshot for this step
+           e. find a Next/Continue button. If present and we filled
+              ≥ 1 field this iteration, click it and re-loop.
+           f. If no Next + Submit button exists and submit=True,
+              click Submit. Done.
+           g. If no Next and no Submit, stop.
+        3. Print the final envelope JSON.
     """
-    plan_json = json.dumps(fill_plan)
-    # Inject the plan into the JS template
-    execute_js = EXECUTE_PLAN_JS.replace("PLAN_PLACEHOLDER", plan_json)
+    answers_json = json.dumps(all_answers)
+    fields_js = FIELDS_JS
+    exec_js_tpl = EXECUTE_PLAN_JS
+    verify_js = VERIFY_JS
+    next_click_js = NEXT_CLICK_JS
     shot_after_submit = shot_path.replace(".png", "-after-submit.png")
+    shot_step_prefix = shot_path.replace(".png", "-step")
     return f"""
-import json, time
+import json, time, re
+
+NORM_RE = re.compile(r'[^\\w\\s]')
+def norm(s):
+    return NORM_RE.sub(' ', (s or '').lower()).strip()
+
+
+def soft_match(a, b):
+    na, nb = norm(a), norm(b)
+    if not na or not nb:
+        return False
+    if na == nb or na in nb or nb in na:
+        return True
+    ta = set(t for t in na.split() if len(t) > 2)
+    tb = set(t for t in nb.split() if len(t) > 2)
+    return len(ta & tb) >= 2
+
+
+def build_plan(headings, answers, used_keys):
+    plan = []
+    remaining_keys = [k for k in answers if k not in used_keys]
+    for h in headings:
+        chosen = None
+        for k in remaining_keys:
+            if soft_match(k, h):
+                chosen = k; break
+        if chosen:
+            plan.append({{'heading': h, 'answer': answers[chosen]}})
+            remaining_keys.remove(chosen)
+            used_keys.add(chosen)
+    return plan
+
+
+all_answers = json.loads({answers_json!r})
+used_keys = set()
+all_filled = []
+all_errors = []
+step_screenshots = []
+step_records = []
+
 new_tab({url!r})
 wait_for_load()
 time.sleep(4)
 
-# Single CDP call that processes the entire fill plan inside the page.
-# Scrolls each element into view, uses native value-setters, clicks
-# options directly — no coord caching, no offscreen clicks.
-r = cdp("Runtime.evaluate", expression={execute_js!r}, returnByValue=True)
-plan_raw = r.get("result", {{}}).get("value", "{{}}")
-plan_result = json.loads(plan_raw)
-time.sleep(1)
+for step in range({max_steps}):
+    # 1. Discover current page fields
+    r = cdp('Runtime.evaluate', expression={fields_js!r}, returnByValue=True)
+    fields_raw = r.get('result', {{}}).get('value', '[]')
+    fields = json.loads(fields_raw)
+    headings = [f['heading'] for f in fields]
 
-# Verification: read back what's actually set.
-verify_js = {VERIFY_JS!r}
-v = cdp("Runtime.evaluate", expression=verify_js, returnByValue=True)
-verify_raw = v.get("result", {{}}).get("value", "{{}}")
-verify = json.loads(verify_raw)
+    # 2. Build plan from remaining answers
+    plan = build_plan(headings, all_answers, used_keys)
 
+    if not plan and step == 0:
+        # First page has no matches at all — might be a landing page
+        # with a "Book now" / "Reserve" CTA. Try Next/Continue.
+        pass
+
+    # 3. Apply plan via in-page JS
+    if plan:
+        exec_js = ({exec_js_tpl!r}).replace('PLAN_PLACEHOLDER', json.dumps(plan))
+        rr = cdp('Runtime.evaluate', expression=exec_js, returnByValue=True)
+        plan_result = json.loads(rr.get('result', {{}}).get('value', '{{}}'))
+        all_filled += [dict(f, step=step) for f in plan_result.get('filled', [])]
+        all_errors += [dict(e, step=step) for e in plan_result.get('errors', [])]
+        time.sleep(1)
+
+    # 4. Verify + screenshot for this step
+    v = cdp('Runtime.evaluate', expression={verify_js!r}, returnByValue=True)
+    verify = json.loads(v.get('result', {{}}).get('value', '{{}}'))
+    shot_p = '{shot_step_prefix}-' + str(step) + '.png'
+    capture_screenshot(shot_p)
+    step_screenshots.append(shot_p)
+    step_records.append({{'step': step, 'fields_seen': len(headings),
+                          'plan_size': len(plan), 'verify_state': verify}})
+
+    # 5. Look for Next button. If found, click and re-loop.
+    nb = cdp('Runtime.evaluate', expression={next_click_js!r}, returnByValue=True)
+    nb_result = json.loads(nb.get('result', {{}}).get('value', '{{}}'))
+    if nb_result.get('clicked'):
+        time.sleep(3)  # let next page load
+        continue
+    break  # no Next button found; we're on the final page
+
+# Final screenshot
 capture_screenshot({shot_path!r})
 
 submitted = False
 submit = {submit!r}
 if submit:
-    submit_js = {SUBMIT_JS!r}
-    # Use direct .click() rather than coords so scroll position doesn't matter
     submit_exec = '''
 (function(){{
-  var btns = Array.from(document.querySelectorAll('[role=\"button\"], button, input[type=\"submit\"]'));
-  var b = btns.find(function(x){{ return /^(submit|send|senden|gönder|enviar|envoyer|invia|送信)\\\\b/i.test(((x.innerText||x.value||'').trim())); }});
+  var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"]'));
+  var b = btns.find(function(x){{ return /^(submit|send|senden|gönder|enviar|envoyer|invia|送信|book|reserve|confirm|complete|place order|pay)\\b/i.test(((x.innerText||x.value||'').trim())); }});
   if (!b) return JSON.stringify(false);
   b.scrollIntoView({{block: 'center'}});
   b.click();
   return JSON.stringify(true);
-}})()'''
-    s = cdp("Runtime.evaluate", expression=submit_exec, returnByValue=True)
-    s_raw = s.get("result", {{}}).get("value", "false")
-    submitted = (s_raw == "true")
+}})()
+'''
+    s = cdp('Runtime.evaluate', expression=submit_exec, returnByValue=True)
+    s_raw = s.get('result', {{}}).get('value', 'false')
+    submitted = (s_raw == 'true')
     if submitted:
-        time.sleep(3)
+        time.sleep(4)
         capture_screenshot({shot_after_submit!r})
 
-print("---FINAL---")
+# Final verification on last page
+v2 = cdp('Runtime.evaluate', expression={verify_js!r}, returnByValue=True)
+final_verify = json.loads(v2.get('result', {{}}).get('value', '{{}}'))
+
+print('---FINAL---')
 print(json.dumps({{
-    "fields_detected": len(json.loads({plan_json!r})),
-    "filled": plan_result.get("filled", []),
-    "errors": plan_result.get("errors", []),
-    "verification": verify,
-    "submitted": submitted,
+    'fields_detected_total': len(all_filled) + len(all_errors),
+    'filled': all_filled,
+    'errors': all_errors,
+    'step_records': step_records,
+    'step_screenshots': step_screenshots,
+    'verification': final_verify,
+    'submitted': submitted,
+    'used_answer_keys': sorted(list(used_keys)),
 }}))
 """
 
@@ -351,38 +659,23 @@ def main():
     answers = json.loads(Path(answers_path).read_text())
     log(f"loaded {len(answers)} answers")
 
-    # First pass: navigate + harvest headings only, so we can pre-build
-    # the fill plan in outer Python. We do this in a SINGLE bh-c that
-    # also flips to the form tab and returns the list — keeping it
-    # within one daemon attach.
-    discover_script = (
-        "import json, time\n"
-        f"new_tab({url!r})\n"
-        "wait_for_load()\n"
-        "time.sleep(4)\n"
-        f"r = cdp('Runtime.evaluate', expression={FIELDS_JS!r}, returnByValue=True)\n"
-        "print('---FIELDS---')\n"
-        "print(r.get('result', {}).get('value', '[]'))\n"
-    )
-    out = bh_run(discover_script)
-    fields_raw = out.split("---FIELDS---", 1)[1].strip()
-    fields = json.loads(fields_raw)
-    headings = [f["heading"] for f in fields]
-    log(f"discovered {len(headings)} headings")
+    max_steps = 6
+    if "--max-steps" in sys.argv:
+        i = sys.argv.index("--max-steps")
+        if i + 1 < len(sys.argv):
+            try: max_steps = int(sys.argv[i + 1])
+            except ValueError: pass
 
-    matches = build_match_map(answers, headings)
-    log(f"matched {len(matches)} of {len(answers)} answers to {len(headings)} headings")
-    skipped_headings = [h for h in headings if h not in matches]
-    unused_answer_keys = [k for k in answers if not any(_norm(k) in _norm(h) or _norm(h) in _norm(k) for h in matches)]
-
-    fill_plan = [{"heading": h, "answer": matches[h]} for h in matches]
-
-    # Second pass: navigate AGAIN (fresh attach), apply plan, verify,
-    # screenshot, optional submit. All in ONE bh-c.
-    driver = build_driver_script(url, fill_plan, submit, shot_path)
-    out2 = bh_run(driver, timeout=240)
+    # Single browser-harness invocation that handles the multi-step
+    # form/booking flow end-to-end: discover fields → match remaining
+    # answers → fill → screenshot → Next? → repeat → Submit (if asked).
+    driver = build_driver_script(url, answers, submit, shot_path, max_steps=max_steps)
+    out2 = bh_run(driver, timeout=360)
     final_raw = out2.split("---FINAL---", 1)[1].strip()
     result = json.loads(final_raw)
+    used_keys = set(result.get("used_answer_keys", []))
+    unused_answer_keys = [k for k in answers if k not in used_keys]
+    skipped_headings = [e["heading"] for e in result.get("errors", []) if e.get("reason") == "item_not_found"]
 
     # Deliver the screenshot directly via Telegram. We don't rely on
     # the agent to remember to call send-telegram-photo.sh — the script
@@ -401,20 +694,19 @@ def main():
         except Exception as e:
             photo_send_err = str(e)
 
+    steps_run = len(result.get("step_records", []))
     msg_lines = [
-        f"📝 Form fill — {len(result['filled'])} fields filled, {len(result['errors'])} errors, {len(skipped_headings)} unmatched.",
+        f"📝 Form fill — {len(result['filled'])} fields filled across {steps_run} step(s), {len(result['errors'])} errors.",
         f"Screenshot: {shot_path}",
     ]
-    if skipped_headings:
-        msg_lines.append("Unmatched form headings (no answer provided):")
-        for h in skipped_headings[:5]:
-            msg_lines.append(f"  • {h}")
+    if unused_answer_keys:
+        msg_lines.append(f"Unused answer keys ({len(unused_answer_keys)}): {', '.join(unused_answer_keys[:5])}")
     if result["errors"]:
         msg_lines.append("Errors:")
         for e in result["errors"][:5]:
-            msg_lines.append(f"  • {e['heading']}: {e['reason']}")
+            msg_lines.append(f"  • step {e.get('step','?')} | {e['heading']}: {e['reason']}")
     if submit:
-        msg_lines.append("✅ Submitted." if result["submitted"] else "⚠️ Submit button not found.")
+        msg_lines.append("✅ Submitted." if result["submitted"] else "⚠️ Submit button not found on the final page.")
     else:
         msg_lines.append("Stopped before submit — review screenshot first.")
 
@@ -426,10 +718,11 @@ def main():
     print(json.dumps({
         "ok": True,
         "url": url,
-        "fields_detected": result["fields_detected"],
+        "fields_detected_total": result.get("fields_detected_total", 0),
         "filled": result["filled"],
         "errors": result["errors"],
-        "skipped_headings": skipped_headings,
+        "step_records": result.get("step_records", []),
+        "step_screenshots": result.get("step_screenshots", []),
         "unused_answer_keys": unused_answer_keys,
         "submitted": result["submitted"],
         "verification": result["verification"],
