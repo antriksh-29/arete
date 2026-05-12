@@ -155,7 +155,7 @@ FIELDS_JS = r"""
 SUBMIT_JS = r"""
 (function(){
   var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"]'));
-  var b = btns.find(function(x){ return /^(submit|send|gönder|enviar)\b/i.test(((x.innerText||x.value||'').trim())); });
+  var b = btns.find(function(x){ return /^(submit|send|senden|gönder|enviar|envoyer|invia|送信)\b/i.test(((x.innerText||x.value||'').trim())); });
   if (!b) return JSON.stringify(null);
   var r = b.getBoundingClientRect();
   return JSON.stringify({x: r.x + r.width/2, y: r.y + r.height/2});
@@ -307,7 +307,7 @@ if submit:
     submit_exec = '''
 (function(){{
   var btns = Array.from(document.querySelectorAll('[role=\"button\"], button, input[type=\"submit\"]'));
-  var b = btns.find(function(x){{ return /^(submit|send|gönder|enviar)\\\\b/i.test(((x.innerText||x.value||'').trim())); }});
+  var b = btns.find(function(x){{ return /^(submit|send|senden|gönder|enviar|envoyer|invia|送信)\\\\b/i.test(((x.innerText||x.value||'').trim())); }});
   if (!b) return JSON.stringify(false);
   b.scrollIntoView({{block: 'center'}});
   b.click();
