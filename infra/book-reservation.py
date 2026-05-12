@@ -77,6 +77,19 @@ TIME_RE = re.compile(r"\b(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM))\b")
 TIME_24H_RE = re.compile(r"\b(\d{1,2}):(\d{2})\b")
 DAY_RE = re.compile(r"\b(tonight|tomorrow|today|this\s+evening|tomorrow\s+evening|tomorrow\s+night)\b", re.I)
 DATE_ISO_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
+_MONTH_NAMES = ("january","february","march","april","may","june","july",
+                "august","september","october","november","december")
+_MONTH_RE = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+DATE_DM_RE = re.compile(r"(?<!for\s)(?<!for\s\s)\b(\d{1,2})(?:st|nd|rd|th)?\s+(" + _MONTH_RE + r")\b", re.I)
+DATE_MD_RE = re.compile(r"\b(" + _MONTH_RE + r")\s+(\d{1,2})(?:st|nd|rd|th)?\b", re.I)
+
+
+def _month_idx(token: str) -> int:
+    t = token.lower()
+    for i, n in enumerate(_MONTH_NAMES):
+        if n.startswith(t) or t.startswith(n[:3]):
+            return i
+    return -1
 
 
 def parse_intent(msg: str) -> dict:
@@ -123,7 +136,27 @@ def parse_intent(msg: str) -> dict:
     m = DATE_ISO_RE.search(msg)
     if m:
         booking_date = m.group(1)
-    else:
+    if not booking_date:
+        # "13 May" / "13th May" / "May 13" / "May 13th"
+        m = DATE_DM_RE.search(msg)
+        d_num, mon_tok = (None, None)
+        if m:
+            d_num, mon_tok = int(m.group(1)), m.group(2)
+        else:
+            m = DATE_MD_RE.search(msg)
+            if m:
+                d_num, mon_tok = int(m.group(2)), m.group(1)
+        if d_num and mon_tok:
+            midx = _month_idx(mon_tok)
+            if midx >= 0:
+                today = date.today()
+                year = today.year
+                # If the date has already passed this year, assume next year.
+                candidate = date(year, midx + 1, d_num)
+                if candidate < today:
+                    candidate = date(year + 1, midx + 1, d_num)
+                booking_date = candidate.isoformat()
+    if not booking_date:
         today = date.today()
         if day in ("tonight", "today", None):
             booking_date = today.isoformat()
