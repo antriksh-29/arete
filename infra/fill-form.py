@@ -384,6 +384,23 @@ def main():
     final_raw = out2.split("---FINAL---", 1)[1].strip()
     result = json.loads(final_raw)
 
+    # Deliver the screenshot directly via Telegram. We don't rely on
+    # the agent to remember to call send-telegram-photo.sh — the script
+    # that produces the screenshot also delivers it.
+    photo_sent = False
+    photo_send_err = ""
+    send_helper = os.path.expanduser("~/bin/send-telegram-photo.sh")
+    if os.path.isfile(send_helper) and os.path.isfile(shot_path):
+        caption = "form filled — review before submit" if not submit else "form submitted — confirmation page"
+        ps_path = shot_path.replace(".png", "-after-submit.png") if (submit and result.get("submitted")) else shot_path
+        try:
+            r = subprocess.run([send_helper, ps_path, caption], capture_output=True, text=True, timeout=30)
+            photo_sent = r.returncode == 0
+            if not photo_sent:
+                photo_send_err = (r.stderr or r.stdout or "")[-200:]
+        except Exception as e:
+            photo_send_err = str(e)
+
     msg_lines = [
         f"📝 Form fill — {len(result['filled'])} fields filled, {len(result['errors'])} errors, {len(skipped_headings)} unmatched.",
         f"Screenshot: {shot_path}",
@@ -401,6 +418,11 @@ def main():
     else:
         msg_lines.append("Stopped before submit — review screenshot first.")
 
+    if photo_sent:
+        msg_lines.append("📸 Screenshot delivered.")
+    elif photo_send_err:
+        msg_lines.append(f"📸 Screenshot send failed: {photo_send_err}")
+
     print(json.dumps({
         "ok": True,
         "url": url,
@@ -412,6 +434,8 @@ def main():
         "submitted": result["submitted"],
         "verification": result["verification"],
         "screenshot": shot_path,
+        "photo_sent": photo_sent,
+        "photo_send_error": photo_send_err,
         "user_message": "\n".join(msg_lines),
     }))
 
