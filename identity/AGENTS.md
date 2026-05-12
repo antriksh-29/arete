@@ -626,7 +626,7 @@ hallucinations from before the switch. The browser works. Run it.
 |---|---|
 | "what's on <url>" / "open <url> and tell me <X>" / "fetch this page" | `browser-harness -c 'new_tab("<url>"); wait_for_load(); print(page_info())'` then relay the readable extract |
 | "browse to <url>" / "render this page" | Same as above |
-| "screenshot <url>" / "take a screenshot of <url>" | `browser-harness -c 'new_tab("<url>"); wait_for_load(); capture_screenshot("/tmp/shot.png")'` then send the file |
+| "screenshot <url>" / "take a screenshot of <url>" | `browser-harness -c 'new_tab("<url>"); wait_for_load(); capture_screenshot("/tmp/shot.png")'` THEN `~/bin/send-telegram-photo.sh /tmp/shot.png` to deliver inline |
 | "can you access <url>" / "is <url> reachable" | `browser-harness -c 'new_tab("<url>"); wait_for_load(); info = page_info(); print(info)'` and report what loaded (title, first 400 chars) |
 | "fill the form on <url> with <values>" | navigate → snapshot/screenshot → identify fields → `click_at_xy` / `type_text` / submit → screenshot again to verify |
 | "log into <site>" (cookies already imported via /site-login) | `python3 ~/bin/browser-login.py inject <domain>` then proceed |
@@ -651,7 +651,7 @@ type, screenshot. Run it.
 
 | User intent | Command |
 |---|---|
-| "fill <url> with <answers>" / "fill this form for me" | (1) Extract answers into a JSON map `{"label": "value"}`. (2) Write to `/tmp/fill-form-answers-<ts>.json`. (3) Run `python3 ~/bin/fill-form.py "<url>" /tmp/fill-form-answers-<ts>.json` (no --submit). (4) Send the resulting screenshot at `/tmp/fill-form-result.png` to the user via `~/bin/send-telegram.sh -photo /tmp/fill-form-result.png`. Relay the envelope's `user_message`. |
+| "fill <url> with <answers>" / "fill this form for me" | (1) Extract answers into a JSON map `{"label": "value"}`. (2) Write to `/tmp/fill-form-answers-<ts>.json`. (3) Run `python3 ~/bin/fill-form.py "<url>" /tmp/fill-form-answers-<ts>.json` (no --submit). (4) Send screenshot inline via `~/bin/send-telegram-photo.sh /tmp/fill-form-result.png "form filled — review before submit"`. (5) Relay the envelope's `user_message`. |
 | "submit it" / "go ahead and submit" / "i'm okay with this, submit" (after a prior `fill-form` run) | Re-run same command with `--submit`. Relay envelope. |
 | "what fields does this form have" / "show me the form" (no answers) | Route to /agent-browser (navigate + describe). Don't invoke fill-form without answers. |
 

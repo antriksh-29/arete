@@ -130,9 +130,22 @@ If a field was supposed to be filled but doesn't appear in
 ## Sending the screenshot back
 
 The screenshot lives on the VPS at `/tmp/fill-form-result.png`. The
-agent's standard pattern for binary attachments is
-`~/bin/send-telegram.sh -photo /tmp/...`. Send it as part of the
-reply so the user can verify before authorizing `--submit`.
+agent **MUST** send it to the user inline via:
+
+```bash
+~/bin/send-telegram-photo.sh /tmp/fill-form-result.png "form filled — review before submit"
+```
+
+This is the Telegram Bot API `sendPhoto` endpoint wrapper (falls back
+to `sendDocument` for files >10MB). It returns 0 on success and prints
+`[<ts>] sent telegram sendPhoto: ...` to stdout — the agent does NOT
+need to relay that line; the photo arrives in the user's Telegram
+client directly.
+
+DO NOT say "media failed" / "I can't send images" / "the screenshot
+is on the VPS" / "you'd need to SCP it" — `send-telegram-photo.sh` IS
+the way. If it fails, the script prints the HTTP error to stderr —
+surface that to the user verbatim.
 
 ## Edge cases
 
