@@ -143,98 +143,247 @@ def parse_intent(msg: str) -> dict:
 # ── URL discovery for each platform ─────────────────────────────────
 
 
-def _google_search(query: str, max_results: int = 5) -> list[str]:
-    """Light Google search — pulls href= links out of the SERP HTML.
-    Free, no API key. ~1-2s. Returns up to max_results URLs."""
+_BH = os.path.expanduser("~/.local/bin/browser-harness")
+
+
+def _google_search(query: str, max_results: int = 8) -> list[str]:
+    """Google search via browser-harness — Google's SERP is JS-rendered,
+    plain HTTP scraping gets 0 useful links. browser-harness drives a
+    headless Chrome, waits for the SERP to render, and extracts every
+    `a[href]` whose href is a non-google external URL.
+    Returns up to max_results URLs in DOM order (top-ranked first).
+    Falls back to plain HTTP scraping if browser-harness is missing.
+    """
     q = urllib.parse.quote(query)
+    if os.path.exists(_BH):
+        script = (
+            'import json, time\n'
+            f'new_tab("https://www.google.com/search?q={q}&hl=en")\n'
+            'wait_for_load()\n'
+            'time.sleep(2)\n'
+            'r = cdp("Runtime.evaluate", expression="""'
+            '(function(){'
+            '  var anchors = Array.from(document.querySelectorAll(\'a[href]\'));'
+            '  var urls = anchors.map(function(a){return a.href||\"\";})'
+            '    .filter(function(u){'
+            '      if (!u.startsWith(\"http\")) return false;'
+            '      if (u.indexOf(\"google.com/search\") >= 0) return false;'
+            '      if (u.indexOf(\"google.com/url\") >= 0) return true;'
+            '      if (u.indexOf(\"google.com/\") >= 0 && u.indexOf(\"/maps/reserve/\") < 0 && u.indexOf(\"/maps/place/\") < 0) return false;'
+            '      if (u.indexOf(\"webcache.googleusercontent\") >= 0) return false;'
+            '      return true;'
+            '    });'
+            '  return JSON.stringify(urls.slice(0, 30));'
+            '})()'
+            '""", returnByValue=True)\n'
+            'print("---URLS---")\n'
+            'print(r.get("result",{}).get("value","[]"))\n'
+        )
+        try:
+            out = subprocess.run([_BH], input=script, capture_output=True,
+                                 text=True, timeout=25)
+            tail = out.stdout.split("---URLS---", 1)[-1].strip()
+            if tail.startswith("["):
+                urls = json.loads(tail.splitlines()[0])
+                cleaned = []
+                seen = set()
+                for u in urls:
+                    # Unwrap google.com/url?q= redirects
+                    if "google.com/url" in u and "q=" in u:
+                        try:
+                            qs = urllib.parse.parse_qs(urllib.parse.urlparse(u).query)
+                            real = qs.get("q", [u])[0]
+                            u = real
+                        except Exception:
+                            pass
+                    if u in seen:
+                        continue
+                    seen.add(u)
+                    cleaned.append(u)
+                    if len(cleaned) >= max_results:
+                        break
+                if cleaned:
+                    return cleaned
+        except Exception as e:
+            log(f"browser-harness search failed: {e}")
+
+    # Fallback: plain HTTP — works occasionally on some queries.
     url = f"https://www.google.com/search?q={q}&hl=en"
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": (
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
-            )
-        },
-    )
+    req = urllib.request.Request(url, headers={
+        "User-Agent": ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"),
+    })
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             html = resp.read().decode("utf-8", "ignore")
     except Exception as e:
-        log(f"google search failed: {e}")
+        log(f"google search HTTP fallback failed: {e}")
         return []
-    # SERP href links look like <a href="/url?q=https://..."> — extract.
-    urls = re.findall(r'href="/url\?q=(https?://[^&"]+)', html)
+    urls = re.findall(r'href="/url\?q=(https?://[^&"]+)', html) + \
+           re.findall(r'href="(https?://[^"]+)"', html)
     seen = set()
-    out = []
+    out_list = []
     for u in urls:
-        if u in seen:
-            continue
+        if "google.com/search" in u: continue
+        if u in seen: continue
         seen.add(u)
-        out.append(u)
-        if len(out) >= max_results:
-            break
-    return out
+        out_list.append(u)
+        if len(out_list) >= max_results: break
+    return out_list
+
+
+def _strip_fragment(u: str) -> str:
+    """Strip URL fragments (#:~:text=...) added by Google to its SERP."""
+    return u.split("#", 1)[0]
+
+
+def _venue_tokens(venue: str) -> list[str]:
+    """Tokens to require in a candidate URL path so we don't book at
+    a totally different venue. Drops words shorter than 3 chars."""
+    cleaned = re.sub(r"[^a-zA-Z0-9 ]", " ", venue).lower()
+    return [t for t in cleaned.split() if len(t) >= 3 and t not in
+            ("the", "and", "bar", "cafe", "kitchen", "restaurant")]
+
+
+def _url_matches_venue(u: str, venue: str) -> bool:
+    """True if the URL path contains at least one venue-name token.
+    Rejects 'district.in/dining/jaipur/hum-tum-cafe' for venue 'Uru'."""
+    tokens = _venue_tokens(venue)
+    if not tokens:
+        return True
+    path = urllib.parse.urlparse(u).path.lower()
+    return any(t in path for t in tokens)
 
 
 def find_gmr_url(venue: str) -> str | None:
-    """Find a Google Maps Reserve URL for the venue. Returns None if
-    no GMR-enabled provider found."""
-    # The reserve URLs look like google.com/maps/reserve/v/dine/c/<id>
-    candidates = _google_search(f"{venue} reserve a table site:google.com/maps") + \
-                 _google_search(f"{venue} reserve a table google maps")
+    """Find a Google Maps Reserve URL for the venue. GMR pages aren't
+    well-indexed by SERP, so we try 3 routes:
+      1. Direct SERP for the maps/reserve URL pattern.
+      2. Open Google Maps place page for the venue and look for the
+         "Reserve a table" CTA's data-pwsid attribute.
+      3. None — caller falls through to other providers.
+    """
+    # Route 1: direct SERP
+    candidates = _google_search(f"{venue} reserve a table google maps") + \
+                 _google_search(f"site:google.com/maps/reserve {venue}")
     for u in candidates:
         m = re.search(r"https://www\.google\.com/maps/reserve/v/dine/c/[A-Za-z0-9_-]+", u)
         if m:
-            base = m.group(0)
-            # Force English locale + paid-source hint so the widget
-            # surfaces correctly.
-            return f"{base}?source=pa&hl=en-IN"
+            return f"{m.group(0)}?source=pa&hl=en-IN"
+
+    # Route 2: open the venue's Google Maps place page via browser-harness
+    # and extract the GMR id from the page state.
+    if os.path.exists(_BH):
+        q = urllib.parse.quote(f"{venue} google maps")
+        script = (
+            'import time, json\n'
+            f'new_tab("https://www.google.com/search?q={q}&hl=en")\n'
+            'wait_for_load()\n'
+            'time.sleep(2)\n'
+            'r = cdp("Runtime.evaluate", expression="""'
+            '(function(){'
+            '  var anchors = Array.from(document.querySelectorAll(\'a[href]\'));'
+            '  var maps = anchors.map(function(a){return a.href||\"\";}).filter(function(u){'
+            '    return u.indexOf(\"google.com/maps/place/\") >= 0 ||'
+            '           u.indexOf(\"google.com/maps/reserve/\") >= 0;'
+            '  });'
+            '  return JSON.stringify(maps.slice(0, 5));'
+            '})()'
+            '""", returnByValue=True)\n'
+            'print("---MAPS---")\n'
+            'print(r.get("result",{}).get("value","[]"))\n'
+        )
+        try:
+            out = subprocess.run([_BH], input=script, capture_output=True,
+                                 text=True, timeout=20)
+            tail = out.stdout.split("---MAPS---", 1)[-1].strip()
+            urls = json.loads(tail.splitlines()[0]) if tail.startswith("[") else []
+            for u in urls:
+                m = re.search(r"/maps/reserve/v/dine/c/[A-Za-z0-9_-]+", u)
+                if m:
+                    return f"https://www.google.com{m.group(0)}?source=pa&hl=en-IN"
+        except Exception as e:
+            log(f"gmr maps-page scan failed: {e}")
     return None
 
 
 def find_district_url(venue: str, date_iso: str | None, party: int | None) -> str | None:
     """Find a District (district.in/dining) booking URL."""
-    candidates = _google_search(f"{venue} district zomato book")
+    candidates = _google_search(f"{venue} district book") + \
+                 _google_search(f"site:district.in {venue}")
     for u in candidates:
-        if "district.in/dining" in u and "/book" in u:
-            base = u.split("?")[0]
-            params = []
-            if date_iso:
-                params.append(f"date={date_iso}")
-            if party:
-                params.append(f"guests={party}")
-            return base + ("?" + "&".join(params) if params else "")
-        if "district.in/dining" in u and "/book" not in u:
-            return u.rstrip("/") + "/book"
+        u = _strip_fragment(u)
+        if "district.in/dining" not in u:
+            continue
+        if not _url_matches_venue(u, venue):
+            continue
+        if "/book" not in u:
+            u = u.rstrip("/") + "/book"
+        base = u.split("?")[0]
+        params = []
+        if date_iso:
+            params.append(f"date={date_iso}")
+        if party:
+            params.append(f"guests={party}")
+        return base + ("?" + "&".join(params) if params else "")
     return None
 
 
 def find_zomato_url(venue: str) -> str | None:
-    candidates = _google_search(f"{venue} zomato book a table")
+    candidates = _google_search(f"{venue} zomato book a table") + \
+                 _google_search(f"site:zomato.com {venue}")
     for u in candidates:
-        if "zomato.com" in u and "/book" in u:
-            return u
-        if "zomato.com" in u and "/restaurants/" not in u and "/restaurant/" not in u:
+        u = _strip_fragment(u)
+        if "zomato.com" not in u or not _url_matches_venue(u, venue):
             continue
-        if "zomato.com" in u:
+        if "/book" in u:
+            return u
+        if re.search(r"zomato\.com/[a-z-]+/[a-z0-9-]+/?$", u):
             return u.rstrip("/") + "/book"
     return None
 
 
 def find_eazydiner_url(venue: str) -> str | None:
-    candidates = _google_search(f"{venue} eazydiner book")
+    candidates = _google_search(f"{venue} eazydiner book") + \
+                 _google_search(f"site:eazydiner.com {venue}")
     for u in candidates:
-        if "eazydiner.com/restaurants/" in u or "eazydiner.com/restaurant/" in u:
+        u = _strip_fragment(u)
+        if "eazydiner.com" not in u or not _url_matches_venue(u, venue):
+            continue
+        if re.search(r"eazydiner\.com/(?:restaurants?/)?[a-z]+/[a-z0-9-]+", u):
             return u
     return None
 
 
 def find_swiggy_url(venue: str) -> str | None:
-    candidates = _google_search(f"{venue} swiggy dineout book")
+    candidates = _google_search(f"{venue} swiggy dineout book") + \
+                 _google_search(f"site:swiggy.com {venue} dineout")
     for u in candidates:
-        if "swiggy.com/dineout" in u:
+        u = _strip_fragment(u)
+        if "swiggy.com" not in u or not _url_matches_venue(u, venue):
+            continue
+        if "dineout" in u:
             return u
+    return None
+
+
+def find_own_site_booking_url(venue: str) -> str | None:
+    """Fallback: the restaurant's own website. Used when aggregators
+    don't surface a booking URL — many venues link to EatApp / Resy /
+    a phone number / a WhatsApp link on their homepage."""
+    candidates = _google_search(f'"{venue}" official website')
+    for u in candidates:
+        u = _strip_fragment(u)
+        if any(host in u for host in ("zomato.com", "swiggy.com", "eazydiner.com",
+                                       "district.in", "google.com", "youtube.com",
+                                       "instagram.com", "facebook.com", "wikipedia.org")):
+            continue
+        # Skip /about, /products, etc.
+        if re.search(r"/(about|products|blog|news|press|careers|jobs)\b", u):
+            continue
+        if not _url_matches_venue(u, venue):
+            continue
+        return u
     return None
 
 
@@ -360,6 +509,7 @@ def book(message: str) -> dict:
         ("zomato",    find_zomato_url,    lambda url: drive(url, intent, "zomato", max_steps=14)),
         ("eazydiner", find_eazydiner_url, lambda url: drive(url, intent, "eazydiner", max_steps=14)),
         ("swiggy",    find_swiggy_url,    lambda url: drive(url, intent, "swiggy", max_steps=14)),
+        ("own_site",  find_own_site_booking_url, lambda url: drive(url, intent, "own_site", max_steps=10)),
     ]
 
     attempts = []
