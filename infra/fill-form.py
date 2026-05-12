@@ -435,19 +435,40 @@ EXECUTE_PLAN_JS = r"""
       return lbl && (lbl === target || lbl.indexOf(target) >= 0 || target.indexOf(lbl) >= 0);
     });
   }
+  function _scoreMatch(a, b){
+    var nA = norm(a), nB = norm(b);
+    if (!nA || !nB) return 0;
+    if (nA === nB) return 100;
+    if (nA.indexOf(nB) >= 0 || nB.indexOf(nA) >= 0) return 50;
+    var tA = new Set(nA.split(' ').filter(function(t){return t.length > 2;}));
+    var tB = new Set(nB.split(' ').filter(function(t){return t.length > 2;}));
+    var overlap = 0;
+    tA.forEach(function(t){ if (tB.has(t)) overlap++; });
+    var shorter = Math.min(tA.size, tB.size);
+    // Require FULL coverage of the shorter token set (and shorter >= 2)
+    if (shorter >= 2 && overlap === shorter) return 30;
+    // Strict fallback: at least 2 distinct token matches (avoids weak
+    // single-word ties like "Pizza Size" vs "Pizza Toppings")
+    if (overlap >= 2) return 20;
+    return 0;
+  }
   function findGroupByHeading(heading){
     // Match a radio/checkbox group by its <fieldset><legend>...</legend>
-    // or [role=radiogroup][aria-labelledby/aria-label].
-    var target = norm(heading);
+    // or [role=radiogroup][aria-labelledby/aria-label]. Pick the BEST
+    // scoring candidate, not the first fuzzy hit — otherwise "Pizza
+    // Toppings" matches the "Pizza Size" fieldset.
+    var best = {score: 0, group: null};
     var fieldsets = Array.from(document.querySelectorAll('fieldset'));
     for (var i = 0; i < fieldsets.length; i++) {
       var fs = fieldsets[i];
       var lg = fs.querySelector('legend');
-      if (lg && softMatch(lg.innerText, heading)){
-        return {
+      if (!lg) continue;
+      var s = _scoreMatch(lg.innerText, heading);
+      if (s > best.score) {
+        best = {score: s, group: {
           radios: Array.from(fs.querySelectorAll('input[type="radio"]')),
           checks: Array.from(fs.querySelectorAll('input[type="checkbox"]')),
-        };
+        }};
       }
     }
     var rgs = Array.from(document.querySelectorAll('[role="radiogroup"]'));
@@ -456,14 +477,17 @@ EXECUTE_PLAN_JS = r"""
       var lblid = rg.getAttribute('aria-labelledby');
       var lab = lblid ? document.getElementById(lblid) : null;
       var lbl = (lab && lab.innerText) ? lab.innerText : (rg.getAttribute('aria-label') || '');
-      if (lbl && softMatch(lbl, heading)){
-        return {
+      if (!lbl) continue;
+      var s2 = _scoreMatch(lbl, heading);
+      if (s2 > best.score) {
+        best = {score: s2, group: {
           radios: Array.from(rg.querySelectorAll('input[type="radio"], [role="radio"]')),
           checks: [],
-        };
+        }};
       }
     }
-    return null;
+    // Require minimum quality — exact/substring or full-token-coverage
+    return best.score >= 30 ? best.group : null;
   }
   function findItem(heading){
     var items = Array.from(document.querySelectorAll('div[role="listitem"]'));
