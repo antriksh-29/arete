@@ -270,7 +270,7 @@ def fetch_browser_context(url, timeout_s=90):
     )
     env = {**os.environ, "BU_CDP_URL": "http://127.0.0.1:9222"}
     try:
-        r = subprocess.run([bh, "-c", script], capture_output=True, text=True, timeout=timeout_s, env=env, check=False)
+        r = subprocess.run([bh], input=script, capture_output=True, text=True, timeout=timeout_s, env=env, check=False)
     except Exception as e:
         log(f"browser-harness invocation failed: {e}")
         return ""

@@ -102,9 +102,12 @@ def _split_multi(answer):
 # ── browser-harness driver ────────────────────────────────────────
 
 def bh_run(script, timeout=180):
+    """Run a Python script under browser-harness. The CLI reads scripts
+    from STDIN — not via -c (which silently prints the usage banner
+    and exits 1)."""
     if not os.path.isfile(BH):
         raise RuntimeError(f"browser-harness CLI not found at {BH}")
-    r = subprocess.run([BH, "-c", script], capture_output=True, text=True, timeout=timeout, env=ENV)
+    r = subprocess.run([BH], input=script, capture_output=True, text=True, timeout=timeout, env=ENV)
     if r.returncode != 0:
         log(f"bh stderr: {r.stderr[-500:]}")
         raise RuntimeError(f"browser-harness exit {r.returncode}: {r.stderr[-200:]}")
