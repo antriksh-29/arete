@@ -79,18 +79,30 @@ def vault_key(domain):
     return f"{VAULT_PREFIX}{safe.replace('.', '_')}"
 
 
-def parse_cookies(blob):
-    """Accept three shapes:
+def parse_cookies(blob, domain_hint=""):
+    """Accept four shapes:
     - EditThisCookie / DevTools 'Copy as JSON': list of dicts with
       `name`, `value`, `domain`, `path`, `secure`, `httpOnly`,
       `sameSite`, `expirationDate` (or `expires`).
     - Netscape cookies.txt: `# domain TAB flag TAB path TAB secure TAB expiry TAB name TAB value` lines.
-    - Browser-cookies module dict {name: value} — flattest, scoped to
-      the requested domain.
+    - Flat dict {name: value} — scoped to domain_hint.
+    - HTTP `Cookie:` request header — `name=value; name=value; ...`.
+      Captured by copying the cookie line from DevTools → Network tab →
+      Headers → Request Headers. This is the easiest non-extension path
+      and includes httpOnly cookies (because the BROWSER sends them;
+      only JS can't read them).
+
+    domain_hint: when format doesn't carry domain info (flat map,
+    Cookie header), attach this domain to every cookie. Caller should
+    pass the normalized target domain (e.g. 'linkedin.com').
 
     Returns a list of CDP-shaped cookie dicts ready for Network.setCookie."""
     cookies = []
     text = blob.strip()
+    # Strip a leading 'Cookie:' / 'cookie:' label if present (common
+    # when the user copies the whole header line from DevTools).
+    if text.lower().startswith("cookie:"):
+        text = text.split(":", 1)[1].strip()
     # Try JSON first.
     try:
         data = json.loads(text)
@@ -100,6 +112,8 @@ def parse_cookies(blob):
                     continue
                 ck = _from_dict(c)
                 if ck:
+                    if "domain" not in ck and domain_hint:
+                        ck["domain"] = "." + domain_hint
                     cookies.append(ck)
             return cookies
         if isinstance(data, dict):
@@ -107,13 +121,19 @@ def parse_cookies(blob):
             if "name" in data and "value" in data:
                 ck = _from_dict(data)
                 if ck:
+                    if "domain" not in ck and domain_hint:
+                        ck["domain"] = "." + domain_hint
                     return [ck]
             for name, val in data.items():
-                cookies.append({"name": name, "value": str(val)})
+                ck = {"name": name, "value": str(val), "path": "/"}
+                if domain_hint:
+                    ck["domain"] = "." + domain_hint
+                cookies.append(ck)
             return cookies
     except json.JSONDecodeError:
         pass
     # Try Netscape cookies.txt
+    netscape_hits = 0
     for line in text.splitlines():
         s = line.strip()
         if not s or s.startswith("#"):
@@ -127,6 +147,25 @@ def parse_cookies(blob):
                     ck["expires"] = int(expiry)
             except ValueError:
                 pass
+            cookies.append(ck)
+            netscape_hits += 1
+    if netscape_hits:
+        return cookies
+    # Last resort: HTTP Cookie header format `name=value; name=value`.
+    # No structural fields — caller must supply domain_hint.
+    if ";" in text or "=" in text:
+        for raw in text.replace("\n", " ").split(";"):
+            kv = raw.strip()
+            if not kv or "=" not in kv:
+                continue
+            name, _, value = kv.partition("=")
+            name = name.strip()
+            value = value.strip()
+            if not name:
+                continue
+            ck = {"name": name, "value": value, "path": "/"}
+            if domain_hint:
+                ck["domain"] = "." + domain_hint
             cookies.append(ck)
     return cookies
 
@@ -243,7 +282,7 @@ def navigate_and_capture(url, timeout_s=45):
 
 def cmd_store(domain, blob):
     domain = normalize_domain(domain)
-    cookies = parse_cookies(blob)
+    cookies = parse_cookies(blob, domain_hint=domain)
     if not cookies:
         print(json.dumps({"ok": False, "reason": "parse_failed",
                           "user_message": "🔒 Couldn't parse any cookies from that blob. Send a JSON array of cookie objects or a Netscape cookies.txt block."}))
