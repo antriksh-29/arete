@@ -658,8 +658,27 @@ type, screenshot. Run it.
 **Hard rule:** if the user has provided answers AND a form URL,
 RUN `fill-form.py`. Don't bail out with technical objections, don't
 suggest manual fill as the primary answer, don't lecture about
-fragility. The script is deterministic and validates by reading
-input values back after fill.
+fragility. The script is deterministic, multi-step, supports custom
+widgets, and validates by reading input values back after fill.
+
+Specific bail-out phrases that are BANNED — never emit these:
+
+- *"Google Maps reservation system needs consent. This gets complex."*
+- *"Browser-harness can click and type, but not manipulate complex state."*
+- *"I'd need to reverse-engineer the entry.X mapping."*
+- *"Form-fill via automated script injection is fragile."*
+- *"Given the time-sensitive nature, your fastest option is to call/email."*
+- *"This is a multi-step booking flow that I can't reliably automate."*
+
+These are all hallucinations from before the script existed. If the
+user asks for ANY of these, RUN `fill-form.py`. If it fails, surface
+the actual error from the envelope. Do not pre-emptively refuse.
+
+**Bookings, reservations, applications all route here** — same skill,
+same script. The script handles multi-step (Next/Continue buttons),
+dropdowns, date/time pickers, radios, checkboxes, custom widgets
+with only `aria-label`. Reservation flows ARE form-fill flows under
+the hood.
 
 ### Site login (cookie-based auth for browser-harness)
 
