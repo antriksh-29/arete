@@ -546,7 +546,6 @@ DATE_DROPDOWN_JS = r"""
   // selectable trigger (button / combobox / input).
   var triggers = queryAll('button, [role="combobox"], [role="button"], select, input[readonly]');
   function nearLabel(el, words){
-    // Walk up 4 ancestors looking for text "date" / "Tarih" / "fecha".
     var n = el; var depth = 0;
     while (n && depth < 4){
       var txt = (n.innerText || n.textContent || '').toLowerCase();
@@ -560,9 +559,14 @@ DATE_DROPDOWN_JS = r"""
     if (r.width === 0 || r.height === 0) return false;
     var lab = (el.getAttribute('aria-label') || '').toLowerCase();
     if (lab.indexOf('date') >= 0) return true;
+    // GMR widget has a DIV[role=button] with text "Today"/"Tomorrow"/
+    // weekday-name as the date trigger — no aria-label, no haspopup.
+    // Match on the visible text shape.
+    var txt = (el.innerText || '').trim();
+    if (/^(Today|Tomorrow)$/i.test(txt)) return true;
+    if (/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+/i.test(txt)) return true;
     // Fallback — short trigger whose nearby text includes "Date"
-    var t2 = (el.innerText || '').trim();
-    if (t2.length < 40 && nearLabel(el, ['date'])) return true;
+    if (txt.length < 40 && nearLabel(el, ['date'])) return true;
     return false;
   });
   if (!dateTrigger){
@@ -581,7 +585,14 @@ DATE_DROPDOWN_JS = r"""
   // afterwards so 600ms is enough for most popovers.
   var end = Date.now() + 600;
   while (Date.now() < end){}
-  // Look for option that matches one of our labels.
+
+  // Two dropdown shapes we have to handle:
+  //  (A) "Today" / "Tomorrow" / "Mon Aug 14" — a list of [role=option]
+  //      / li / [role=menuitem]. Match against label strings.
+  //  (B) Calendar grid — GMR widget. Cells contain only a day-of-month
+  //      number like "12". Need to navigate to the target month (via
+  //      next/prev arrows) and click the cell whose text equals the
+  //      target's day-of-month, scoped to the visible month.
   var options = queryAll('[role="option"], li, [role="menuitem"], div[tabindex="0"]');
   var pick = null;
   for (var i = 0; i < options.length && !pick; i++){
@@ -593,12 +604,138 @@ DATE_DROPDOWN_JS = r"""
       }
     }
   }
-  if (!pick){
-    return JSON.stringify({clicked: false, reason: 'date_option_not_found', target: t, labels_tried: labels});
+  if (pick){
+    pick.scrollIntoView({block: 'center'});
+    pick.click();
+    return JSON.stringify({clicked: true, kind: 'date_dropdown', target: t, picked: (pick.innerText||'').trim().slice(0, 40)});
   }
-  pick.scrollIntoView({block: 'center'});
-  pick.click();
-  return JSON.stringify({clicked: true, kind: 'date_dropdown', target: t, picked: (pick.innerText||'').trim().slice(0, 40)});
+
+  // Calendar path. Only for ISO targets (today/tomorrow already tried
+  // via labels above and we'd have matched if they existed).
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)){
+    var d = new Date(t + 'T00:00:00');
+    var months = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+    var targetMonth = months[d.getMonth()];
+    var targetYear = d.getFullYear();
+    var targetDay = d.getDate();
+    function visibleGrid(){
+      // GMR's calendar doesn't use role="grid" — fall back to scanning
+      // the whole document. Returning `document` makes pickCell search
+      // every visible button on the page; aria-label match is strict
+      // enough to disambiguate.
+      var grids = queryAll('[role="grid"], table, div[role="application"]')
+        .filter(function(g){
+          var r = g.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) return false;
+          var s = window.getComputedStyle(g);
+          return s.display !== 'none' && s.visibility !== 'hidden';
+        });
+      return grids[0] || document;
+    }
+    function visibleMonthHeader(){
+      // GMR's calendar shows "May 2026" as a heading sibling of the grid.
+      var hs = queryAll('h1, h2, h3, [role="heading"], [aria-live]');
+      for (var i = 0; i < hs.length; i++){
+        var txt = (hs[i].innerText || '').trim().toLowerCase();
+        if (!txt || txt.length > 30) continue;
+        var m = txt.match(/(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})/);
+        if (m){
+          var r = hs[i].getBoundingClientRect();
+          var s = window.getComputedStyle(hs[i]);
+          if (r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'){
+            return {el: hs[i], month: m[1], year: parseInt(m[2], 10)};
+          }
+        }
+      }
+      return null;
+    }
+    function findArrow(direction){
+      // direction: "next" or "prev"
+      var btns = queryAll('button, [role="button"], [aria-label]')
+        .filter(function(b){
+          var r = b.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) return false;
+          var s = window.getComputedStyle(b);
+          if (s.display === 'none' || s.visibility === 'hidden') return false;
+          var lab = ((b.getAttribute('aria-label') || '') + ' ' + (b.innerText || '')).toLowerCase();
+          if (direction === 'next' && /next|forward|→|›/.test(lab)) return true;
+          if (direction === 'prev' && /prev|previous|back|←|‹/.test(lab)) return true;
+          return false;
+        });
+      return btns[0] || null;
+    }
+    function pickCell(grid, day, monthName){
+      // Cells inside the calendar have aria-label like
+      // "Tuesday, 12 May" — much more unambiguous than the text-only
+      // "12". Match on aria-label first; fall back to text "12" if
+      // aria-label is unavailable. Filter out aria-disabled cells
+      // (past dates appear with the same number but greyed out).
+      var cells = Array.from(grid.querySelectorAll('[role="gridcell"], [role="button"], button, td'));
+      var monthCap = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+      // Build acceptable aria-label fragments (case-insensitive).
+      var labelFrags = [
+        ', ' + day + ' ' + monthName.toLowerCase(),
+        ', ' + day + ' ' + monthCap,
+        ' ' + day + ' ' + monthCap + ' ',
+        ' ' + day + ' ' + monthCap,
+      ];
+      for (var i = 0; i < cells.length; i++){
+        var c = cells[i];
+        if (c.getAttribute('aria-disabled') === 'true') continue;
+        if (c.disabled) continue;
+        var s = window.getComputedStyle(c);
+        if (s.pointerEvents === 'none') continue;
+        if (parseFloat(s.opacity) < 0.5) continue;
+        var aria = (c.getAttribute('aria-label') || '').toLowerCase();
+        if (aria){
+          var matched = false;
+          for (var lf = 0; lf < labelFrags.length; lf++){
+            if (aria.indexOf(labelFrags[lf].toLowerCase()) >= 0){ matched = true; break; }
+          }
+          if (matched) return c;
+        } else {
+          var txt = (c.innerText || c.textContent || '').trim();
+          if (txt === String(day)) return c;
+        }
+      }
+      return null;
+    }
+    // Navigate up to 12 months in either direction to land on the
+    // target month/year, then click the day cell.
+    for (var nav = 0; nav < 12; nav++){
+      var header = visibleMonthHeader();
+      if (!header) break;
+      if (header.month === targetMonth && header.year === targetYear){
+        var grid = visibleGrid();
+        if (!grid){
+          return JSON.stringify({clicked: false, reason: 'calendar_grid_not_found',
+                                  header: header.month + ' ' + header.year});
+        }
+        var cell = pickCell(grid, targetDay, targetMonth);
+        if (!cell){
+          return JSON.stringify({clicked: false, reason: 'date_cell_not_found',
+                                  target_day: targetDay, header: header.month + ' ' + header.year});
+        }
+        cell.scrollIntoView({block: 'center'});
+        cell.click();
+        return JSON.stringify({clicked: true, kind: 'calendar', target: t,
+                                picked: header.month + ' ' + targetDay + ', ' + header.year});
+      }
+      // Decide direction
+      var curIdx = months.indexOf(header.month) + header.year * 12;
+      var tgtIdx = months.indexOf(targetMonth) + targetYear * 12;
+      var direction = (tgtIdx > curIdx) ? 'next' : 'prev';
+      var arrow = findArrow(direction);
+      if (!arrow){
+        return JSON.stringify({clicked: false, reason: 'no_' + direction + '_arrow',
+                                header: header.month + ' ' + header.year});
+      }
+      arrow.click();
+      var w = Date.now() + 350;
+      while (Date.now() < w){}
+    }
+  }
+  return JSON.stringify({clicked: false, reason: 'date_option_not_found', target: t, labels_tried: labels});
 })('DATE_PLACEHOLDER')
 """
 
@@ -657,7 +794,19 @@ TIME_SLOT_CLICK_JS = r"""
       .filter(function(b){
         var r = b.getBoundingClientRect();
         var s = window.getComputedStyle(b);
-        return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
+        if (!(r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none')) return false;
+        // Filter out calendar cells — a button inside a [role=grid] or
+        // calendar container is almost certainly a day-of-month cell,
+        // not a time slot. Without this, parse24h("22") matches and we
+        // accidentally click May 22 thinking it's 10 PM.
+        var n = b;
+        while (n && n !== document.body){
+          var role = n.getAttribute && n.getAttribute('role');
+          if (role === 'grid' || role === 'gridcell' || role === 'application') return false;
+          if (n.tagName === 'TABLE') return false;
+          n = n.parentElement;
+        }
+        return true;
       });
   }
   function parse24h(s){
