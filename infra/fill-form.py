@@ -156,14 +156,58 @@ def bh_run(script, timeout=180):
 # select-options/date-input metadata.
 FIELDS_JS = r"""
 (function(){
+  function _ancestorHidden(el){
+    var n = el;
+    while (n && n !== document.body){
+      if (n.getAttribute && n.getAttribute('aria-hidden') === 'true') return true;
+      var s = window.getComputedStyle(n);
+      if (s.display === 'none' || s.visibility === 'hidden') return true;
+      if (parseFloat(s.opacity) < 0.05) return true;
+      n = n.parentElement;
+    }
+    return false;
+  }
   function visible(el){
     if (!el) return false;
     var r = el.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return false;
     if (!el.offsetParent && el.tagName !== 'BODY') return false;
+    if (_ancestorHidden(el)) return false;
     var s = window.getComputedStyle(el);
-    return s.visibility !== 'hidden' && s.display !== 'none';
+    if (s.visibility === 'hidden' || s.display === 'none') return false;
+    // Topmost-at-centre check: filters inputs covered by a modal
+    // overlay. The EazyDiner guest-checkout step renders a new modal
+    // over the old inline form; this rejects the now-stale inputs.
+    var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    if (cx >= 0 && cy >= 0 && cx <= window.innerWidth && cy <= window.innerHeight){
+      var hit = document.elementFromPoint(cx, cy);
+      if (hit && hit !== el && !el.contains(hit) && !hit.contains(el)) return false;
+    }
+    return true;
   }
+  // Prefer the most recent visible dialog/modal as the discovery
+  // scope — the topmost surface is where the user-actionable fields
+  // are. Falls back to the whole document if no modal is present.
+  function _discoveryRoot(){
+    var dialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]'))
+      .filter(function(d){
+        var r = d.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) return false;
+        var s = window.getComputedStyle(d);
+        return s.display !== 'none' && s.visibility !== 'hidden';
+      });
+    if (dialogs.length === 0) return document;
+    // Pick the dialog with the largest rendered area — typically the
+    // foreground one (small confirmation popups have smaller area).
+    var best = dialogs[0], bestArea = 0;
+    dialogs.forEach(function(d){
+      var r = d.getBoundingClientRect();
+      var a = r.width * r.height;
+      if (a > bestArea){ bestArea = a; best = d; }
+    });
+    return best;
+  }
+  var ROOT = _discoveryRoot();
   function labelFor(el){
     // Direct <label for=...>
     if (el.id){
@@ -196,7 +240,7 @@ FIELDS_JS = r"""
   var seen = new Set();
   var fields = [];
   // Pass 1 — Google Forms-style listitems (rich heading + radios/checkboxes)
-  Array.from(document.querySelectorAll('div[role="listitem"]')).forEach(function(li){
+  Array.from(ROOT.querySelectorAll('div[role="listitem"]')).forEach(function(li){
     if (!visible(li)) return;
     var h = li.querySelector('[role="heading"], legend');
     var heading = h && h.innerText.trim() ? h.innerText.trim().replace(/\s*\*\s*$/, '') : '';
@@ -228,7 +272,7 @@ FIELDS_JS = r"""
   // Pass 2 — Plain HTML inputs not inside a listitem (generic forms,
   // checkout pages, hotel booking pages, etc.). Skip ones we already
   // captured.
-  Array.from(document.querySelectorAll('input, textarea, select')).forEach(function(el){
+  Array.from(ROOT.querySelectorAll('input, textarea, select')).forEach(function(el){
     if (!visible(el)) return;
     if (el.type === 'hidden' || el.type === 'submit' || el.type === 'button' || el.type === 'reset' || el.type === 'file') return;
     if (el.closest('div[role="listitem"]')) return;
@@ -741,22 +785,64 @@ EXECUTE_PLAN_JS = r"""
     var n = el.getAttribute('name');
     return n || '';
   }
+  function _ancestorHidden(el){
+    var n = el;
+    while (n && n !== document.body){
+      if (n.getAttribute && n.getAttribute('aria-hidden') === 'true') return true;
+      var s = window.getComputedStyle(n);
+      if (s.display === 'none' || s.visibility === 'hidden') return true;
+      if (parseFloat(s.opacity) < 0.05) return true;
+      n = n.parentElement;
+    }
+    return false;
+  }
+  function _topmostAt(el){
+    // Returns true if `el` is the element that would receive a click
+    // at its visual centre. Filters out stale form inputs covered by
+    // a modal overlay (the bug at the EazyDiner guest-checkout step).
+    var r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    if (cx < 0 || cy < 0 || cx > window.innerWidth || cy > window.innerHeight) return true; // off-screen — let scroll handle later
+    var hit = document.elementFromPoint(cx, cy);
+    if (!hit) return false;
+    return hit === el || el.contains(hit) || hit.contains(el);
+  }
+  function _isFillable(el){
+    if (el.type === 'hidden' || el.type === 'submit' || el.type === 'button') return false;
+    var r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    if (!el.offsetParent && el.tagName !== 'BODY') return false;
+    if (_ancestorHidden(el)) return false;
+    if (!_topmostAt(el)) return false;
+    var s = window.getComputedStyle(el);
+    if (s.visibility === 'hidden' || s.display === 'none') return false;
+    return true;
+  }
   function findInputByLabel(heading){
     var target = norm(heading);
-    var inputs = Array.from(document.querySelectorAll('input, textarea, select'));
-    return inputs.find(function(el){
-      if (el.type === 'hidden' || el.type === 'submit' || el.type === 'button') return false;
-      var r = el.getBoundingClientRect();
-      if (r.width === 0 || r.height === 0) return false;
-      // offsetParent==null catches display:none on element OR any
-      // ancestor — required to skip stale forms still in DOM but
-      // hidden by a new modal/route.
-      if (!el.offsetParent && el.tagName !== 'BODY') return false;
-      var s = window.getComputedStyle(el);
-      if (s.visibility === 'hidden' || s.display === 'none') return false;
-      var lbl = norm(labelFor(el));
-      return lbl && (lbl === target || lbl.indexOf(target) >= 0 || target.indexOf(lbl) >= 0);
-    });
+    // Prefer inputs inside a visible dialog/modal — the EazyDiner
+    // guest-checkout step renders a fresh modal over the old inline
+    // form; scoping to it avoids re-filling the hidden stale fields.
+    var dialog = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]'))
+      .find(function(d){
+        var r = d.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) return false;
+        var s = window.getComputedStyle(d);
+        return s.display !== 'none' && s.visibility !== 'hidden';
+      });
+    var scopes = dialog ? [dialog, document] : [document];
+    for (var si = 0; si < scopes.length; si++){
+      var scope = scopes[si];
+      var inputs = Array.from(scope.querySelectorAll('input, textarea, select'));
+      var match = inputs.find(function(el){
+        if (!_isFillable(el)) return false;
+        var lbl = norm(labelFor(el));
+        return lbl && (lbl === target || lbl.indexOf(target) >= 0 || target.indexOf(lbl) >= 0);
+      });
+      if (match) return match;
+    }
+    return null;
   }
   function _scoreMatch(a, b){
     var nA = norm(a), nB = norm(b);
