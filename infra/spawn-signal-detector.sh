@@ -45,3 +45,17 @@ nohup openclaw agent \
   >> "$LOG" 2>&1 &
 
 echo "ok: signal-detector spawned (pid $!, log $LOG)"
+
+# ── Intent-router (synchronous) ────────────────────────────────
+# Run the deterministic intent classifier and append its output
+# so the agent's FIRST tool call returns the routing directive.
+# This avoids relying on the agent to fire a second tool call
+# (Rule 0.5 in AGENTS.md was being skipped in practice).
+echo
+echo "─── INTENT ROUTER OUTPUT (binding directive — follow verbatim) ───"
+if [ -x "$HOME/bin/intent-router.sh" ]; then
+  "$HOME/bin/intent-router.sh" "$USER_MSG"
+else
+  echo "INTENT=chat"
+  echo "REASON=router_not_installed"
+fi
