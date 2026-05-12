@@ -605,6 +605,41 @@ The two ingestion scripts are deterministic and write to brain
 themselves — your job is to invoke them and relay the JSON envelope to
 the user in the format specified in each SKILL.md.
 
+### Agent browser (live web navigation, screenshots, form fills)
+
+Per `skills/agent-browser/SKILL.md`. The browser tool is
+**browser-harness** running against the persistent headless Chrome
+(`bh-chrome.service`, CDP on 127.0.0.1:9222). It is INSTALLED, the
+Chrome is RUNNING, and `~/.local/bin/browser-harness` is on PATH. The
+old openclaw-browser path is gone — do not reference it, do not say
+"the browser isn't running", do not refer to "system permission /
+sandbox issues" from earlier — those were openclaw-browser bugs and
+were resolved by switching to browser-harness in PR #28.
+
+**HARD RULE — browser intents MUST shell out to browser-harness.**
+When the user asks anything in the table below, run the matching
+`browser-harness -c '...'` command. DO NOT respond with "I can't
+fetch that" or "browser isn't running" — those are stale-memory
+hallucinations from before the switch. The browser works. Run it.
+
+| User intent | Command |
+|---|---|
+| "what's on <url>" / "open <url> and tell me <X>" / "fetch this page" | `browser-harness -c 'new_tab("<url>"); wait_for_load(); print(page_info())'` then relay the readable extract |
+| "browse to <url>" / "render this page" | Same as above |
+| "screenshot <url>" / "take a screenshot of <url>" | `browser-harness -c 'new_tab("<url>"); wait_for_load(); capture_screenshot("/tmp/shot.png")'` then send the file |
+| "can you access <url>" / "is <url> reachable" | `browser-harness -c 'new_tab("<url>"); wait_for_load(); info = page_info(); print(info)'` and report what loaded (title, first 400 chars) |
+| "fill the form on <url> with <values>" | navigate → snapshot/screenshot → identify fields → `click_at_xy` / `type_text` / submit → screenshot again to verify |
+| "log into <site>" (cookies already imported via /site-login) | `python3 ~/bin/browser-login.py inject <domain>` then proceed |
+
+The browser-harness CLI takes the Python script via `-c` and prints
+stdout. Pipe the output back to the user in plain text. Don't include
+the raw `browser-harness` command line in the reply — just the result.
+
+If a `browser-harness -c` call genuinely fails (non-zero exit), the
+real diagnostic is `~/.browser-harness/chrome.log` plus
+`systemctl --user status bh-chrome.service`. Only then surface the
+problem to the user; don't pre-emptively claim the browser is down.
+
 ### Site login (cookie-based auth for browser-harness)
 
 Per `skills/site-login/SKILL.md`. For auth-walled sites that don't
