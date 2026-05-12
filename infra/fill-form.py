@@ -159,7 +159,8 @@ FIELDS_JS = r"""
   function visible(el){
     if (!el) return false;
     var r = el.getBoundingClientRect();
-    if (r.width === 0 && r.height === 0) return false;
+    if (r.width === 0 || r.height === 0) return false;
+    if (!el.offsetParent && el.tagName !== 'BODY') return false;
     var s = window.getComputedStyle(el);
     return s.visibility !== 'hidden' && s.display !== 'none';
   }
@@ -424,6 +425,20 @@ function queryAll(sel){
 
 NEXT_CLICK_JS = r"""
 (function(){
+  // Yield if a provider-chooser modal is on screen so the
+  // provider-pick handler can drive instead of clicking an obscured
+  // Continue/Next button behind it.
+  var modalHeadings = Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"]'));
+  for (var mh = 0; mh < modalHeadings.length; mh++){
+    var mt = (modalHeadings[mh].innerText || '').trim();
+    if (/^(continue\s+with|choose\s+(your\s+)?(provider|booking)|select\s+(your\s+)?(provider|booking))/i.test(mt)){
+      var br = modalHeadings[mh].getBoundingClientRect();
+      var bs = window.getComputedStyle(modalHeadings[mh]);
+      if (br.width > 0 && br.height > 0 && bs.visibility !== 'hidden' && bs.display !== 'none'){
+        return JSON.stringify({clicked: false, reason: 'provider_modal_visible'});
+      }
+    }
+  }
   var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"], input[type="button"], a'));
   var nextRe = /^(next|continue|weiter|suivant|siguiente|continuar|continua|avanti|次へ|下一步|→)\b/i;
   var submitRe = /^(submit|send|senden|gönder|enviar|envoyer|invia|送信)\b/i;
@@ -518,27 +533,26 @@ TIME_SLOT_CLICK_JS = r"""
   if (want === null) return JSON.stringify({clicked: false, reason: 'unparseable_time', target: String(targetTime)});
   var btns = visibleButtons();
   var bestSlot = null, bestDelta = 1e9;
+  var allSlots = [];
   for (var i = 0; i < btns.length; i++){
     var t = (btns[i].innerText || '').trim();
     if (t.length > 40) continue;  // ignore long buttons (search box etc)
     var tm = parse24h(t);
     if (tm === null) continue;
+    allSlots.push(t.slice(0, 60));
     var delta = Math.abs(tm - want);
-    if (delta < bestDelta && delta <= 30){
+    if (delta < bestDelta){
       bestDelta = delta;
       bestSlot = btns[i];
     }
   }
   if (bestSlot){
+    var nearTarget = bestDelta > 30;
     bestSlot.scrollIntoView({block: 'center'});
     bestSlot.click();
-    return JSON.stringify({clicked: true, kind: 'time_slot', text: (bestSlot.innerText||'').trim().slice(0, 60), delta_min: bestDelta});
+    return JSON.stringify({clicked: true, kind: 'time_slot', text: (bestSlot.innerText||'').trim().slice(0, 60), delta_min: bestDelta, near_target: nearTarget, available: allSlots.slice(0, 20)});
   }
-  var available = btns.map(function(b){
-    var t = (b.innerText||'').trim();
-    return (t.length < 40 && parse24h(t) !== null) ? t.slice(0, 60) : null;
-  }).filter(Boolean).slice(0, 20);
-  return JSON.stringify({clicked: false, reason: 'no_slot_within_tolerance', target: String(targetTime), available: available});
+  return JSON.stringify({clicked: false, reason: 'no_slots_found', target: String(targetTime), available: allSlots.slice(0, 20)});
 })('TIME_PLACEHOLDER')
 """
 
@@ -575,9 +589,77 @@ OFFER_RADIO_CLICK_JS = r"""
 """
 
 
+# Google Maps Reserve (and similar aggregators) show a "Continue with
+# <Provider>" modal after the user picks date/time. Click the first
+# visible provider option to navigate to that provider's actual booking
+# page. Default preference: EazyDiner > Swiggy > anything else.
+PROVIDER_PICK_JS = r"""
+(function(prefList){
+""" + FRAMES_HELPER + r"""
+  var prefs = (prefList || '').split(',').map(function(s){return s.trim().toLowerCase();}).filter(Boolean);
+  if (!prefs.length) prefs = ['eazydiner', 'swiggy', 'opentable', 'resy', 'tock'];
+  // Only fire if a "Continue with <Provider>" modal is on screen —
+  // detected by a heading element containing 'continue with' or
+  // 'choose'. Otherwise we mis-fire on ToS links / footer mentions of
+  // the provider name on the destination page.
+  var modalDetected = false;
+  var headings = queryAll('h1, h2, h3, [role="heading"], [role="dialog"] *');
+  for (var hi = 0; hi < headings.length; hi++){
+    var ht = (headings[hi].innerText || '').trim().toLowerCase();
+    if (/^(continue\s+with|choose\s+(your\s+)?(provider|booking)|select\s+(your\s+)?(provider|booking))/i.test(ht)){
+      modalDetected = true; break;
+    }
+  }
+  if (!modalDetected){
+    return JSON.stringify({clicked: false, reason: 'no_provider_modal'});
+  }
+  // Pick a row whose text is a near-exact provider name or
+  // "Continue with <Provider>". Reject anything longer (ToS links,
+  // descriptions, etc).
+  var rows = queryAll('button, [role="button"], a, li, [role="listitem"], div[tabindex]')
+    .filter(function(b){
+      var r = b.getBoundingClientRect();
+      var s = window.getComputedStyle(b);
+      if (r.width === 0 || r.height === 0) return false;
+      if (s.visibility === 'hidden' || s.display === 'none') return false;
+      var t = (b.innerText || '').trim();
+      if (!t || t.length > 35) return false;
+      if (b.querySelector('input, textarea, select')) return false;
+      return true;
+    });
+  for (var p = 0; p < prefs.length; p++){
+    var pat = prefs[p];
+    var patRe = new RegExp('^(continue\\s+with\\s+)?' + pat + '\\s*$', 'i');
+    for (var i = 0; i < rows.length; i++){
+      var t = (rows[i].innerText || '').trim();
+      if (patRe.test(t)){
+        rows[i].scrollIntoView({block: 'center'});
+        rows[i].click();
+        return JSON.stringify({clicked: true, kind: 'provider_pick', text: t, preferred: pat});
+      }
+    }
+  }
+  return JSON.stringify({clicked: false, reason: 'no_provider_match', available: rows.map(function(r){return (r.innerText||'').trim().slice(0,40);}).slice(0,10)});
+})('PROVIDER_PLACEHOLDER')
+"""
+
+
 CTA_CLICK_JS = r"""
 (function(){
 """ + FRAMES_HELPER + r"""
+  // Yield if a "Continue with <Provider>" / "Choose provider" modal
+  // is on screen — provider-pick handler should drive that, not CTA.
+  var modalHeadings = queryAll('h1, h2, h3, [role="heading"]');
+  for (var mh = 0; mh < modalHeadings.length; mh++){
+    var mt = (modalHeadings[mh].innerText || '').trim();
+    if (/^(continue\s+with|choose\s+(your\s+)?(provider|booking)|select\s+(your\s+)?(provider|booking))/i.test(mt)){
+      var br = modalHeadings[mh].getBoundingClientRect();
+      var bs = window.getComputedStyle(modalHeadings[mh]);
+      if (br.width > 0 && br.height > 0 && bs.visibility !== 'hidden' && bs.display !== 'none'){
+        return JSON.stringify({clicked: false, reason: 'provider_modal_visible'});
+      }
+    }
+  }
   var btns = queryAll('[role="button"], button, input[type="submit"], input[type="button"], a');
   var ctaRe = /^(book(\s+a\s+table)?|reserve(\s+a\s+table)?|make\s+(a\s+)?reservation|book\s+now|order\s+(now|online)|reserve\s+now|table\s+booking|proceed(\s+to\s+(book|checkout|payment))?|continue\s+to\s+(book|checkout)|confirm\s+(and\s+)?(book|booking|reservation)|tisch\s+reservieren|tisch\s+buchen|reservar|réserver|prenotare)\b/i;
   var consentRe = /^(accept(\s+all)?|alle\s+akzeptieren|akzeptieren|tout\s+accepter|aceptar(\s+todo)?|accetta(\s+tutto)?|reject|alle\s+ablehnen)\b/i;
@@ -665,7 +747,13 @@ EXECUTE_PLAN_JS = r"""
     return inputs.find(function(el){
       if (el.type === 'hidden' || el.type === 'submit' || el.type === 'button') return false;
       var r = el.getBoundingClientRect();
-      if (r.width === 0 && r.height === 0) return false;
+      if (r.width === 0 || r.height === 0) return false;
+      // offsetParent==null catches display:none on element OR any
+      // ancestor — required to skip stale forms still in DOM but
+      // hidden by a new modal/route.
+      if (!el.offsetParent && el.tagName !== 'BODY') return false;
+      var s = window.getComputedStyle(el);
+      if (s.visibility === 'hidden' || s.display === 'none') return false;
       var lbl = norm(labelFor(el));
       return lbl && (lbl === target || lbl.indexOf(target) >= 0 || target.indexOf(lbl) >= 0);
     });
@@ -911,6 +999,7 @@ def build_driver_script(url, all_answers, submit, shot_path, max_steps=6):
     offer_radio_click_js = OFFER_RADIO_CLICK_JS
     time_slot_click_js = TIME_SLOT_CLICK_JS
     meal_period_click_js = MEAL_PERIOD_CLICK_JS
+    provider_pick_js = PROVIDER_PICK_JS
     shot_after_submit = shot_path.replace(".png", "-after-submit.png")
     shot_step_prefix = shot_path.replace(".png", "-step")
     return f"""
@@ -956,17 +1045,21 @@ def soft_match(a, b):
 
 
 def build_plan(headings, answers, used_keys):
+    # used_keys is kept for the time-slot/meal-period branches (clicks
+    # don't want to re-fire). For text/select/radio answers we re-fill
+    # on every step — page navigation within an SPA (no URL change)
+    # surfaces fresh empty fields with the same heading names; the
+    # native value setter is idempotent on already-correct values.
     plan = []
-    remaining_keys = [k for k in answers if k not in used_keys]
+    available_keys = list(answers.keys())
     for h in headings:
         chosen = None
-        for k in remaining_keys:
+        for k in available_keys:
             if soft_match(k, h):
                 chosen = k; break
         if chosen:
             plan.append({{'heading': h, 'answer': answers[chosen]}})
-            remaining_keys.remove(chosen)
-            used_keys.add(chosen)
+            available_keys.remove(chosen)
     return plan
 
 
@@ -981,7 +1074,16 @@ new_tab({url!r})
 wait_for_load()
 time.sleep(4)
 
+prev_url = ''
 for step in range({max_steps}):
+    # 0. Check URL — reset used_keys on navigation so the new page's
+    #    forms can be re-filled with the same answers.
+    u = cdp('Runtime.evaluate', expression='location.href', returnByValue=True)
+    cur_url = u.get('result', {{}}).get('value', '')
+    if prev_url and cur_url != prev_url:
+        used_keys = set()
+    prev_url = cur_url
+
     # 1. Discover current page fields
     r = cdp('Runtime.evaluate', expression={fields_js!r}, returnByValue=True)
     fields_raw = r.get('result', {{}}).get('value', '[]')
@@ -1014,20 +1116,21 @@ for step in range({max_steps}):
     step_records.append({{'step': step, 'fields_seen': len(headings),
                           'plan_size': len(plan), 'verify_state': verify}})
 
-    # 5. Look for Next button. If found, click and re-loop.
-    nb = cdp('Runtime.evaluate', expression={next_click_js!r}, returnByValue=True)
-    nb_result = json.loads(nb.get('result', {{}}).get('value', '{{}}'))
-    if nb_result.get('clicked'):
-        time.sleep(3)  # let next page load
-        continue
+    # 5. Look for Next button. Only fire if we actually filled fields
+    #    this iteration — otherwise a generic "Continue" on a booking
+    #    widget loops forever without picking a time slot first.
+    if plan:
+        nb = cdp('Runtime.evaluate', expression={next_click_js!r}, returnByValue=True)
+        nb_result = json.loads(nb.get('result', {{}}).get('value', '{{}}'))
+        if nb_result.get('clicked'):
+            time.sleep(3)  # let next page load
+            continue
 
-    # 6. If we saw 0 fillable form fields this step, the page might
-    #    be a button-grid booking widget (District/OpenTable/Resy
-    #    style). Try, in order:
-    #    (a) Click a time-slot button matching the user's requested time
-    #    (b) Click an "Accept all" consent button
-    #    (c) Click a "Book a Table" / "Reserve" CTA
-    if not plan:
+    # 6. Universal action tier. Tried regardless of plan-fill, in
+    #    order: time-slot → CTA → provider-pick → offer-radio. The
+    #    plan-non-empty case falls through here when Next didn't
+    #    match (e.g., form was filled but no Continue/Next button).
+    if True:
         ts_answer = None
         for k in all_answers:
             if k in used_keys: continue
@@ -1035,10 +1138,15 @@ for step in range({max_steps}):
             if any(w in nk for w in ['time', 'slot', 'when', 'hour']):
                 ts_answer = all_answers[k]; break  # do NOT consume yet — we may try twice
 
+        # Time-slot and meal-period only when plan was empty — once we
+        # have form fields to fill, slot grids visible on the side
+        # (e.g., GMR widget under the EazyDiner modal) are noise.
+        ts_answer_allowed = (not plan)
+
         # (a) If we have a time target AND haven't already done a
         #     meal-period click, try clicking Lunch/Dinner/Brunch first
         #     so the slot list refreshes. ONE meal-period click per run.
-        if ts_answer and not any(r.get('meal_period_clicked') for r in step_records):
+        if ts_answer_allowed and ts_answer and not any(r.get('meal_period_clicked') for r in step_records):
             mp_js = ({meal_period_click_js!r}).replace('TIME_PLACEHOLDER', str(ts_answer).replace("'", ""))
             mp = cdp('Runtime.evaluate', expression=mp_js, returnByValue=True)
             mp_result = json.loads(mp.get('result', {{}}).get('value', '{{}}'))
@@ -1048,7 +1156,7 @@ for step in range({max_steps}):
                 continue
 
         # (b) Time-slot button
-        if ts_answer:
+        if ts_answer_allowed and ts_answer:
             ts_js = ({time_slot_click_js!r}).replace('TIME_PLACEHOLDER', str(ts_answer).replace("'", ""))
             ts = cdp('Runtime.evaluate', expression=ts_js, returnByValue=True)
             ts_result = json.loads(ts.get('result', {{}}).get('value', '{{}}'))
@@ -1062,7 +1170,10 @@ for step in range({max_steps}):
                 all_errors.append({{'heading': 'time_slot', 'reason': ts_result.get('reason', 'no_slot_click'),
                                     'available': ts_result.get('available', []), 'step': step}})
 
-        # (c) CTA / consent
+        # (c) CTA / consent — try first so that after we just filled a
+        #     form, clicking the form's primary submit ("Book") is the
+        #     natural progression. Provider-modal handler runs only if
+        #     CTA misses.
         cta_js = {cta_click_js!r}
         cc = cdp('Runtime.evaluate', expression=cta_js, returnByValue=True)
         cc_result = json.loads(cc.get('result', {{}}).get('value', '{{}}'))
@@ -1078,6 +1189,19 @@ for step in range({max_steps}):
                 break
             time.sleep(4)
             continue
+        # (d) Provider chooser modal (Google Maps Reserve aggregator):
+        #     "Continue with EazyDiner / Swiggy / OpenTable". Tried
+        #     AFTER CTA — fires when CTA found no Book/Reserve button
+        #     because a provider-picker dialog is on screen.
+        provider_pref = all_answers.get('provider_preference', '')
+        prov_js = ({provider_pick_js!r}).replace('PROVIDER_PLACEHOLDER', str(provider_pref).replace("'", ""))
+        pv = cdp('Runtime.evaluate', expression=prov_js, returnByValue=True)
+        pv_result = json.loads(pv.get('result', {{}}).get('value', '{{}}'))
+        if pv_result.get('clicked'):
+            step_records[-1]['provider_picked'] = pv_result
+            time.sleep(5)  # provider modal → new page navigation
+            continue
+
         if cc_result.get('reason') == 'cta_disabled':
             # CTA exists but greyed out — try clicking the first visible
             # unselected radio (offer/promo radios on booking pages),
