@@ -620,6 +620,40 @@ def handle_from_url(url):
     return m.group(1) if m else ""
 
 
+RAW_SIDECAR_DIR = BRAIN_DIR / "_raw"
+
+
+def write_raw_sidecar(slug, page_text, alt_texts, source_url, title=""):
+    """Persist the verbatim rendered page from browser-harness as a
+    local-only sidecar. brain-ask.py reads this when the user asks for
+    quotes / exact phrasing — the LLM analysis in the brain page is
+    not lossless.
+
+    Lives under ~/.brain/_raw/ which is gitignored so the rendered
+    body never makes it to the GitHub brain repo (X ToS, account
+    session signatures in URLs). Backed up by the daily R2 brain
+    backup the same as everything else under ~/.brain."""
+    if not (page_text or alt_texts):
+        return None
+    RAW_SIDECAR_DIR.mkdir(parents=True, exist_ok=True)
+    basename = slug.split("/")[-1]
+    path = RAW_SIDECAR_DIR / f"{basename}.raw.txt"
+    parts = [
+        f"# Raw rendered page for {slug}",
+        f"Source URL: {source_url}",
+        f"Captured: {TODAY}",
+        f"Page title: {title}" if title else "",
+        "",
+        "## Rendered page text (document.body.innerText)",
+        page_text or "(empty)",
+    ]
+    if alt_texts:
+        parts.extend(["", "## Image alt-text (img[alt] with alt.length>20)", alt_texts])
+    path.write_text("\n".join(p for p in parts if p is not None))
+    log(f"wrote raw sidecar {path} ({len(page_text)} body chars, {len(alt_texts)} alt chars)")
+    return str(path)
+
+
 def write_stub_brain_page(slug, handle, url, note):
     """Last-resort brain page — written when neither browser-harness
     nor the X API can return content. Guarantees the reading-list
@@ -786,6 +820,22 @@ def main():
     page_path.parent.mkdir(parents=True, exist_ok=True)
     page_path.write_text(page + "\n")
     log(f"wrote {page_path}")
+
+    # Layer 2: persist the verbatim rendered page as a local-only
+    # sidecar so brain-ask.py can quote exact phrases later. Only
+    # write when the browser path actually returned content — for the
+    # API-only path there's nothing rich to persist.
+    if browser_ctx.get("ok") and browser_ctx.get("page_text"):
+        try:
+            write_raw_sidecar(
+                slug,
+                browser_ctx.get("page_text", ""),
+                browser_ctx.get("alt_texts", ""),
+                url,
+                browser_ctx.get("title", ""),
+            )
+        except Exception as e:
+            log(f"raw sidecar write failed (non-fatal): {e}")
 
     subprocess.run([GBRAIN, "put", slug], input=page, text=True, check=False)
 

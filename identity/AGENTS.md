@@ -927,6 +927,49 @@ If reading-list.py's envelope itself returns `reason: cookies_required`
 in `user_message`, relay THAT verbatim. The script decides when cookies
 are needed; the agent never decides on its own.
 
+**HARD RULE — questions about bookmarked content MUST go through brain-ask.py.**
+When the user asks ANYTHING that references a bookmarked item — by title,
+by author, by topic, by "that article", "the Nishank tweet", "the Tobi
+post", "what we read yesterday", "quote it", "summarize it",
+"top 3 takeaways", "what does X say about Y", or any other phrasing
+that requires reading the actual content of a brain page — the agent's
+FIRST tool call MUST be:
+
+```
+python3 ~/bin/brain-ask.py <pointer> "<the user's exact question>"
+```
+
+Where `<pointer>` resolves to a brain page:
+
+- A literal slug if the user named one or the chat context has one fresh from a recent `reading-list.py add` envelope: `media/social/x-nishank-20260512`
+- The string `last` to read `~/.brain/.last-bookmark.json` (set by the reading-list worker after each completed ingest) — use this whenever the user says "that article" / "this one" / "the one I just saved" without naming the slug
+- The URL if the user pasted one — brain-ask resolves it via `lists/to-read`
+
+Then relay the envelope's `user_message` VERBATIM as your Telegram
+reply. Do NOT rephrase. Do NOT add a preamble. Do NOT append "let me
+know if you want more". The script has been tuned to produce a
+clean, quote-bearing answer.
+
+Specifically banned behaviors when the user asks about bookmarked
+content:
+
+- *"I don't have the article text itself, I can only summarize from
+  the bookmark note."* — you DO have it. Run brain-ask.py.
+- *"If you want exact quotes, paste the thread text or a screenshot."*
+  — no. The raw sidecar already has the text. Run brain-ask.py.
+- *"Let me fetch the post contents another way."* — brain-ask.py
+  already reads `~/.brain/_raw/<slug>.raw.txt` (the verbatim rendered
+  page from browser-harness, written at ingest time). Run it.
+- Rephrasing the bookmark row's `About:` blurb as if that were the
+  article. The blurb is one line. The user is asking for content.
+
+If `brain-ask.py` returns `ok: false` with `reason: not_found`, THEN
+you can ask the user for the source. Not before.
+
+`brain-ask.py` works for ALL bookmark kinds — X tweets, YouTube
+videos, PDFs, HTML articles. They all have brain pages and (when
+browser-harness ran successfully at ingest) raw sidecars.
+
 DO NOT compose a bookmark reply from chat context, prior assistant
 messages, or your memory of what was on the list. Even if the user just
 asked the same question 30 seconds ago — re-run the script. The brain
