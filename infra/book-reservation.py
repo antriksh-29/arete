@@ -290,6 +290,27 @@ def _url_matches_venue(u: str, venue: str) -> bool:
     return any(t in path for t in tokens)
 
 
+_GMR_URL_RE = re.compile(r"https?://(?:www\.)?google\.com/maps/reserve/v/dine/c/[A-Za-z0-9_-]+", re.I)
+_DISTRICT_URL_RE = re.compile(r"https?://(?:www\.)?district\.in/dining/[^\s\"'<>]+", re.I)
+_ZOMATO_URL_RE = re.compile(r"https?://(?:www\.)?zomato\.com/[^\s\"'<>]+", re.I)
+_EAZYDINER_URL_RE = re.compile(r"https?://(?:www\.)?eazydiner\.com/[^\s\"'<>]+", re.I)
+_SWIGGY_URL_RE = re.compile(r"https?://(?:www\.)?swiggy\.com/[^\s\"'<>]+", re.I)
+
+
+def _url_in_message(msg: str, regex: re.Pattern) -> str | None:
+    """If the user pasted a platform URL in their message, prefer it
+    over heuristic search. Lets the user pin a specific platform
+    (e.g. \"use this GMR URL: https://...\")."""
+    m = regex.search(msg or "")
+    if not m:
+        return None
+    u = m.group(0)
+    if "maps/reserve" in u and "source=" not in u:
+        sep = "&" if "?" in u else "?"
+        u = u + sep + "source=pa&hl=en-IN"
+    return u
+
+
 def find_gmr_url(venue: str) -> str | None:
     """Find a Google Maps Reserve URL for the venue. GMR pages aren't
     well-indexed by SERP, so we try 3 routes:
@@ -544,6 +565,25 @@ def log(msg: str) -> None:
 
 def book(message: str) -> dict:
     intent = parse_intent(message)
+    # If the user pasted a platform URL, pin to that platform and skip
+    # heuristic discovery for the others. This is how the user steers
+    # away from cover-charge platforms toward a specific provider.
+    pinned_url = _url_in_message(message, _GMR_URL_RE)
+    pinned_platform = None
+    if pinned_url:
+        pinned_platform = "gmr"
+    elif (u := _url_in_message(message, _DISTRICT_URL_RE)):
+        pinned_url, pinned_platform = u, "district"
+    elif (u := _url_in_message(message, _ZOMATO_URL_RE)):
+        pinned_url, pinned_platform = u, "zomato"
+    elif (u := _url_in_message(message, _EAZYDINER_URL_RE)):
+        pinned_url, pinned_platform = u, "eazydiner"
+    elif (u := _url_in_message(message, _SWIGGY_URL_RE)):
+        pinned_url, pinned_platform = u, "swiggy"
+    if not intent.get("venue") and pinned_url:
+        # User pinned a URL without naming the venue. Use the URL host
+        # / path as a synthetic venue so downstream code doesn't bail.
+        intent["venue"] = pinned_platform + "_url_supplied"
     if not intent.get("venue"):
         return _envelope(state="needs_clarification", intent=intent,
                          user_message="Booking intent detected, but I couldn't pull the venue name out of your message. Which restaurant?")
@@ -560,6 +600,14 @@ def book(message: str) -> dict:
         ("swiggy",    find_swiggy_url,    lambda url: drive(url, intent, "swiggy", max_steps=14)),
         ("own_site",  find_own_site_booking_url, lambda url: drive(url, intent, "own_site", max_steps=10)),
     ]
+    # If the user pinned a platform URL, reorder so that platform runs
+    # first AND skip the others on success (single-platform retry).
+    if pinned_platform:
+        log(f"pinned platform: {pinned_platform} url={pinned_url}")
+        steps_map = {"gmr": 28, "district": 14, "zomato": 14, "eazydiner": 14, "swiggy": 14}
+        pinned_max = steps_map.get(pinned_platform, 14)
+        platforms = [(pinned_platform, lambda v: pinned_url,
+                      lambda url: drive(url, intent, pinned_platform, max_steps=pinned_max))]
 
     attempts = []
     for name, finder, driver_fn in platforms:
