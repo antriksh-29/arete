@@ -41,6 +41,26 @@ write our own analysis to the brain as `media/social/x-<handle>-<date>.md`,
 and cross-link every mentioned entity per
 `identity/CONTENT_INGESTION.md`.
 
+## Fetch order (2026-05-13)
+
+X.com is auth-walled to unauthenticated clients — the public API
+silently drops media-led tweets and unauth browser visits land on
+the login wall. The script's fetch order is:
+
+1. **browser-harness** with x.com cookies injected (if stored via
+   `/site-login` → `SITE_COOKIES__x_com` in the vault). Gets the
+   rendered tweet body + image alt-text + visible replies. This is
+   the canonical path — most ingests should succeed here.
+2. **X API** as fallback for the metadata (handle, name, date) when
+   the browser path succeeds but is missing structured fields, OR
+   as the full content source when the browser hits a login wall
+   or isn't installed.
+3. **Stub brain page** when both paths fail (no cookies, no token,
+   chrome down). Writes a minimal `media/social/x-<handle>-<date>.md`
+   that links to the tweet + documents the cookie-import next step.
+   The script ALWAYS emits `ok: true` for a well-formed tweet URL —
+   the agent never gets an "ingest failed" envelope to improvise on.
+
 ## How to invoke
 
 ```
