@@ -1923,8 +1923,33 @@ submit = {submit!r}
 if submit:
     submit_exec = '''
 (function(){{
+  // First scroll the most-likely-modal-container to the bottom so a
+  // Book button sitting below the fold (Rules / Marketing prefs / TOS)
+  // enters the DOM-visible range. GMR's Your-Reservation modal is a
+  // scrollable region whose Book button is at the bottom.
+  function scrollContainers(){{
+    var els = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"], [role="document"], body, html'));
+    els.forEach(function(c){{
+      try {{
+        if (c.scrollHeight > c.clientHeight) c.scrollTop = c.scrollHeight;
+      }} catch(e) {{}}
+    }});
+    // Also try the inner-most scrollable ancestor of any heading "Your reservation"
+    var hs = Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"]'));
+    var your = hs.find(function(h){{ return /your\s+reservation/i.test(h.innerText || ''); }});
+    if (your){{
+      var n = your;
+      while (n && n !== document.body){{
+        var s = window.getComputedStyle(n);
+        if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && n.scrollHeight > n.clientHeight){{
+          n.scrollTop = n.scrollHeight; break;
+        }}
+        n = n.parentElement;
+      }}
+    }}
+  }}
+  scrollContainers();
   var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"]'));
-  var primaryRe = /^(submit|send|senden|gönder|enviar|envoyer|invia|送信|book|reserve|confirm|complete|place\s+order|pay|continue|next|proceed|weiter|suivant|siguiente|continuar|avanti)\b/i;
   var visible = btns.filter(function(x){{
     var r = x.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return false;
@@ -1934,7 +1959,18 @@ if submit:
     if (parseFloat(s.opacity) < 0.5) return false;
     return true;
   }});
-  var b = visible.find(function(x){{ return primaryRe.test(((x.innerText||x.value||'').trim())); }});
+  // Two-pass: prefer the commit-verb buttons (book/reserve/confirm/...)
+  // FIRST. Only fall back to Continue/Next/Proceed if no commit-verb
+  // button exists. This is the GMR-reservation-page bug: the page has
+  // both a "Continue" (sub-modal close / contact-form submit) and a
+  // "Book" (real commit) — clicking Continue first re-opens the
+  // provider chooser and never advances. Book must win.
+  var primaryCommit = /^(submit|send|senden|gönder|enviar|envoyer|invia|送信|book|reserve|reservar|réserver|prenotare|confirm|confirmar|complete|place\s+order|pay)\b/i;
+  var primaryAdvance = /^(continue|next|proceed|weiter|suivant|siguiente|continuar|avanti)\b/i;
+  var b = visible.find(function(x){{ return primaryCommit.test(((x.innerText||x.value||'').trim())); }});
+  if (!b){{
+    b = visible.find(function(x){{ return primaryAdvance.test(((x.innerText||x.value||'').trim())); }});
+  }}
   if (!b) return JSON.stringify(false);
   b.scrollIntoView({{block: 'center'}});
   b.click();
