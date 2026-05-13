@@ -213,11 +213,29 @@ def ensure_stub(slug, source_slug, source_label):
 
 
 def cross_reference(slug, page_text):
-    linked = []
+    """Defer entity stub / link / timeline-add to xref-drainer.py via
+    ~/.brain/.xref-queue.jsonl. See ingest-x-thread.py for rationale."""
+    seen = []
     for m in WIKILINK_RE.finditer(page_text):
         target = m.group(1).strip()
-        if target and target != slug and "/" in target and target not in linked:
-            linked.append(target)
+        if target and target != slug and "/" in target and target not in seen:
+            seen.append(target)
+    if not seen:
+        return []
+    queue_path = BRAIN_DIR / ".xref-queue.jsonl"
+    BRAIN_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "slug": slug,
+        "entities": seen,
+        "source_label": "Web article",
+        "queued_at": f"{TODAY}T00:00:00Z",
+    }
+    try:
+        with open(queue_path, "a") as f:
+            f.write(json.dumps(payload) + "\n")
+    except OSError as e:
+        log(f"xref enqueue failed; running inline fallback: {e}")
+        for target in seen:
             ensure_stub(target, slug, "Web article")
             subprocess.run([GBRAIN, "link", slug, target], capture_output=True, check=False, text=True)
             subprocess.run(
@@ -225,7 +243,7 @@ def cross_reference(slug, page_text):
                  f"Mentioned in [[{slug}]] [Source: web article ingestion {TODAY}]"],
                 capture_output=True, check=False, text=True,
             )
-    return linked
+    return seen
 
 
 def extract_one_liner(page_text):
@@ -274,6 +292,27 @@ def main():
     page_path.parent.mkdir(parents=True, exist_ok=True)
     page_path.write_text(page)
     subprocess.run([GBRAIN, "put", slug], input=page, text=True, check=False)
+
+    # Layer 2: write the verbatim extracted body to a local-only
+    # sidecar so brain-ask.py can quote exact phrases. The page itself
+    # carries the LLM's analysis; the sidecar carries the source.
+    raw_body = meta.get("body") or ""
+    if raw_body:
+        try:
+            raw_dir = BRAIN_DIR / "_raw"
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            basename = slug.split("/")[-1]
+            raw_path = raw_dir / f"{basename}.raw.txt"
+            raw_path.write_text(
+                f"# Raw extracted body for {slug}\n"
+                f"Source URL: {final_url}\n"
+                f"Captured: {TODAY}\n"
+                f"Page title: {meta.get('title','')}\n\n"
+                f"## Extracted body (readability)\n{raw_body}\n"
+            )
+            log(f"wrote raw sidecar {raw_path} ({len(raw_body)} chars)")
+        except Exception as e:
+            log(f"raw sidecar write failed (non-fatal): {e}")
 
     linked = cross_reference(slug, page)
     one_liner = extract_one_liner(page)

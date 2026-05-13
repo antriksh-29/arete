@@ -874,9 +874,144 @@ TIME_DROPDOWN_JS = r"""
   }
   match.scrollIntoView({block: 'center'});
   match.click();
+  // Close the dropdown deterministically. The listbox may stay open
+  // visually if the option click doesn't fire the close handler — a
+  // stale-open dropdown later covers the slot grid + book button,
+  // which causes downstream clicks to land on dropdown options
+  // instead of actual page elements. Dispatch Escape on document and
+  // click the page body in an empty area as a fallback.
+  try {
+    var esc = new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true});
+    document.dispatchEvent(esc);
+  } catch(e) {}
   return JSON.stringify({clicked: true, kind: 'time_dropdown', target: String(targetTime),
                           picked: (match.innerText||'').trim()});
 })('TIME_PLACEHOLDER')
+"""
+
+
+# Scrolls the GMR Your-Reservation modal (and any modal/dialog) to its
+# bottom so the Book button — which lives below Rules + Marketing + TOS
+# — enters the viewport before the submit-click pass scans for it.
+SCROLL_RESERVATION_TO_BOTTOM_JS = r"""
+(function(){
+  var hs = Array.from(document.querySelectorAll('h1,h2,h3,[role="heading"]'));
+  var your = hs.find(function(h){ return /your\s+reservation/i.test(h.innerText || ''); });
+  if (your){
+    var n = your;
+    while (n && n !== document.body){
+      var s = window.getComputedStyle(n);
+      if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && n.scrollHeight > n.clientHeight){
+        n.scrollTop = n.scrollHeight; break;
+      }
+      n = n.parentElement;
+    }
+  }
+  var dlgs = document.querySelectorAll('[role="dialog"], [aria-modal="true"]');
+  dlgs.forEach(function(d){ if (d.scrollHeight > d.clientHeight) d.scrollTop = d.scrollHeight; });
+  return 'ok';
+})()
+"""
+
+
+
+# Reads back the visible Date dropdown trigger text AFTER we tried to
+# set it via DATE_DROPDOWN_JS. The orchestrator uses this to spot a
+# silent picker failure (we clicked something, but the trigger never
+# updated). Returns the trigger's current label so step_records[-1]
+# can store it; not a hard gate.
+VERIFY_DATE_TRIGGER_JS = r"""
+(function(){
+  var bs = Array.from(document.querySelectorAll('button, [role="button"], [role="combobox"]'));
+  var hit = bs.find(function(b){
+    var t = (b.innerText || '').toLowerCase();
+    if (t.length >= 50) return false;
+    if (t.indexOf('today') >= 0) return true;
+    if (t.indexOf('tomorrow') >= 0) return true;
+    if (/\b(mon|tue|wed|thu|fri|sat|sun)/.test(t)) return true;
+    if (/[a-z]{3,}\s+\d+/.test(t)) return true;  // "may 17"
+    return false;
+  });
+  return JSON.stringify({trigger_text: hit ? (hit.innerText || '').trim().slice(0, 60) : null});
+})()
+"""
+
+
+# Same as above for the Time dropdown trigger — used to confirm that
+# TIME_DROPDOWN_JS actually committed the user's target time before we
+# let the slot grid click fire.
+VERIFY_TIME_TRIGGER_JS = r"""
+(function(){
+  var bs = Array.from(document.querySelectorAll('button, [role="button"], [role="combobox"]'));
+  var hit = bs.find(function(b){
+    var t = (b.innerText || '').toLowerCase();
+    if (t.length >= 25) return false;
+    return /\d{1,2}(:\d{2})?\s*(am|pm)/.test(t);
+  });
+  return JSON.stringify({trigger_text: hit ? (hit.innerText || '').trim().slice(0, 40) : null});
+})()
+"""
+
+
+# Detects a reservation-confirmed success page. Looks for any of:
+#   - heading text "Reservation confirmed" / "Booking confirmed"
+#   - "Your reservation has been booked" / "Your booking is confirmed"
+#   - "Email sent to" / "We've emailed you" alongside a venue name
+#   - A green checkmark SVG near such text (presence-only signal)
+# Returns {detected:true, marker:"...", text_snippet:"..."} on a hit so
+# the orchestrator can confidently emit state=completed instead of
+# guessing from submit-button return values. The submit click can
+# succeed while the provider later rejects the booking — only the
+# confirmation page is ground truth.
+CONFIRMATION_DETECT_JS = r"""
+(function(){
+  function vis(el){
+    if (!el) return false;
+    var r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return false;
+    var s = window.getComputedStyle(el);
+    return s.visibility !== 'hidden' && s.display !== 'none' && parseFloat(s.opacity) > 0.1;
+  }
+  var body = (document.body && document.body.innerText) ? document.body.innerText : '';
+  var bodyL = body.toLowerCase();
+  // Strong markers — phrases that effectively only appear on success.
+  var strong = [
+    /reservation\s+confirmed/i,
+    /booking\s+confirmed/i,
+    /your\s+reservation\s+(has\s+been|is)\s+(booked|confirmed)/i,
+    /your\s+booking\s+(has\s+been|is)\s+confirmed/i,
+    /thank\s+you\s+for\s+your\s+reservation/i,
+    /we\s+have\s+received\s+your\s+booking/i,
+    /reservierung\s+best(ä|a)tigt/i,
+    /buchung\s+best(ä|a)tigt/i,
+    /reserva\s+confirmada/i,
+    /r(é|e)servation\s+confirm(é|e)e/i,
+  ];
+  for (var i = 0; i < strong.length; i++){
+    var m = body.match(strong[i]);
+    if (m){
+      // Walk up to the heading that owns this text to confirm visibility.
+      var headings = Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"]'));
+      var hit = headings.find(function(h){ return strong[i].test(h.innerText || ''); });
+      if (!hit || vis(hit)){
+        var snippet = body.substr(Math.max(0, body.search(strong[i]) - 30), 220).replace(/\s+/g, ' ').trim();
+        return JSON.stringify({detected: true, marker: m[0], text_snippet: snippet});
+      }
+    }
+  }
+  // Soft marker — "Email sent to" + a visible heading "Your reservation".
+  if (/email\s+sent\s+to\s+\S+@\S+/i.test(bodyL)){
+    var hs = Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"]'));
+    var hsHit = hs.find(function(h){
+      var t = (h.innerText || '').toLowerCase();
+      return /your\s+reservation/i.test(t) || /booking\s+(confirmed|complete)/i.test(t);
+    });
+    if (hsHit && vis(hsHit)){
+      return JSON.stringify({detected: true, marker: 'email_sent+your_reservation', text_snippet: (hsHit.innerText || '').slice(0, 200)});
+    }
+  }
+  return JSON.stringify({detected: false});
+})()
 """
 
 
@@ -1016,10 +1151,21 @@ PROVIDER_PICK_JS = r"""
   if (!modalDetected){
     return JSON.stringify({clicked: false, reason: 'no_provider_modal'});
   }
+  // Scope to the actual "Continue with" dialog — the page may have many
+  // duplicate hidden "Your reservation" dialog clones in the DOM.
+  // Find the visible dialog whose heading text contains "continue with".
+  var allDialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]'));
+  var contDialog = allDialogs.find(function(d){
+    var r = d.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    var hs = Array.from(d.querySelectorAll('h1, h2, h3, [role="heading"]'));
+    return hs.some(function(h){ return /continue\s+with/i.test((h.innerText||'').trim()); });
+  });
+  var searchRoot = contDialog || document;
   // Pick a row whose text is a near-exact provider name or
   // "Continue with <Provider>". Reject anything longer (ToS links,
   // descriptions, etc).
-  var rows = queryAll('button, [role="button"], a, li, [role="listitem"], div[tabindex]')
+  var rows = Array.from(searchRoot.querySelectorAll('button, [role="button"], a, li, [role="listitem"], div[tabindex]'))
     .filter(function(b){
       var r = b.getBoundingClientRect();
       var s = window.getComputedStyle(b);
@@ -1443,6 +1589,10 @@ def build_driver_script(url, all_answers, submit, shot_path, max_steps=6):
     date_dropdown_js = DATE_DROPDOWN_JS
     time_dropdown_js = TIME_DROPDOWN_JS
     provider_pick_js = PROVIDER_PICK_JS
+    confirmation_detect_js = CONFIRMATION_DETECT_JS
+    verify_date_trigger_js = VERIFY_DATE_TRIGGER_JS
+    verify_time_trigger_js = VERIFY_TIME_TRIGGER_JS
+    scroll_reservation_to_bottom_js = SCROLL_RESERVATION_TO_BOTTOM_JS
     shot_after_submit = shot_path.replace(".png", "-after-submit.png")
     shot_step_prefix = shot_path.replace(".png", "-step")
     return f"""
@@ -1548,19 +1698,39 @@ for step in range({max_steps}):
     #     because inputs are covered. Dismiss the modal first, then
     #     re-discover and fill on the next iteration.
     if {submit!r}:
-        prov_check_js = ({provider_pick_js!r}).replace(
-            'PROVIDER_PLACEHOLDER',
-            str(all_answers.get('provider_preference','')).replace("'", "")
-        )
-        pv = cdp('Runtime.evaluate', expression=prov_check_js, returnByValue=True)
-        pv_result = json.loads(pv.get('result', {{}}).get('value', '{{}}'))
-        if pv_result.get('clicked'):
-            step_records.append({{
-                'step': step, 'fields_seen': len(headings), 'plan_size': len(plan),
-                'verify_state': {{}}, 'provider_picked_early': pv_result,
-            }})
-            time.sleep(8)  # generous — let modal close + form #2 render
-            continue
+        # Count consecutive provider_picked_early in last 3 steps.
+        # If 3 in a row → modal isn't dismissing on click. Switch
+        # provider preference (try Swiggy if we kept picking EazyDiner)
+        # and abandon the early-pick path so the loop can fall through
+        # to plan/fill / CTA / submit_exec.
+        recent_picks = [r for r in step_records[-3:] if r.get('provider_picked_early')]
+        modal_stuck = len(recent_picks) >= 3
+        if modal_stuck:
+            # Flip provider preference order so the next attempt clicks
+            # the OTHER provider in the modal (Swiggy instead of
+            # EazyDiner). Only do this once per run.
+            if not any(r.get('provider_swapped') for r in step_records):
+                cur = all_answers.get('provider_preference','eazydiner,swiggy')
+                parts = [p.strip() for p in cur.split(',') if p.strip()]
+                if len(parts) >= 2:
+                    all_answers['provider_preference'] = ','.join(parts[::-1])
+                    step_records[-1]['provider_swapped'] = all_answers['provider_preference']
+            # Either way, skip the early provider-pick this iteration —
+            # fall through to plan/fill / CTA paths.
+        else:
+            prov_check_js = ({provider_pick_js!r}).replace(
+                'PROVIDER_PLACEHOLDER',
+                str(all_answers.get('provider_preference','')).replace("'", "")
+            )
+            pv = cdp('Runtime.evaluate', expression=prov_check_js, returnByValue=True)
+            pv_result = json.loads(pv.get('result', {{}}).get('value', '{{}}'))
+            if pv_result.get('clicked'):
+                step_records.append({{
+                    'step': step, 'fields_seen': len(headings), 'plan_size': len(plan),
+                    'verify_state': {{}}, 'provider_picked_early': pv_result,
+                }})
+                time.sleep(8)  # generous — let modal close + form #2 render
+                continue
 
     # 3. Apply plan via in-page JS
     if plan:
@@ -1604,13 +1774,85 @@ for step in range({max_steps}):
     #    against generic Continue loops by gating on a recent action.
     just_clicked_slot = bool(step_records[-2:-1] and
                              step_records[-2:-1][0].get('time_slot_attempt', {{}}).get('clicked'))
+    # In submit mode ALWAYS try the commit-verb (Book/Reserve/Confirm)
+    # button first, even when plan is empty. The reservation review
+    # page after contact-fill has plan == [] but a Book button at the
+    # bottom of the modal. Without this gate, the loop falls through
+    # to next_click_js which prefers Continue and re-pops the provider
+    # chooser, looping forever.
+    if {submit!r}:
+        # Scroll the reservation modal to the bottom so the Book button
+        # (below Rules + Marketing prefs + TOS) enters the viewport.
+        try:
+            cdp('Runtime.evaluate', expression={scroll_reservation_to_bottom_js!r}, returnByValue=True)
+            time.sleep(0.4)
+        except Exception:
+            pass
+        book_js_pre = r'''
+(function(){{
+  // Modal-scoped search: if a visible [role=dialog] / [aria-modal=true]
+  // is open, restrict button search to its subtree. This prevents
+  // false-matches on the BACKGROUND slot-page "Continue" button which
+  // sits underneath the Your-Reservation overlay and would otherwise
+  // be clicked, re-popping the provider chooser modal.
+  function isVisible(el){{
+    var r=el.getBoundingClientRect();
+    if (r.width===0||r.height===0) return false;
+    var s=window.getComputedStyle(el);
+    if (s.display==='none'||s.visibility==='hidden') return false;
+    if (parseFloat(s.opacity) < 0.5) return false;
+    return true;
+  }}
+  // Pick the dialog whose heading is the most action-bearing — prefer
+  // "Continue with", then the dialog whose center is closest to the
+  // viewport center. GMR's page can have 10+ stale duplicate
+  // Your-Reservation dialogs in the DOM, all dimensioned but stacked
+  // off-screen or behind. The ACTIVE one is the one centered on screen.
+  var visDialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]')).filter(isVisible);
+  var root = document;
+  var contDlg = visDialogs.find(function(d){{
+    return Array.from(d.querySelectorAll('h1,h2,h3,[role="heading"]')).some(function(h){{
+      return /continue\\s+with/i.test((h.innerText||'').trim());
+    }});
+  }});
+  if (contDlg){{ root = contDlg; }} else if (visDialogs.length){{
+    var vcx = window.innerWidth/2, vcy = window.innerHeight/2;
+    visDialogs.sort(function(a,b){{
+      var ar=a.getBoundingClientRect(), br=b.getBoundingClientRect();
+      var ad=Math.abs(ar.left+ar.width/2-vcx) + Math.abs(ar.top+ar.height/2-vcy);
+      var bd=Math.abs(br.left+br.width/2-vcx) + Math.abs(br.top+br.height/2-vcy);
+      return ad - bd;
+    }});
+    root = visDialogs[0];
+  }}
+  var btns = Array.from(root.querySelectorAll('[role="button"], button, input[type="submit"]'))
+    .filter(function(x){{
+      if (!isVisible(x)) return false;
+      if (x.disabled||x.getAttribute('aria-disabled')==='true') return false;
+      return true;
+    }});
+  var re = /^(book|submit|reserve|reservar|réserver|prenotare|confirm|confirmar|complete|place\\s+order|pay)\\b/i;
+  var b = btns.find(function(x){{ return re.test((x.innerText||x.value||'').trim()); }});
+  if (!b) return JSON.stringify({{clicked:false, modal_scoped: root !== document, n_buttons: btns.length, sample: btns.slice(0,8).map(function(x){{return (x.innerText||'').trim().slice(0,30);}})}});
+  b.scrollIntoView({{block:'center'}});
+  b.click();
+  return JSON.stringify({{clicked:true, text:(b.innerText||b.value||'').trim(), modal_scoped: root !== document}});
+}})()
+'''
+        bk_pre = cdp('Runtime.evaluate', expression=book_js_pre, returnByValue=True)
+        bk_pre_result = json.loads(bk_pre.get('result', {{}}).get('value', '{{}}'))
+        step_records[-1]['book_clicked_pre'] = bk_pre_result
+        if bk_pre_result.get('clicked'):
+            time.sleep(5)
+            continue
+
     if plan or just_clicked_slot:
         # In submit mode after filling fields, prefer a primary submit
         # button (Book / Reserve / Confirm) over generic Continue —
         # GMR's final page has BOTH Continue (old widget) and Book
         # (final). Continue re-opens the provider modal; Book commits.
         if {submit!r} and plan:
-            book_js = '''
+            book_js = r'''
 (function(){{
   var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"]'))
     .filter(function(x){{
@@ -1676,6 +1918,15 @@ for step in range({max_steps}):
             step_records[-1]['date_dropdown_clicked'] = dd_result
             if dd_result.get('clicked'):
                 time.sleep(4)  # let the slot grid refresh for the new date
+                # Verify: read back the Date trigger text and confirm it
+                # reflects the target. Logged on the step record so the
+                # orchestrator can flag a silent picker failure.
+                vd = cdp('Runtime.evaluate', expression={verify_date_trigger_js!r}, returnByValue=True)
+                try:
+                    vd_v = json.loads(vd.get('result', {{}}).get('value', '{{}}'))
+                except Exception:
+                    vd_v = {{}}
+                step_records[-1]['date_trigger_after'] = vd_v.get('trigger_text')
                 continue
 
         # (a1) Time dropdown — GMR's Time combobox reveals every 30-min
@@ -1690,6 +1941,14 @@ for step in range({max_steps}):
             step_records[-1]['time_dropdown_clicked'] = td_result
             if td_result.get('clicked'):
                 time.sleep(4)  # let the slot grid refresh
+                # Verify: read back the Time trigger and confirm it now
+                # contains a parseable time matching the target (±5min).
+                vt = cdp('Runtime.evaluate', expression={verify_time_trigger_js!r}, returnByValue=True)
+                try:
+                    vt_v = json.loads(vt.get('result', {{}}).get('value', '{{}}'))
+                except Exception:
+                    vt_v = {{}}
+                step_records[-1]['time_trigger_after'] = vt_v.get('trigger_text')
                 continue
 
         # (a) If we have a time target AND haven't already done a
@@ -1781,20 +2040,91 @@ capture_screenshot({shot_path!r})
 submitted = False
 submit = {submit!r}
 if submit:
-    submit_exec = '''
+    submit_exec = r'''
 (function(){{
-  var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"]'));
-  var primaryRe = /^(submit|send|senden|gönder|enviar|envoyer|invia|送信|book|reserve|confirm|complete|place\s+order|pay|continue|next|proceed|weiter|suivant|siguiente|continuar|avanti)\b/i;
-  var visible = btns.filter(function(x){{
-    var r = x.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) return false;
-    var s = window.getComputedStyle(x);
-    if (s.display === 'none' || s.visibility === 'hidden') return false;
-    if (x.disabled || x.getAttribute('aria-disabled') === 'true') return false;
+  function isVisible(el){{
+    var r=el.getBoundingClientRect();
+    if (r.width===0||r.height===0) return false;
+    var s=window.getComputedStyle(el);
+    if (s.display==='none'||s.visibility==='hidden') return false;
     if (parseFloat(s.opacity) < 0.5) return false;
     return true;
+  }}
+  // First scroll the most-likely-modal-container to the bottom so a
+  // Book button sitting below the fold (Rules / Marketing prefs / TOS)
+  // enters the DOM-visible range. GMR's Your-Reservation modal is a
+  // scrollable region whose Book button is at the bottom.
+  function scrollContainers(){{
+    var els = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"], [role="document"], body, html'));
+    els.forEach(function(c){{
+      try {{
+        if (c.scrollHeight > c.clientHeight) c.scrollTop = c.scrollHeight;
+      }} catch(e) {{}}
+    }});
+    var hs = Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"]'));
+    var your = hs.find(function(h){{ return /your\s+reservation/i.test(h.innerText || ''); }});
+    if (your){{
+      var n = your;
+      while (n && n !== document.body){{
+        var s = window.getComputedStyle(n);
+        if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && n.scrollHeight > n.clientHeight){{
+          n.scrollTop = n.scrollHeight; break;
+        }}
+        n = n.parentElement;
+      }}
+    }}
+  }}
+  scrollContainers();
+  // Modal-scoped: if a [role=dialog]/[aria-modal=true] is visible,
+  // restrict button search to its subtree. Prevents false-clicks on
+  // background-page buttons (slot-page "Continue") that sit underneath
+  // an overlay reservation modal.
+  // Pick the actionable dialog (Continue with > viewport-center).
+  var visDialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]')).filter(isVisible);
+  var root = document;
+  var contDlg = visDialogs.find(function(d){{
+    return Array.from(d.querySelectorAll('h1,h2,h3,[role="heading"]')).some(function(h){{
+      return /continue\s+with/i.test((h.innerText||'').trim());
+    }});
   }});
-  var b = visible.find(function(x){{ return primaryRe.test(((x.innerText||x.value||'').trim())); }});
+  if (contDlg){{ root = contDlg; }} else if (visDialogs.length){{
+    var vcx = window.innerWidth/2, vcy = window.innerHeight/2;
+    visDialogs.sort(function(a,b){{
+      var ar=a.getBoundingClientRect(), br=b.getBoundingClientRect();
+      var ad=Math.abs(ar.left+ar.width/2-vcx) + Math.abs(ar.top+ar.height/2-vcy);
+      var bd=Math.abs(br.left+br.width/2-vcx) + Math.abs(br.top+br.height/2-vcy);
+      return ad - bd;
+    }});
+    root = visDialogs[0];
+  }}
+  var btns = Array.from(root.querySelectorAll('[role="button"], button, input[type="submit"]'));
+  var visible = btns.filter(function(x){{
+    if (!isVisible(x)) return false;
+    if (x.disabled || x.getAttribute('aria-disabled') === 'true') return false;
+    return true;
+  }});
+  // GMR's post-provider screen has "Sign in with Google" + "or reserve
+  // as a guest" — prefer the guest option so the headless flow doesn't
+  // get blocked at OAuth.
+  var guestRe = /(reserve\s+as\s+(a\s+)?guest|continue\s+as\s+(a\s+)?guest|book\s+as\s+(a\s+)?guest|guest\s+(reservation|booking))/i;
+  var guest = visible.find(function(x){{ return guestRe.test((x.innerText||x.value||'').trim()); }});
+  if (guest){{
+    guest.scrollIntoView({{block:'center'}});
+    guest.click();
+    return JSON.stringify(true);
+  }}
+  // Two-pass: prefer the commit-verb buttons (book/reserve/confirm/...)
+  // FIRST. Only fall back to Continue/Next/Proceed if no commit-verb
+  // button exists. This is the GMR-reservation-page bug: the page has
+  // both a "Continue" (sub-modal close / contact-form submit) and a
+  // "Book" (real commit) — clicking Continue first re-opens the
+  // provider chooser and never advances. Book must win.
+  var primaryCommit = /^(submit|send|senden|gönder|enviar|envoyer|invia|送信|book|reserve|reservar|réserver|prenotare|confirm|confirmar|complete|place\s+order|pay)\b/i;
+  var primaryAdvance = /^(continue|next|proceed|weiter|suivant|siguiente|continuar|avanti)\b/i;
+  var b = visible.find(function(x){{ return primaryCommit.test(((x.innerText||x.value||'').trim())); }});
+  if (!b){{
+    b = visible.find(function(x){{ return primaryAdvance.test(((x.innerText||x.value||'').trim())); }});
+  }}
   if (!b) return JSON.stringify(false);
   b.scrollIntoView({{block: 'center'}});
   b.click();
@@ -1805,12 +2135,32 @@ if submit:
     s_raw = s.get('result', {{}}).get('value', 'false')
     submitted = (s_raw == 'true')
     if submitted:
-        time.sleep(4)
+        # Longer wait after Book — confirmation page can take 5-10s on
+        # GMR + EazyDiner round-trip. Poll for the confirmation marker
+        # every 2s up to 14s instead of one fixed sleep.
+        for _wait_i in range(7):
+            time.sleep(2)
+            _cd = cdp('Runtime.evaluate', expression={confirmation_detect_js!r}, returnByValue=True)
+            try:
+                _cd_v = json.loads(_cd.get('result', {{}}).get('value', '{{}}'))
+            except Exception:
+                _cd_v = {{}}
+            if _cd_v.get('detected'):
+                break
         capture_screenshot({shot_after_submit!r})
 
-# Final verification on last page
+# Final verification on last page — including confirmation-marker scan.
+# This runs in BOTH --submit and review modes so the orchestrator can
+# detect a confirmation page even when --submit wasn't passed (e.g.,
+# the user clicked Book themselves in a side tab; or a prior driver
+# step navigated us straight to confirmation).
 v2 = cdp('Runtime.evaluate', expression={verify_js!r}, returnByValue=True)
 final_verify = json.loads(v2.get('result', {{}}).get('value', '{{}}'))
+cd_final = cdp('Runtime.evaluate', expression={confirmation_detect_js!r}, returnByValue=True)
+try:
+    confirmation = json.loads(cd_final.get('result', {{}}).get('value', '{{}}'))
+except Exception:
+    confirmation = {{'detected': False}}
 
 print('---FINAL---')
 print(json.dumps({{
@@ -1821,6 +2171,9 @@ print(json.dumps({{
     'step_screenshots': step_screenshots,
     'verification': final_verify,
     'submitted': submitted,
+    'confirmation_detected': bool(confirmation.get('detected')),
+    'confirmation_marker': confirmation.get('marker'),
+    'confirmation_snippet': confirmation.get('text_snippet'),
     'used_answer_keys': sorted(list(used_keys)),
 }}))
 """

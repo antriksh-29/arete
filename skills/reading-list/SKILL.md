@@ -43,6 +43,51 @@ go through `~/bin/reading-list.py` — never edit the page directly, never
 improvise. The script handles brain page rebuild + git commit so data
 lands in disk + git + R2 backup.
 
+## Async ingest with follow-up message
+
+`add <url>` is **ack-and-spawn**. The script:
+
+1. Writes a placeholder row to `lists/to-read` with shallow metadata
+   (handle for X, host for HTML, `(saving — brain page in progress…)`
+   as the title).
+2. Forks `reading-list-worker.py` as a detached background process.
+3. Returns an envelope to the agent within a second with
+   `pending: true` and a `user_message` like:
+
+   ```
+   📥 Saving to bookmarks: @tobi
+   https://x.com/tobi/status/...
+
+   Fetching the article and writing the brain page now — I'll send a
+   follow-up when it's ready (usually <2 min).
+   ```
+
+The worker runs the deep ingestor (which may take 60–200s for
+media-led X tweets that need a browser-harness fallback), updates the
+placeholder row in place, and posts a second Telegram message via
+`TELEGRAM_BOT_TOKEN` + `TELEGRAM_USER_ID` from vault:
+
+```
+✅ Bookmark ready: <title>
+Posted by: <handle>
+About: <one-liner>
+<canonical url>
+
+Brain page: media/social/x-...
+```
+
+Why this exists: prior to 2026-05-13 the agent ran the deep ingest
+inside the Telegram turn. Thin X tweets (image/video/link-only) hit
+the browser-harness fallback path, total runtime exceeded the 120s
+per-turn budget documented in `docs/E2E-FINDINGS.md`, and the bot
+returned an "ingest didn't finish, got terminated" apology. The
+async path keeps the turn under 5s while still delivering the full
+brain page.
+
+`READING_LIST_SYNC=1` reverts to the legacy synchronous flow for
+smoke tests and CI (the worker would otherwise return before the
+test asserts).
+
 ## Deep-by-default
 
 Every `add` runs the right ingestor for the URL's kind and writes a
@@ -155,6 +200,23 @@ say "I read #2" without remembering slugs.
 
 Relay the script's `user_message` field verbatim. Do NOT add diagnostic
 info (cost, character count, processing time, brain DB stats).
+
+## Deferred entity cross-references
+
+Each ingestor (`ingest-x-thread.py`, `ingest-youtube.py`,
+`ingest-html.py`) used to call `gbrain link` + `gbrain timeline-add`
+inline for every `[[wikilink]]` in the freshly-written brain page —
+2-3 subprocess calls per entity, up to ~30s for a 10-entity page.
+
+Now they append the entity batch to `~/.brain/.xref-queue.jsonl`
+and return. `xref-drainer.py --once` reads + clears the queue every
+60s via `xref-drainer.timer`, plus the reading-list worker kicks the
+drainer one-shot at the end of its run so new bookmarks see their
+entity links populate within seconds of the follow-up message.
+
+Failure mode if the timer + worker are both unavailable: the queue
+file grows; entity links stay missing until the next `migrate
+bookmarks` or a manual `python3 ~/bin/xref-drainer.py --once`.
 
 ## Architectural rules
 

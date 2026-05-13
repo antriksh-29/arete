@@ -736,30 +736,58 @@ real diagnostic is `~/.browser-harness/chrome.log` plus
 `systemctl --user status bh-chrome.service`. Only then surface the
 problem to the user; don't pre-emptively claim the browser is down.
 
-### Restaurant / hotel / event reservations and bookings → /book-reservation
+### Restaurant / movie / theatre / event / generic-URL bookings → /book-anything
 
-Owned by `skills/book-reservation/SKILL.md`. When the user says
-"book at X" / "reserve a table at X" / "make a reservation" / any
-booking intent — your FIRST tool call after the spawn-signal-detector
-return MUST be:
+Owned by `skills/book-anything/SKILL.md`. When the user says
+"book at X" / "reserve a table at X" / "book me tickets for X" /
+"book this <URL>" / any booking intent (restaurant table, movie or
+event ticket, OR an arbitrary booking URL paste) — your FIRST tool
+call after the spawn-signal-detector return MUST be:
 
 ```
-python3 ~/bin/book-reservation.py "<the user's exact message verbatim>"
+python3 ~/bin/book-anything.py "<the user's exact message verbatim>"
 ```
 
-The skill handles parsing (venue + time + party + date), URL discovery
-(Google Maps Reserve first, then District → Zomato → EazyDiner →
-Swiggy → restaurant's own site → phone last), fill-form orchestration,
-per-step Telegram screenshots, and OTP relay. Relay the envelope's
-`user_message` field verbatim as your reply.
+(The legacy path `~/bin/book-reservation.py` is a backward-compat
+shim that execs into book-anything.py — either path works, but new
+invocations should use book-anything.py.)
 
-If the envelope's `state` is `otp_pending`, the user's next booking
-message is the OTP — pass it as
-`python3 ~/bin/book-reservation.py --resume "<digits>"`.
+The script first calls **Kimi K2.6** (Moonshot OpenAI-compat) to
+extract a typed `BookingIntent`: modality, venue, party, datetime,
+platform_url, movie_title, theatre, ticket_count, ticket_tier,
+confidence, ambiguity_notes. Fallback chain: OpenAI gpt-5.4-mini →
+Anthropic Haiku 4.5 → legacy regex parser.
 
-Banned first-response phrases (deferred to the skill, not your call):
-"call directly", "fastest way is phone", "use the mobile app",
-"web booking is blocked".
+The orchestrator then routes by modality:
+
+- **restaurant** (no pasted URL) → GMR + provider list (District,
+  Zomato, EazyDiner, Swiggy, own site, phone last). Proven 7-step
+  canonical flow.
+- **restaurant** + restaurant-host URL pasted → pinned URL only.
+- **movie / event / generic_url** + `platform_url` → drives the
+  pasted URL directly via fill-form.py with intent fields mapped to
+  form answers. Always stops before payment in v1.
+- **unclear** + confidence < 0.5 → bot asks for the specific missing
+  fields named in `ambiguity_notes`.
+
+Relay the envelope's `user_message` field verbatim. Don't paraphrase,
+don't add commentary, don't claim success unless `state=completed`
+AND `confirmation_detected=true`.
+
+If `state=otp_pending`, the user's next booking message is the OTP:
+```
+python3 ~/bin/book-anything.py --resume "<digits>"
+```
+
+If `state=confirm_ready` and user says "confirm":
+```
+python3 ~/bin/book-anything.py --submit
+```
+
+Banned first-response phrases: "call directly", "fastest way is
+phone", "use the mobile app", "web booking is blocked", "I can't
+complete bookings", "the flow died". The script handles all of these
+deterministically — your job is to invoke it and relay the envelope.
 
 ### Fill a form (Google Forms, generic HTML)
 
@@ -856,6 +884,91 @@ asks anything that maps to a row in the table above:
 1. Run the matching `python3 ~/bin/reading-list.py …` command.
 2. Read the stdout JSON envelope.
 3. Relay the `user_message` field VERBATIM as your Telegram reply.
+
+**Async add is normal, not a failure.** As of 2026-05-13 `add` is
+ack-and-spawn: the envelope returns `{"ok": true, "pending": true,
+"user_message": "📥 Saving to bookmarks: ..."}` within a second, and a
+background worker posts a separate `✅ Bookmark ready: ...` Telegram
+message when the brain page is written (usually under 2 minutes).
+Relay the ack verbatim and stop — do NOT re-run `add`, do NOT
+follow up with `show` to "verify", do NOT report the bookmark as
+"in progress / not done yet" as if it failed. The follow-up message
+arrives independently of your turn.
+
+**HARD ROUTING RULE — save/bookmark intent NEVER triggers /site-login.**
+When the user pairs ANY URL with a save / bookmark / read-later /
+"go through this article" / "summarize and store" / "add to reading
+list" / "store it in brain" intent — the ONLY correct first action is
+`python3 ~/bin/reading-list.py add <url>`. Even if the URL is on a
+known auth-walled domain (x.com, linkedin.com, paid substack), even if
+prior turns in this chat involved /site-login, you do NOT offer
+cookie-import as the response to a save intent. The ingestor handles
+auth-walled content itself — for X URLs it routes through
+browser-harness with stored cookies if present, and writes a stub
+brain page documenting the cookie-import next step if not. The agent
+does not pre-empt that decision.
+
+Specifically banned first-response patterns when the user sends `<X
+URL> + save/bookmark/summarize`:
+
+- *"🔒 Cookie import for x.com — no extension required..."* — that is
+  the /site-login flow, only triggered by an explicit "login to x"
+  intent, never as a reaction to a save intent.
+- *"I can add it to your reading list. Paste the tweet text or a
+  screenshot, and I'll do the summary + brain note from that."* —
+  no. Run the script. The script handles thin tweets via
+  browser-harness or by writing a stub brain page.
+- *"This requires authentication, so..."* — irrelevant. Run the
+  script. It writes a brain page either way.
+- Asking the user to paste the tweet content — the script fetches the
+  content. The user already sent a URL; that's the input.
+
+If reading-list.py's envelope itself returns `reason: cookies_required`
+in `user_message`, relay THAT verbatim. The script decides when cookies
+are needed; the agent never decides on its own.
+
+**HARD RULE — questions about bookmarked content MUST go through brain-ask.py.**
+When the user asks ANYTHING that references a bookmarked item — by title,
+by author, by topic, by "that article", "the Nishank tweet", "the Tobi
+post", "what we read yesterday", "quote it", "summarize it",
+"top 3 takeaways", "what does X say about Y", or any other phrasing
+that requires reading the actual content of a brain page — the agent's
+FIRST tool call MUST be:
+
+```
+python3 ~/bin/brain-ask.py <pointer> "<the user's exact question>"
+```
+
+Where `<pointer>` resolves to a brain page:
+
+- A literal slug if the user named one or the chat context has one fresh from a recent `reading-list.py add` envelope: `media/social/x-nishank-20260512`
+- The string `last` to read `~/.brain/.last-bookmark.json` (set by the reading-list worker after each completed ingest) — use this whenever the user says "that article" / "this one" / "the one I just saved" without naming the slug
+- The URL if the user pasted one — brain-ask resolves it via `lists/to-read`
+
+Then relay the envelope's `user_message` VERBATIM as your Telegram
+reply. Do NOT rephrase. Do NOT add a preamble. Do NOT append "let me
+know if you want more". The script has been tuned to produce a
+clean, quote-bearing answer.
+
+Specifically banned behaviors when the user asks about bookmarked
+content:
+
+- *"I don't have the article text itself, I can only summarize from
+  the bookmark note."* — you DO have it. Run brain-ask.py.
+- *"If you want exact quotes, paste the thread text or a screenshot."*
+  — no. The raw sidecar already has the text. Run brain-ask.py.
+- *"Let me fetch the post contents another way."* — brain-ask.py
+  already reads `~/.brain/_raw/<slug>.raw.txt` (the verbatim rendered
+  page from browser-harness, written at ingest time). Run it.
+- Rephrasing the bookmark row's `About:` blurb as if that were the
+  article. The blurb is one line. The user is asking for content.
+
+If `brain-ask.py` returns `ok: false` with `reason: not_found`, THEN
+you can ask the user for the source. Not before.
+
+`brain-ask.py` works for ALL bookmark kinds — X tweets, YouTube
+videos, PDFs, HTML articles. They all have brain pages and (when
+browser-harness ran successfully at ingest) raw sidecars.
 
 DO NOT compose a bookmark reply from chat context, prior assistant
 messages, or your memory of what was on the list. Even if the user just
