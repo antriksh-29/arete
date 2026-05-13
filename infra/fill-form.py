@@ -1788,7 +1788,7 @@ for step in range({max_steps}):
             time.sleep(0.4)
         except Exception:
             pass
-        book_js_pre = '''
+        book_js_pre = r'''
 (function(){{
   // Modal-scoped search: if a visible [role=dialog] / [aria-modal=true]
   // is open, restrict button search to its subtree. This prevents
@@ -1852,7 +1852,7 @@ for step in range({max_steps}):
         # GMR's final page has BOTH Continue (old widget) and Book
         # (final). Continue re-opens the provider modal; Book commits.
         if {submit!r} and plan:
-            book_js = '''
+            book_js = r'''
 (function(){{
   var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"]'))
     .filter(function(x){{
@@ -2040,7 +2040,7 @@ capture_screenshot({shot_path!r})
 submitted = False
 submit = {submit!r}
 if submit:
-    submit_exec = '''
+    submit_exec = r'''
 (function(){{
   function isVisible(el){{
     var r=el.getBoundingClientRect();
