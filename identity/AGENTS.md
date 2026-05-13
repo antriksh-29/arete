@@ -910,6 +910,39 @@ See `skills/daily-task-manager/SKILL.md`. Single source of truth is
 and read-only. Re-run `show` every time — never regurgitate from
 conversation history.
 
+| User intent | Command |
+|---|---|
+| Shares list of 2+ items as today's tasks ("my tasks today are: …", "today's tasks: …") | `~/bin/daily-tasks.sh set` with tasks on stdin (heredoc) |
+| "add X to my list" | `~/bin/daily-tasks.sh add` with X on stdin |
+| "remove #N" / "drop the third one" | `~/bin/daily-tasks.sh remove <N>` |
+| "done with #N" / "mark task N done" | `~/bin/daily-tasks.sh mark <N> yes` |
+| "push #N to tomorrow" | `~/bin/daily-tasks.sh mark <N> tomorrow` |
+| Numbered status reply after the 22:00 IST review prompt | `~/bin/daily-tasks.sh review` with full reply on stdin |
+| "share today's task list" / "show my tasks" / "what's on my plate" | `~/bin/daily-tasks.sh show` |
+| "yesterday's tasks" / "tasks for May 4" | `~/bin/daily-tasks.sh show <yesterday\|YYYY-MM-DD>` |
+
+The evening review reminder is a systemd timer (`daily-tasks-review.timer`,
+fires daily at **22:00 IST**) → runs `~/bin/daily-tasks-review-trigger.sh`,
+which reads today's state file and sends the numbered review prompt.
+The reminder ONLY fires when `~/.brain-bootstrap-raw/state/daily-tasks/<today>.json`
+exists, which means a `set` (or `add`) MUST have run earlier in the day.
+
+**HARD RULE — daily-task queries MUST invoke the script.** When the user
+shares a task list, asks to see it, asks to modify it, or replies to the
+22:00 IST review prompt:
+
+1. Run the matching `~/bin/daily-tasks.sh …` command.
+2. Read the stdout (one-line ack on writes; formatted list on `show`).
+3. Relay the script's output VERBATIM as your Telegram reply.
+
+DO NOT compose a daily-task reply from chat context, prior assistant
+messages, or your memory of what you "just saved." If the user re-sends
+the same list, re-run `set` — the script is idempotent and replacing the
+list is the right behaviour. Fabricated "Saved. N tasks logged" replies
+without invoking the script silently break the 22:00 IST evening review
+(no state file → trigger script exits silently → user never gets a
+reminder, exactly the regression that caused the May 9–11 outage).
+
 ### Reading check-in
 
 See `skills/reading-checkin/SKILL.md`. The 10am IST cron pings; user

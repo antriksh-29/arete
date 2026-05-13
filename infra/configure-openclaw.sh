@@ -40,7 +40,21 @@ fi
 # All knobs we manage. Format: "<dot.path>=<value>".
 # python types: ints stay ints. Strings need quoting. Bools as JSON.
 DESIRED=(
-  "agents.defaults.bootstrapTotalMaxChars=60000"
+  # bootstrapMaxChars is the PER-FILE limit. AGENTS.md is ~48K chars
+  # and was being truncated at 40K, cutting off daily-task-manager
+  # routing rules (live at line 871+ of AGENTS.md) and silently
+  # breaking the skill — bot would hallucinate "saved" replies
+  # without actually invoking ~/bin/daily-tasks.sh. Bumped to 50000
+  # so full AGENTS.md survives injection. Keep ~10K headroom over
+  # the file's current size so adding routing rules doesn't re-break
+  # truncation.
+  "agents.defaults.bootstrapMaxChars=60000"
+  # bootstrapTotalMaxChars is the WHOLE-bootstrap budget (AGENTS.md +
+  # all loaded SKILL.md files). Bumped 60K → 100K so the full
+  # AGENTS.md + a healthy chunk of SKILL.md content both fit. Still
+  # well under gpt-5.4-mini's 200K TPM ceiling (the silent-hang
+  # regression from bug #1).
+  "agents.defaults.bootstrapTotalMaxChars=100000"
 )
 
 python3 - "$CONFIG" "$MODE" "${DESIRED[@]}" <<'PYEOF'

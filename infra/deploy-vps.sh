@@ -313,6 +313,48 @@ install_bh_chrome_unit() {
 }
 step "install bh-chrome unit" install_bh_chrome_unit
 
+# ── 3c-bis. install daily-tasks-review timer + service ─────────
+# Fires at 22:00 IST daily, runs daily-tasks-review-trigger.sh which
+# sends the user the numbered status-prompt for the day's tasks.
+# Before May 12, these units lived only on the VPS (not committed),
+# so when the project was restructured the bot lost awareness of the
+# cron and the user lost a week of evening reviews. Versioning them
+# now means redeploy = guaranteed cron continuity.
+install_dtr_unit() {
+  local changed=0
+  for f in daily-tasks-review.timer daily-tasks-review.service; do
+    local src="infra/$f"
+    local dst="$HOME/.config/systemd/user/$f"
+    if [ ! -f "$src" ]; then
+      echo "  ${yellow}!${rst} $src missing — non-fatal"
+      continue
+    fi
+    mkdir -p "$(dirname "$dst")"
+    if [ ! -f "$dst" ] || ! cmp -s "$src" "$dst"; then
+      cp "$src" "$dst"
+      changed=1
+      echo "  ${green}✓${rst} $f synced"
+    fi
+  done
+  if [ "$changed" -eq 1 ]; then
+    systemctl --user daemon-reload 2>&1 | tail -1 || true
+  fi
+  systemctl --user enable daily-tasks-review.timer 2>&1 | tail -1 || true
+  if systemctl --user is-active daily-tasks-review.timer >/dev/null 2>&1; then
+    systemctl --user restart daily-tasks-review.timer
+  else
+    systemctl --user start daily-tasks-review.timer
+  fi
+  if systemctl --user is-active daily-tasks-review.timer >/dev/null 2>&1; then
+    echo "  ${green}✓${rst} daily-tasks-review.timer active"
+  else
+    echo "  ${red}✗${rst} daily-tasks-review.timer failed to start"
+    return 1
+  fi
+  return 0
+}
+step "install daily-tasks-review unit" install_dtr_unit
+
 # ── 3d. browser-harness doctor ────────────────────────────────────
 # Sanity check the full stack. Exits 0 even on failure so a flaky
 # doctor doesn't gate the rest of the deploy.
