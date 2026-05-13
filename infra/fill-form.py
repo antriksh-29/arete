@@ -874,6 +874,16 @@ TIME_DROPDOWN_JS = r"""
   }
   match.scrollIntoView({block: 'center'});
   match.click();
+  // Close the dropdown deterministically. The listbox may stay open
+  // visually if the option click doesn't fire the close handler — a
+  // stale-open dropdown later covers the slot grid + book button,
+  // which causes downstream clicks to land on dropdown options
+  // instead of actual page elements. Dispatch Escape on document and
+  // click the page body in an empty area as a fallback.
+  try {
+    var esc = new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true});
+    document.dispatchEvent(esc);
+  } catch(e) {}
   return JSON.stringify({clicked: true, kind: 'time_dropdown', target: String(targetTime),
                           picked: (match.innerText||'').trim()});
 })('TIME_PLACEHOLDER')
