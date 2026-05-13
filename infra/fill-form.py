@@ -1141,10 +1141,21 @@ PROVIDER_PICK_JS = r"""
   if (!modalDetected){
     return JSON.stringify({clicked: false, reason: 'no_provider_modal'});
   }
+  // Scope to the actual "Continue with" dialog — the page may have many
+  // duplicate hidden "Your reservation" dialog clones in the DOM.
+  // Find the visible dialog whose heading text contains "continue with".
+  var allDialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]'));
+  var contDialog = allDialogs.find(function(d){
+    var r = d.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    var hs = Array.from(d.querySelectorAll('h1, h2, h3, [role="heading"]'));
+    return hs.some(function(h){ return /continue\s+with/i.test((h.innerText||'').trim()); });
+  });
+  var searchRoot = contDialog || document;
   // Pick a row whose text is a near-exact provider name or
   // "Continue with <Provider>". Reject anything longer (ToS links,
   // descriptions, etc).
-  var rows = queryAll('button, [role="button"], a, li, [role="listitem"], div[tabindex]')
+  var rows = Array.from(searchRoot.querySelectorAll('button, [role="button"], a, li, [role="listitem"], div[tabindex]'))
     .filter(function(b){
       var r = b.getBoundingClientRect();
       var s = window.getComputedStyle(b);
@@ -1782,16 +1793,29 @@ for step in range({max_steps}):
     if (parseFloat(s.opacity) < 0.5) return false;
     return true;
   }}
-  var dialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]')).filter(isVisible);
-  // Pick the topmost: highest z-index, or just the last visible.
+  // Pick the dialog whose heading is the most action-bearing — prefer
+  // "Continue with", then "Your reservation" with a Book/Reserve button.
+  // GMR's page can have 10+ stale duplicate Your-Reservation dialogs in
+  // the DOM, all dimensioned but stacked off-screen or behind. The
+  // ACTIVE one is the one currently positioned in the viewport center.
+  var visDialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]')).filter(isVisible);
   var root = document;
-  if (dialogs.length){{
-    dialogs.sort(function(a,b){{
-      var za = parseInt(window.getComputedStyle(a).zIndex || '0', 10) || 0;
-      var zb = parseInt(window.getComputedStyle(b).zIndex || '0', 10) || 0;
-      return zb - za;
+  // First preference: a "Continue with" dialog
+  var contDlg = visDialogs.find(function(d){{
+    return Array.from(d.querySelectorAll('h1,h2,h3,[role="heading"]')).some(function(h){{
+      return /continue\\s+with/i.test((h.innerText||'').trim());
     }});
-    root = dialogs[0];
+  }});
+  if (contDlg){{ root = contDlg; }} else if (visDialogs.length){{
+    // Pick the dialog whose center is closest to the viewport center.
+    var vcx = window.innerWidth/2, vcy = window.innerHeight/2;
+    visDialogs.sort(function(a,b){{
+      var ar=a.getBoundingClientRect(), br=b.getBoundingClientRect();
+      var ad=Math.abs(ar.left+ar.width/2-vcx) + Math.abs(ar.top+ar.height/2-vcy);
+      var bd=Math.abs(br.left+br.width/2-vcx) + Math.abs(br.top+br.height/2-vcy);
+      return ad - bd;
+    }});
+    root = visDialogs[0];
   }}
   var btns = Array.from(root.querySelectorAll('[role="button"], button, input[type="submit"]'))
     .filter(function(x){{
@@ -2047,15 +2071,23 @@ if submit:
   // restrict button search to its subtree. Prevents false-clicks on
   // background-page buttons (slot-page "Continue") that sit underneath
   // an overlay reservation modal.
-  var dialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]')).filter(isVisible);
+  // Pick the actionable dialog (Continue with > viewport-center).
+  var visDialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]')).filter(isVisible);
   var root = document;
-  if (dialogs.length){{
-    dialogs.sort(function(a,b){{
-      var za = parseInt(window.getComputedStyle(a).zIndex || '0', 10) || 0;
-      var zb = parseInt(window.getComputedStyle(b).zIndex || '0', 10) || 0;
-      return zb - za;
+  var contDlg = visDialogs.find(function(d){{
+    return Array.from(d.querySelectorAll('h1,h2,h3,[role="heading"]')).some(function(h){{
+      return /continue\s+with/i.test((h.innerText||'').trim());
     }});
-    root = dialogs[0];
+  }});
+  if (contDlg){{ root = contDlg; }} else if (visDialogs.length){{
+    var vcx = window.innerWidth/2, vcy = window.innerHeight/2;
+    visDialogs.sort(function(a,b){{
+      var ar=a.getBoundingClientRect(), br=b.getBoundingClientRect();
+      var ad=Math.abs(ar.left+ar.width/2-vcx) + Math.abs(ar.top+ar.height/2-vcy);
+      var bd=Math.abs(br.left+br.width/2-vcx) + Math.abs(br.top+br.height/2-vcy);
+      return ad - bd;
+    }});
+    root = visDialogs[0];
   }}
   var btns = Array.from(root.querySelectorAll('[role="button"], button, input[type="submit"]'));
   var visible = btns.filter(function(x){{
@@ -2063,6 +2095,16 @@ if submit:
     if (x.disabled || x.getAttribute('aria-disabled') === 'true') return false;
     return true;
   }});
+  // GMR's post-provider screen has "Sign in with Google" + "or reserve
+  // as a guest" — prefer the guest option so the headless flow doesn't
+  // get blocked at OAuth.
+  var guestRe = /(reserve\s+as\s+(a\s+)?guest|continue\s+as\s+(a\s+)?guest|book\s+as\s+(a\s+)?guest|guest\s+(reservation|booking))/i;
+  var guest = visible.find(function(x){{ return guestRe.test((x.innerText||x.value||'').trim()); }});
+  if (guest){{
+    guest.scrollIntoView({{block:'center'}});
+    guest.click();
+    return JSON.stringify(true);
+  }}
   // Two-pass: prefer the commit-verb buttons (book/reserve/confirm/...)
   // FIRST. Only fall back to Continue/Next/Proceed if no commit-verb
   // button exists. This is the GMR-reservation-page bug: the page has
