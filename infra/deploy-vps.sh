@@ -483,6 +483,29 @@ migrate_reading_list_v2() {
 }
 step "reading-list v2 migrate" migrate_reading_list_v2
 
+# ── 5c. ensure ~/.brain/_raw/ is gitignored ──────────────────────
+# Raw sidecars (verbatim rendered pages from browser-harness) live
+# under ~/.brain/_raw/ and must NEVER be pushed to the GitHub brain
+# repo — they can include X session signatures, login state hints,
+# and content the source's ToS doesn't want mirrored publicly. The
+# reading-list `git_commit` already only stages an explicit dir
+# allowlist (so `_raw/` is safe by construction), but a manual
+# `git add -A` from a user shell would commit the sidecar. Belt and
+# braces: also list `_raw/` in ~/.brain/.gitignore.
+ensure_brain_gitignore() {
+  local f="$HOME/.brain/.gitignore"
+  [ -d "$HOME/.brain" ] || { echo "  ${yellow}!${rst} ~/.brain missing — skipping"; return 0; }
+  touch "$f"
+  if ! grep -qxF "_raw/" "$f"; then
+    echo "_raw/" >> "$f"
+    echo "  ${green}✓${rst} added _raw/ to ~/.brain/.gitignore"
+  else
+    echo "  ${green}✓${rst} _raw/ already gitignored"
+  fi
+  return 0
+}
+step "ensure ~/.brain/_raw gitignored" ensure_brain_gitignore
+
 # ── 6. final verification: gbrain smoke-test (informational) ────
 # This step runs gbrain's built-in smoke checks PLUS our drop-in
 # user-test wrappers in ~/.gbrain/smoke-tests.d/. Always returns 0

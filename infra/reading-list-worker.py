@@ -76,6 +76,34 @@ def _send_telegram(text):
     return True
 
 
+def _write_last_bookmark_pointer(row):
+    """Persist the slug of the most recently completed bookmark so the
+    agent's follow-up questions ("what does that article say?",
+    "quote from it") can resolve to a brain page without the user
+    naming the slug. brain-ask.py reads ~/.brain/.last-bookmark.json
+    when invoked with the literal pointer string `last`.
+
+    Best-effort — failures don't tank the worker, just mean the
+    convenience pointer is stale until the next bookmark."""
+    try:
+        from datetime import datetime, timezone
+        path = Path.home() / ".brain" / ".last-bookmark.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "slug": row.get("brain_page", ""),
+            "url": row.get("url", ""),
+            "title": row.get("title", ""),
+            "posted_by": row.get("posted_by", ""),
+            "one_liner": row.get("one_liner", ""),
+            "kind": row.get("kind", ""),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        path.write_text(json.dumps(payload, indent=2))
+        log(f"wrote .last-bookmark.json → {payload['slug']}")
+    except Exception as e:
+        log(f"last-bookmark pointer write failed (non-fatal): {e}")
+
+
 def _drain_xref_queue():
     drainer = Path(__file__).resolve().parent / "xref-drainer.py"
     if not drainer.exists():
@@ -158,6 +186,7 @@ def main():
             return
         rl.save_state(fresh)
         _drain_xref_queue()
+        _write_last_bookmark_pointer(row)
         _send_telegram(_format_done_message(row))
         log(f"done: {row['brain_page']}")
     else:

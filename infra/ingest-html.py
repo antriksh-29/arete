@@ -293,6 +293,27 @@ def main():
     page_path.write_text(page)
     subprocess.run([GBRAIN, "put", slug], input=page, text=True, check=False)
 
+    # Layer 2: write the verbatim extracted body to a local-only
+    # sidecar so brain-ask.py can quote exact phrases. The page itself
+    # carries the LLM's analysis; the sidecar carries the source.
+    raw_body = meta.get("body") or ""
+    if raw_body:
+        try:
+            raw_dir = BRAIN_DIR / "_raw"
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            basename = slug.split("/")[-1]
+            raw_path = raw_dir / f"{basename}.raw.txt"
+            raw_path.write_text(
+                f"# Raw extracted body for {slug}\n"
+                f"Source URL: {final_url}\n"
+                f"Captured: {TODAY}\n"
+                f"Page title: {meta.get('title','')}\n\n"
+                f"## Extracted body (readability)\n{raw_body}\n"
+            )
+            log(f"wrote raw sidecar {raw_path} ({len(raw_body)} chars)")
+        except Exception as e:
+            log(f"raw sidecar write failed (non-fatal): {e}")
+
     linked = cross_reference(slug, page)
     one_liner = extract_one_liner(page)
 
