@@ -880,6 +880,106 @@ TIME_DROPDOWN_JS = r"""
 """
 
 
+# Reads back the visible Date dropdown trigger text AFTER we tried to
+# set it via DATE_DROPDOWN_JS. The orchestrator uses this to spot a
+# silent picker failure (we clicked something, but the trigger never
+# updated). Returns the trigger's current label so step_records[-1]
+# can store it; not a hard gate.
+VERIFY_DATE_TRIGGER_JS = r"""
+(function(){
+  var bs = Array.from(document.querySelectorAll('button, [role="button"], [role="combobox"]'));
+  var hit = bs.find(function(b){
+    var t = (b.innerText || '').toLowerCase();
+    if (t.length >= 50) return false;
+    if (t.indexOf('today') >= 0) return true;
+    if (t.indexOf('tomorrow') >= 0) return true;
+    if (/\b(mon|tue|wed|thu|fri|sat|sun)/.test(t)) return true;
+    if (/[a-z]{3,}\s+\d+/.test(t)) return true;  // "may 17"
+    return false;
+  });
+  return JSON.stringify({trigger_text: hit ? (hit.innerText || '').trim().slice(0, 60) : null});
+})()
+"""
+
+
+# Same as above for the Time dropdown trigger — used to confirm that
+# TIME_DROPDOWN_JS actually committed the user's target time before we
+# let the slot grid click fire.
+VERIFY_TIME_TRIGGER_JS = r"""
+(function(){
+  var bs = Array.from(document.querySelectorAll('button, [role="button"], [role="combobox"]'));
+  var hit = bs.find(function(b){
+    var t = (b.innerText || '').toLowerCase();
+    if (t.length >= 25) return false;
+    return /\d{1,2}(:\d{2})?\s*(am|pm)/.test(t);
+  });
+  return JSON.stringify({trigger_text: hit ? (hit.innerText || '').trim().slice(0, 40) : null});
+})()
+"""
+
+
+# Detects a reservation-confirmed success page. Looks for any of:
+#   - heading text "Reservation confirmed" / "Booking confirmed"
+#   - "Your reservation has been booked" / "Your booking is confirmed"
+#   - "Email sent to" / "We've emailed you" alongside a venue name
+#   - A green checkmark SVG near such text (presence-only signal)
+# Returns {detected:true, marker:"...", text_snippet:"..."} on a hit so
+# the orchestrator can confidently emit state=completed instead of
+# guessing from submit-button return values. The submit click can
+# succeed while the provider later rejects the booking — only the
+# confirmation page is ground truth.
+CONFIRMATION_DETECT_JS = r"""
+(function(){
+  function vis(el){
+    if (!el) return false;
+    var r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return false;
+    var s = window.getComputedStyle(el);
+    return s.visibility !== 'hidden' && s.display !== 'none' && parseFloat(s.opacity) > 0.1;
+  }
+  var body = (document.body && document.body.innerText) ? document.body.innerText : '';
+  var bodyL = body.toLowerCase();
+  // Strong markers — phrases that effectively only appear on success.
+  var strong = [
+    /reservation\s+confirmed/i,
+    /booking\s+confirmed/i,
+    /your\s+reservation\s+(has\s+been|is)\s+(booked|confirmed)/i,
+    /your\s+booking\s+(has\s+been|is)\s+confirmed/i,
+    /thank\s+you\s+for\s+your\s+reservation/i,
+    /we\s+have\s+received\s+your\s+booking/i,
+    /reservierung\s+best(ä|a)tigt/i,
+    /buchung\s+best(ä|a)tigt/i,
+    /reserva\s+confirmada/i,
+    /r(é|e)servation\s+confirm(é|e)e/i,
+  ];
+  for (var i = 0; i < strong.length; i++){
+    var m = body.match(strong[i]);
+    if (m){
+      // Walk up to the heading that owns this text to confirm visibility.
+      var headings = Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"]'));
+      var hit = headings.find(function(h){ return strong[i].test(h.innerText || ''); });
+      if (!hit || vis(hit)){
+        var snippet = body.substr(Math.max(0, body.search(strong[i]) - 30), 220).replace(/\s+/g, ' ').trim();
+        return JSON.stringify({detected: true, marker: m[0], text_snippet: snippet});
+      }
+    }
+  }
+  // Soft marker — "Email sent to" + a visible heading "Your reservation".
+  if (/email\s+sent\s+to\s+\S+@\S+/i.test(bodyL)){
+    var hs = Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"]'));
+    var hsHit = hs.find(function(h){
+      var t = (h.innerText || '').toLowerCase();
+      return /your\s+reservation/i.test(t) || /booking\s+(confirmed|complete)/i.test(t);
+    });
+    if (hsHit && vis(hsHit)){
+      return JSON.stringify({detected: true, marker: 'email_sent+your_reservation', text_snippet: (hsHit.innerText || '').slice(0, 200)});
+    }
+  }
+  return JSON.stringify({detected: false});
+})()
+"""
+
+
 # Picks a time-slot button matching the user's requested time. Pure
 # slot click — assumes meal period has already been selected. Returns
 # the list of visible slot texts if no match within tolerance, so the
@@ -1443,6 +1543,9 @@ def build_driver_script(url, all_answers, submit, shot_path, max_steps=6):
     date_dropdown_js = DATE_DROPDOWN_JS
     time_dropdown_js = TIME_DROPDOWN_JS
     provider_pick_js = PROVIDER_PICK_JS
+    confirmation_detect_js = CONFIRMATION_DETECT_JS
+    verify_date_trigger_js = VERIFY_DATE_TRIGGER_JS
+    verify_time_trigger_js = VERIFY_TIME_TRIGGER_JS
     shot_after_submit = shot_path.replace(".png", "-after-submit.png")
     shot_step_prefix = shot_path.replace(".png", "-step")
     return f"""
@@ -1548,19 +1651,39 @@ for step in range({max_steps}):
     #     because inputs are covered. Dismiss the modal first, then
     #     re-discover and fill on the next iteration.
     if {submit!r}:
-        prov_check_js = ({provider_pick_js!r}).replace(
-            'PROVIDER_PLACEHOLDER',
-            str(all_answers.get('provider_preference','')).replace("'", "")
-        )
-        pv = cdp('Runtime.evaluate', expression=prov_check_js, returnByValue=True)
-        pv_result = json.loads(pv.get('result', {{}}).get('value', '{{}}'))
-        if pv_result.get('clicked'):
-            step_records.append({{
-                'step': step, 'fields_seen': len(headings), 'plan_size': len(plan),
-                'verify_state': {{}}, 'provider_picked_early': pv_result,
-            }})
-            time.sleep(8)  # generous — let modal close + form #2 render
-            continue
+        # Count consecutive provider_picked_early in last 3 steps.
+        # If 3 in a row → modal isn't dismissing on click. Switch
+        # provider preference (try Swiggy if we kept picking EazyDiner)
+        # and abandon the early-pick path so the loop can fall through
+        # to plan/fill / CTA / submit_exec.
+        recent_picks = [r for r in step_records[-3:] if r.get('provider_picked_early')]
+        modal_stuck = len(recent_picks) >= 3
+        if modal_stuck:
+            # Flip provider preference order so the next attempt clicks
+            # the OTHER provider in the modal (Swiggy instead of
+            # EazyDiner). Only do this once per run.
+            if not any(r.get('provider_swapped') for r in step_records):
+                cur = all_answers.get('provider_preference','eazydiner,swiggy')
+                parts = [p.strip() for p in cur.split(',') if p.strip()]
+                if len(parts) >= 2:
+                    all_answers['provider_preference'] = ','.join(parts[::-1])
+                    step_records[-1]['provider_swapped'] = all_answers['provider_preference']
+            # Either way, skip the early provider-pick this iteration —
+            # fall through to plan/fill / CTA paths.
+        else:
+            prov_check_js = ({provider_pick_js!r}).replace(
+                'PROVIDER_PLACEHOLDER',
+                str(all_answers.get('provider_preference','')).replace("'", "")
+            )
+            pv = cdp('Runtime.evaluate', expression=prov_check_js, returnByValue=True)
+            pv_result = json.loads(pv.get('result', {{}}).get('value', '{{}}'))
+            if pv_result.get('clicked'):
+                step_records.append({{
+                    'step': step, 'fields_seen': len(headings), 'plan_size': len(plan),
+                    'verify_state': {{}}, 'provider_picked_early': pv_result,
+                }})
+                time.sleep(8)  # generous — let modal close + form #2 render
+                continue
 
     # 3. Apply plan via in-page JS
     if plan:
@@ -1676,6 +1799,15 @@ for step in range({max_steps}):
             step_records[-1]['date_dropdown_clicked'] = dd_result
             if dd_result.get('clicked'):
                 time.sleep(4)  # let the slot grid refresh for the new date
+                # Verify: read back the Date trigger text and confirm it
+                # reflects the target. Logged on the step record so the
+                # orchestrator can flag a silent picker failure.
+                vd = cdp('Runtime.evaluate', expression={verify_date_trigger_js!r}, returnByValue=True)
+                try:
+                    vd_v = json.loads(vd.get('result', {{}}).get('value', '{{}}'))
+                except Exception:
+                    vd_v = {{}}
+                step_records[-1]['date_trigger_after'] = vd_v.get('trigger_text')
                 continue
 
         # (a1) Time dropdown — GMR's Time combobox reveals every 30-min
@@ -1690,6 +1822,14 @@ for step in range({max_steps}):
             step_records[-1]['time_dropdown_clicked'] = td_result
             if td_result.get('clicked'):
                 time.sleep(4)  # let the slot grid refresh
+                # Verify: read back the Time trigger and confirm it now
+                # contains a parseable time matching the target (±5min).
+                vt = cdp('Runtime.evaluate', expression={verify_time_trigger_js!r}, returnByValue=True)
+                try:
+                    vt_v = json.loads(vt.get('result', {{}}).get('value', '{{}}'))
+                except Exception:
+                    vt_v = {{}}
+                step_records[-1]['time_trigger_after'] = vt_v.get('trigger_text')
                 continue
 
         # (a) If we have a time target AND haven't already done a
@@ -1805,12 +1945,32 @@ if submit:
     s_raw = s.get('result', {{}}).get('value', 'false')
     submitted = (s_raw == 'true')
     if submitted:
-        time.sleep(4)
+        # Longer wait after Book — confirmation page can take 5-10s on
+        # GMR + EazyDiner round-trip. Poll for the confirmation marker
+        # every 2s up to 14s instead of one fixed sleep.
+        for _wait_i in range(7):
+            time.sleep(2)
+            _cd = cdp('Runtime.evaluate', expression={confirmation_detect_js!r}, returnByValue=True)
+            try:
+                _cd_v = json.loads(_cd.get('result', {{}}).get('value', '{{}}'))
+            except Exception:
+                _cd_v = {{}}
+            if _cd_v.get('detected'):
+                break
         capture_screenshot({shot_after_submit!r})
 
-# Final verification on last page
+# Final verification on last page — including confirmation-marker scan.
+# This runs in BOTH --submit and review modes so the orchestrator can
+# detect a confirmation page even when --submit wasn't passed (e.g.,
+# the user clicked Book themselves in a side tab; or a prior driver
+# step navigated us straight to confirmation).
 v2 = cdp('Runtime.evaluate', expression={verify_js!r}, returnByValue=True)
 final_verify = json.loads(v2.get('result', {{}}).get('value', '{{}}'))
+cd_final = cdp('Runtime.evaluate', expression={confirmation_detect_js!r}, returnByValue=True)
+try:
+    confirmation = json.loads(cd_final.get('result', {{}}).get('value', '{{}}'))
+except Exception:
+    confirmation = {{'detected': False}}
 
 print('---FINAL---')
 print(json.dumps({{
@@ -1821,6 +1981,9 @@ print(json.dumps({{
     'step_screenshots': step_screenshots,
     'verification': final_verify,
     'submitted': submitted,
+    'confirmation_detected': bool(confirmation.get('detected')),
+    'confirmation_marker': confirmation.get('marker'),
+    'confirmation_snippet': confirmation.get('text_snippet'),
     'used_answer_keys': sorted(list(used_keys)),
 }}))
 """

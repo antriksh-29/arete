@@ -82,7 +82,7 @@ DATE_ISO_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
 _MONTH_NAMES = ("january","february","march","april","may","june","july",
                 "august","september","october","november","december")
 _MONTH_RE = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
-DATE_DM_RE = re.compile(r"(?<!for\s)(?<!for\s\s)\b(\d{1,2})(?:st|nd|rd|th)?\s+(" + _MONTH_RE + r")\b", re.I)
+DATE_DM_RE = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(" + _MONTH_RE + r")\b", re.I)
 DATE_MD_RE = re.compile(r"\b(" + _MONTH_RE + r")\s+(\d{1,2})(?:st|nd|rd|th)?\b", re.I)
 
 
@@ -643,6 +643,20 @@ def book(message: str) -> dict:
                              platform=name,
                              user_message=(f"📅 {intent['venue']} via {name.upper()}: OTP screen reached. "
                                            f"Paste the code you received and I'll continue."))
+        if env.get("confirmation_detected"):
+            # Some flows land on the confirmation page during the
+            # initial book() drive (rare, but possible — e.g. when the
+            # user pinned a URL whose state was already past Book).
+            state_path = save_state(intent, env)
+            return _envelope(state="completed", intent=intent, attempts=attempts,
+                             screenshot=env.get("screenshot"), state_file=state_path,
+                             platform=name, confirmation_detected=True,
+                             confirmation_marker=env.get("confirmation_marker"),
+                             user_message=(
+                                 f"✅ Reservation confirmed at {intent['venue']} — "
+                                 f"{intent.get('time') or 'requested time'} on "
+                                 f"{intent.get('date') or 'requested date'}, party of "
+                                 f"{intent.get('party')}. Confirmation page detected via {name.upper()}."))
         if filled and not env.get("errors"):
             # Reached a confirm-ready state without OTP
             state_path = save_state(intent, env)
@@ -766,12 +780,32 @@ def submit() -> dict:
                          screenshot=env2.get("screenshot"),
                          user_message=(f"📅 {intent.get('venue')} submitted. "
                                        f"OTP screen — paste the code you received."))
-    if env2.get("submitted"):
+    # Ground truth: a confirmation page was detected by the DOM scan.
+    # submitted==True alone is not enough — the click can succeed while
+    # the provider rejects the booking later. Only "Reservation
+    # confirmed" / equivalent marker text means it actually went through.
+    if env2.get("confirmation_detected"):
         return _envelope(state="completed", intent=intent, platform=platform,
                          screenshot=env2.get("screenshot"),
-                         user_message=(f"✅ {intent.get('venue')} booked via {platform.upper()} "
-                                       f"for {intent.get('date')} at {intent.get('time')}. "
-                                       f"Screenshot shows the confirmation page."))
+                         confirmation_detected=True,
+                         confirmation_marker=env2.get("confirmation_marker"),
+                         user_message=(
+                             f"✅ Reservation confirmed at {intent.get('venue')} — "
+                             f"{intent.get('time')} on {intent.get('date')}, party of "
+                             f"{intent.get('party')}. Booked via {platform.upper()}. "
+                             f"Confirmation email should arrive shortly."))
+    if env2.get("submitted"):
+        # Book click landed but no confirmation marker yet. Could be a
+        # slow provider round-trip OR a backend rejection. Surface as
+        # confirm_ready (not completed) so the bot doesn't claim success
+        # falsely.
+        return _envelope(state="confirm_ready", intent=intent, platform=platform,
+                         screenshot=env2.get("screenshot"),
+                         user_message=(
+                             f"📅 {intent.get('venue')} — Book clicked but no confirmation "
+                             f"page detected yet. Screenshot is the post-click state. "
+                             f"If you see 'Reservation confirmed', the booking succeeded. "
+                             f"If you see an error, reply 'try another platform'."))
     return _envelope(state="confirm_ready", intent=intent, platform=platform,
                      screenshot=env2.get("screenshot"),
                      user_message=(f"📅 {intent.get('venue')} — submit attempted but no "
