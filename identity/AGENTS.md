@@ -885,6 +885,16 @@ asks anything that maps to a row in the table above:
 2. Read the stdout JSON envelope.
 3. Relay the `user_message` field VERBATIM as your Telegram reply.
 
+**Async add is normal, not a failure.** As of 2026-05-13 `add` is
+ack-and-spawn: the envelope returns `{"ok": true, "pending": true,
+"user_message": "📥 Saving to bookmarks: ..."}` within a second, and a
+background worker posts a separate `✅ Bookmark ready: ...` Telegram
+message when the brain page is written (usually under 2 minutes).
+Relay the ack verbatim and stop — do NOT re-run `add`, do NOT
+follow up with `show` to "verify", do NOT report the bookmark as
+"in progress / not done yet" as if it failed. The follow-up message
+arrives independently of your turn.
+
 DO NOT compose a bookmark reply from chat context, prior assistant
 messages, or your memory of what was on the list. Even if the user just
 asked the same question 30 seconds ago — re-run the script. The brain

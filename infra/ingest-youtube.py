@@ -150,23 +150,39 @@ def ensure_stub(slug, source_slug, source_label):
 
 
 def cross_reference(slug, page_text):
-    linked = []
+    """Defer entity stub / link / timeline-add to xref-drainer.py via
+    ~/.brain/.xref-queue.jsonl. See ingest-x-thread.py for rationale —
+    inline gbrain fan-out was the slowest leg of the deep-ingest path
+    and pushed total runtime past the 120s per-turn budget."""
+    seen = []
     for m in WIKILINK_RE.finditer(page_text):
         target = m.group(1).strip()
-        if target and target != slug and "/" in target:
-            if target in linked:
-                continue
-            linked.append(target)
+        if target and target != slug and "/" in target and target not in seen:
+            seen.append(target)
+    if not seen:
+        return []
+    queue_path = BRAIN_DIR / ".xref-queue.jsonl"
+    BRAIN_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "slug": slug,
+        "entities": seen,
+        "source_label": "YouTube video",
+        "queued_at": f"{TODAY}T00:00:00Z",
+    }
+    try:
+        with open(queue_path, "a") as f:
+            f.write(json.dumps(payload) + "\n")
+    except OSError as e:
+        log(f"xref enqueue failed; running inline fallback: {e}")
+        for target in seen:
             ensure_stub(target, slug, "YouTube video")
             subprocess.run([GBRAIN, "link", slug, target], capture_output=True, check=False, text=True)
             subprocess.run(
-                [
-                    GBRAIN, "timeline-add", target, TODAY,
-                    f"Mentioned in [[{slug}]] [Source: YouTube ingestion {TODAY}]",
-                ],
+                [GBRAIN, "timeline-add", target, TODAY,
+                 f"Mentioned in [[{slug}]] [Source: YouTube ingestion {TODAY}]"],
                 capture_output=True, check=False, text=True,
             )
-    return linked
+    return seen
 
 
 def extract_one_liner(page_text):

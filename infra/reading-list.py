@@ -47,6 +47,10 @@ INGEST_PDF = "/home/botuser/bin/ingest-pdf.py"
 INGEST_X = "/home/botuser/bin/ingest-x-thread.py"
 INGEST_YOUTUBE = "/home/botuser/bin/ingest-youtube.py"
 INGEST_HTML = "/home/botuser/bin/ingest-html.py"
+WORKER_BIN = "/home/botuser/bin/reading-list-worker.py"
+# Worker stderr log — short retention is fine, the systemd journal
+# captures the worker as well when it's invoked via the timer.
+WORKER_LOG = "/tmp/reading-list-worker.log"
 
 
 def log(msg):
@@ -239,6 +243,39 @@ def hydrate_row(url, kind):
     if not f["posted_by"]:
         f["posted_by"] = url_host(url)
     return f
+
+
+X_HANDLE_RE = re.compile(r"^https?://(?:www\.)?(?:twitter|x)\.com/([^/?#]+)/status/", re.IGNORECASE)
+
+
+def shallow_hydrate(url, kind):
+    """Cheap, network-free metadata for the ack-and-spawn path. Just
+    enough to write a useful placeholder row before the deep worker
+    picks it up. Title is a "(fetching brain page…)" sentinel so the
+    user can see at a glance which rows are in-flight."""
+    title_placeholder = "(saving — brain page in progress…)"
+    if kind == "x_thread":
+        m = X_HANDLE_RE.match(url)
+        handle = m.group(1) if m else ""
+        return {
+            "title": title_placeholder,
+            "posted_by": f"@{handle}" if handle else url_host(url),
+            "one_liner": "",
+            "brain_page": "",
+        }
+    if kind == "youtube":
+        return {
+            "title": title_placeholder,
+            "posted_by": "youtube.com",
+            "one_liner": "",
+            "brain_page": "",
+        }
+    return {
+        "title": title_placeholder,
+        "posted_by": url_host(url),
+        "one_liner": "",
+        "brain_page": "",
+    }
 
 
 # ----- list parsing -----
@@ -504,7 +541,41 @@ def git_commit():
 
 # ----- subcommands -----
 
+def _spawn_worker(url):
+    """Fire-and-forget the deep worker. Detached via start_new_session
+    so it survives this process exiting (which happens within a second
+    of the agent receiving the ack envelope). stderr → WORKER_LOG so
+    a failed worker leaves a trail without polluting the agent's
+    captured stdout."""
+    if not os.path.isfile(WORKER_BIN):
+        log(f"worker binary not found at {WORKER_BIN}; deep ingest will not run")
+        return False
+    try:
+        stderr_fp = open(WORKER_LOG, "a")
+    except OSError as e:
+        log(f"could not open worker log {WORKER_LOG}: {e}")
+        stderr_fp = subprocess.DEVNULL
+    subprocess.Popen(
+        ["python3", WORKER_BIN, url],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=stderr_fp,
+        start_new_session=True,
+    )
+    return True
+
+
 def cmd_add(url):
+    """Ack-and-spawn pattern. Writes a placeholder row with shallow
+    metadata (handle / host) and returns an envelope to the agent
+    immediately so the Telegram turn finishes inside its 120s budget.
+    A detached worker (reading-list-worker.py) runs the deep ingestor
+    off the critical path and sends a follow-up Telegram message when
+    the brain page is ready.
+
+    Synchronous-only mode is kept behind READING_LIST_SYNC=1 so smoke
+    tests and CI can still exercise the full pipeline deterministically
+    without forking a background process."""
     url = normalize_url(url)
     kind = url_kind(url)
     state = load_state()
@@ -517,27 +588,55 @@ def cmd_add(url):
             }))
             return
 
-    f = hydrate_row(url, kind)
+    sync_mode = os.environ.get("READING_LIST_SYNC") == "1"
+
+    if sync_mode:
+        f = hydrate_row(url, kind)
+        row = {
+            "title": f["title"], "posted_by": f["posted_by"],
+            "one_liner": f["one_liner"], "kind": kind, "url": url,
+            "added": TODAY, "brain_page": f["brain_page"],
+        }
+        state["queue"].append(row)
+        save_state(state)
+
+        msg_lines = [f"✅ Bookmarked: {row['title'][:80]}",
+                     f"   Posted by: {row['posted_by']}"]
+        if row["one_liner"]:
+            msg_lines.append(f"   {row['one_liner']}")
+        msg_lines.append(f"   {url}")
+        if row["brain_page"]:
+            msg_lines.append(f"\nBrain page: {row['brain_page']}")
+        else:
+            msg_lines.append("\n(Deep ingestion failed — saved with title only. Run `migrate reading list` later to retry.)")
+        print(json.dumps({
+            "ok": True, **row,
+            "user_message": "\n".join(msg_lines),
+        }))
+        return
+
+    # Async path: write a placeholder, spawn the worker, return ack.
+    s = shallow_hydrate(url, kind)
     row = {
-        "title": f["title"], "posted_by": f["posted_by"],
-        "one_liner": f["one_liner"], "kind": kind, "url": url,
-        "added": TODAY, "brain_page": f["brain_page"],
+        "title": s["title"], "posted_by": s["posted_by"],
+        "one_liner": s["one_liner"], "kind": kind, "url": url,
+        "added": TODAY, "brain_page": s["brain_page"],
     }
     state["queue"].append(row)
     save_state(state)
-
-    msg_lines = [f"✅ Bookmarked: {row['title'][:80]}",
-                 f"   Posted by: {row['posted_by']}"]
-    if row["one_liner"]:
-        msg_lines.append(f"   {row['one_liner']}")
-    msg_lines.append(f"   {url}")
-    if row["brain_page"]:
-        msg_lines.append(f"\nBrain page: {row['brain_page']}")
-    else:
-        msg_lines.append("\n(Deep ingestion failed — saved with title only. Run `migrate reading list` later to retry.)")
+    spawned = _spawn_worker(url)
+    ack = (
+        f"📥 Saving to bookmarks: {s['posted_by']}\n"
+        f"{url}\n\n"
+        + (
+            "Fetching the article and writing the brain page now — I'll send a follow-up when it's ready (usually <2 min)."
+            if spawned
+            else "⚠️ Background worker not available — run `migrate bookmarks` shortly to fill in the brain page."
+        )
+    )
     print(json.dumps({
-        "ok": True, **row,
-        "user_message": "\n".join(msg_lines),
+        "ok": True, "pending": True, **row,
+        "user_message": ack,
     }))
 
 

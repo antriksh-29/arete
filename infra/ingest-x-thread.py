@@ -370,40 +370,68 @@ def ensure_stub(slug, source_slug, source_label):
 
 
 def cross_reference(slug, page_text):
+    """Extract [[wikilinks]] from the brain page and defer the stub /
+    link / timeline-add work to xref-drainer.py via a queue file.
+
+    Inline gbrain calls used to be ~2-3 subprocess invocations per
+    entity (1-2s each), which on a 10-entity page added 20-30s to the
+    pipeline. Combined with the LLM call and browser-harness fetch this
+    overshot the 120s per-turn budget and the bot returned an
+    "ingest didn't finish" apology to Telegram. The deferred drainer
+    runs on a 60s systemd timer and also gets a one-shot kick from the
+    reading-list worker right after the brain page is written, so
+    entity stubs and links populate within ~1 minute of ingest.
+
+    Returns the deduped entity list so the caller's logs / envelope
+    can still report how many cross-refs were queued."""
     entities = set()
     for m in WIKILINK_RE.finditer(page_text):
         target = m.group(1).split("|")[0].strip()
         if target and target != slug:
             entities.add(target)
-    linked = []
-    stubs_created = 0
-    for ent in sorted(entities):
+    entities = sorted(entities)
+    if not entities:
+        log("no entities to cross-reference")
+        return []
+    try:
+        _enqueue_xref(slug, entities, "X thread")
+        log(f"queued {len(entities)} entities for deferred cross-ref")
+    except Exception as e:
+        log(f"xref enqueue failed; falling back to inline cross-ref: {e}")
+        _inline_cross_reference(slug, entities, "X thread")
+    return list(entities)
+
+
+def _enqueue_xref(slug, entities, source_label):
+    """Append a batch to ~/.brain/.xref-queue.jsonl. Format matches
+    xref-drainer.py's reader."""
+    queue_path = BRAIN_DIR / ".xref-queue.jsonl"
+    BRAIN_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "slug": slug,
+        "entities": list(entities),
+        "source_label": source_label,
+        "queued_at": f"{TODAY}T00:00:00Z",
+    }
+    with open(queue_path, "a") as f:
+        f.write(json.dumps(payload) + "\n")
+
+
+def _inline_cross_reference(slug, entities, source_label):
+    """Synchronous fallback used only if the queue write fails (disk
+    full, permissions). Same shape as the legacy code path so smoke
+    tests and migrate still work when the drainer isn't installed."""
+    for ent in entities:
         try:
-            if ensure_stub(ent, slug, "X thread"):
-                stubs_created += 1
-            r1 = subprocess.run(
-                [GBRAIN, "link", slug, ent], capture_output=True, check=False, text=True
+            ensure_stub(ent, slug, source_label)
+            subprocess.run([GBRAIN, "link", slug, ent], capture_output=True, check=False, text=True)
+            subprocess.run(
+                [GBRAIN, "timeline-add", ent, TODAY,
+                 f"Mentioned in [[{slug}]] [Source: {source_label} ingestion {TODAY}]"],
+                capture_output=True, check=False, text=True,
             )
-            r2 = subprocess.run(
-                [
-                    GBRAIN,
-                    "timeline-add",
-                    ent,
-                    TODAY,
-                    f"Mentioned in [[{slug}]] [Source: X thread ingestion {TODAY}]",
-                ],
-                capture_output=True,
-                check=False,
-                text=True,
-            )
-            if r1.returncode == 0 and r2.returncode == 0:
-                linked.append(ent)
-            else:
-                log(f"link/timeline failed for {ent}: link={r1.stdout.strip()[:120]} timeline={r2.stdout.strip()[:120]}")
         except Exception as e:
-            log(f"cross-ref error for {ent}: {e}")
-    log(f"created {stubs_created} stub pages")
-    return linked
+            log(f"inline cross-ref error for {ent}: {e}")
 
 
 def main():

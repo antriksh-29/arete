@@ -355,6 +355,49 @@ install_dtr_unit() {
 }
 step "install daily-tasks-review unit" install_dtr_unit
 
+# ── 3c-ter. install xref-drainer timer + service ──────────────────
+# Drains ~/.brain/.xref-queue.jsonl every 60s. Ingestors now defer
+# the per-entity gbrain link / timeline-add fan-out (~2s per entity)
+# to this queue so the user-facing add path doesn't push past the
+# 120s per-turn Telegram budget. Without this timer entity stubs
+# would only be created when the reading-list worker kicks the drainer
+# one-shot at end of its run, which is fine for new bookmarks but
+# leaves migrate-path queues stranded.
+install_xref_drainer_unit() {
+  local changed=0
+  for f in xref-drainer.service xref-drainer.timer; do
+    local src="infra/$f"
+    local dst="$HOME/.config/systemd/user/$f"
+    if [ ! -f "$src" ]; then
+      echo "  ${yellow}!${rst} $src missing — non-fatal"
+      continue
+    fi
+    mkdir -p "$(dirname "$dst")"
+    if [ ! -f "$dst" ] || ! cmp -s "$src" "$dst"; then
+      cp "$src" "$dst"
+      changed=1
+      echo "  ${green}✓${rst} $f synced"
+    fi
+  done
+  if [ "$changed" -eq 1 ]; then
+    systemctl --user daemon-reload 2>&1 | tail -1 || true
+  fi
+  systemctl --user enable xref-drainer.timer 2>&1 | tail -1 || true
+  if systemctl --user is-active xref-drainer.timer >/dev/null 2>&1; then
+    systemctl --user restart xref-drainer.timer
+  else
+    systemctl --user start xref-drainer.timer
+  fi
+  if systemctl --user is-active xref-drainer.timer >/dev/null 2>&1; then
+    echo "  ${green}✓${rst} xref-drainer.timer active"
+  else
+    echo "  ${red}✗${rst} xref-drainer.timer failed to start"
+    return 1
+  fi
+  return 0
+}
+step "install xref-drainer unit" install_xref_drainer_unit
+
 # ── 3d. browser-harness doctor ────────────────────────────────────
 # Sanity check the full stack. Exits 0 even on failure so a flaky
 # doctor doesn't gate the rest of the deploy.
