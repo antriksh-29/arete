@@ -1794,20 +1794,18 @@ for step in range({max_steps}):
     return true;
   }}
   // Pick the dialog whose heading is the most action-bearing — prefer
-  // "Continue with", then "Your reservation" with a Book/Reserve button.
-  // GMR's page can have 10+ stale duplicate Your-Reservation dialogs in
-  // the DOM, all dimensioned but stacked off-screen or behind. The
-  // ACTIVE one is the one currently positioned in the viewport center.
+  // "Continue with", then the dialog whose center is closest to the
+  // viewport center. GMR's page can have 10+ stale duplicate
+  // Your-Reservation dialogs in the DOM, all dimensioned but stacked
+  // off-screen or behind. The ACTIVE one is the one centered on screen.
   var visDialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]')).filter(isVisible);
   var root = document;
-  // First preference: a "Continue with" dialog
   var contDlg = visDialogs.find(function(d){{
     return Array.from(d.querySelectorAll('h1,h2,h3,[role="heading"]')).some(function(h){{
       return /continue\\s+with/i.test((h.innerText||'').trim());
     }});
   }});
   if (contDlg){{ root = contDlg; }} else if (visDialogs.length){{
-    // Pick the dialog whose center is closest to the viewport center.
     var vcx = window.innerWidth/2, vcy = window.innerHeight/2;
     visDialogs.sort(function(a,b){{
       var ar=a.getBoundingClientRect(), br=b.getBoundingClientRect();
