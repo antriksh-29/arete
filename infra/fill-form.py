@@ -197,13 +197,34 @@ FIELDS_JS = r"""
         return s.display !== 'none' && s.visibility !== 'hidden';
       });
     if (dialogs.length === 0) return document;
-    // Pick the dialog with the largest rendered area — typically the
-    // foreground one (small confirmation popups have smaller area).
-    var best = dialogs[0], bestArea = 0;
+    // When multiple dialogs of identical shape are stacked (GMR's
+    // second-stage routing leaves an OLD dialog and a NEW one with
+    // the same w×h), pick the one with the MOST topmost-at-centre
+    // inputs. The old dialog's inputs are covered by the new one,
+    // so they fail elementFromPoint === el. The new dialog wins.
+    function topmostInputCount(d){
+      var ins = Array.from(d.querySelectorAll('input, textarea, select'));
+      var n = 0;
+      for (var i = 0; i < ins.length; i++){
+        var el = ins[i];
+        var r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+        if (cx < 0 || cy < 0 || cx > window.innerWidth || cy > window.innerHeight) continue;
+        var hit = document.elementFromPoint(cx, cy);
+        if (hit === el || el.contains(hit) || (hit && hit.contains(el))) n++;
+      }
+      return n;
+    }
+    // Score = topmost-input-count (primary) then area (tiebreak).
+    var best = dialogs[0], bestScore = -1, bestArea = 0;
     dialogs.forEach(function(d){
+      var n = topmostInputCount(d);
       var r = d.getBoundingClientRect();
       var a = r.width * r.height;
-      if (a > bestArea){ bestArea = a; best = d; }
+      if (n > bestScore || (n === bestScore && a > bestArea)){
+        bestScore = n; bestArea = a; best = d;
+      }
     });
     return best;
   }
@@ -1159,28 +1180,24 @@ EXECUTE_PLAN_JS = r"""
   }
   function findInputByLabel(heading){
     var target = norm(heading);
-    // Prefer inputs inside a visible dialog/modal — the EazyDiner
-    // guest-checkout step renders a fresh modal over the old inline
-    // form; scoping to it avoids re-filling the hidden stale fields.
-    var dialog = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]'))
-      .find(function(d){
-        var r = d.getBoundingClientRect();
-        if (r.width === 0 || r.height === 0) return false;
-        var s = window.getComputedStyle(d);
-        return s.display !== 'none' && s.visibility !== 'hidden';
-      });
-    var scopes = dialog ? [dialog, document] : [document];
-    for (var si = 0; si < scopes.length; si++){
-      var scope = scopes[si];
-      var inputs = Array.from(scope.querySelectorAll('input, textarea, select'));
-      var match = inputs.find(function(el){
-        if (!_isFillable(el)) return false;
-        var lbl = norm(labelFor(el));
-        return lbl && (lbl === target || lbl.indexOf(target) >= 0 || target.indexOf(lbl) >= 0);
-      });
-      if (match) return match;
-    }
-    return null;
+    // Find ALL matching inputs across the document. Then pick the one
+    // that is topmost (passes elementFromPoint). Critical for GMR's
+    // stacked-form bug: form #1 (filled, hidden) and form #2 (empty,
+    // visible) both have aria-label="First name" — we want #2.
+    var inputs = Array.from(document.querySelectorAll('input, textarea, select'));
+    var matches = inputs.filter(function(el){
+      if (!_isFillable(el)) return false;
+      var lbl = norm(labelFor(el));
+      return lbl && (lbl === target || lbl.indexOf(target) >= 0 || target.indexOf(lbl) >= 0);
+    });
+    if (matches.length === 0) return null;
+    if (matches.length === 1) return matches[0];
+    // Multiple matches — prefer empty value (fresh form), then topmost.
+    var empty = matches.filter(function(e){return !e.value;});
+    var pool = empty.length ? empty : matches;
+    // Return last in DOM order — typically the newest dialog wins
+    // (mounted later, on top in z-index).
+    return pool[pool.length - 1];
   }
   function _scoreMatch(a, b){
     var nA = norm(a), nB = norm(b);
@@ -1524,6 +1541,27 @@ for step in range({max_steps}):
         # with a "Book now" / "Reserve" CTA. Try Next/Continue.
         pass
 
+    # 2.5 Provider-modal priority. If a "Continue with <Provider>"
+    #     modal is on screen, click it FIRST (before plan/fill).
+    #     Reason: GMR's second-stage provider chooser sits on top of
+    #     the new (empty) form #2. Filling form #2 fails silently
+    #     because inputs are covered. Dismiss the modal first, then
+    #     re-discover and fill on the next iteration.
+    if {submit!r}:
+        prov_check_js = ({provider_pick_js!r}).replace(
+            'PROVIDER_PLACEHOLDER',
+            str(all_answers.get('provider_preference','')).replace("'", "")
+        )
+        pv = cdp('Runtime.evaluate', expression=prov_check_js, returnByValue=True)
+        pv_result = json.loads(pv.get('result', {{}}).get('value', '{{}}'))
+        if pv_result.get('clicked'):
+            step_records.append({{
+                'step': step, 'fields_seen': len(headings), 'plan_size': len(plan),
+                'verify_state': {{}}, 'provider_picked_early': pv_result,
+            }})
+            time.sleep(8)  # generous — let modal close + form #2 render
+            continue
+
     # 3. Apply plan via in-page JS
     if plan:
         exec_js = ({exec_js_tpl!r}).replace('PLAN_PLACEHOLDER', json.dumps(plan))
@@ -1567,6 +1605,37 @@ for step in range({max_steps}):
     just_clicked_slot = bool(step_records[-2:-1] and
                              step_records[-2:-1][0].get('time_slot_attempt', {{}}).get('clicked'))
     if plan or just_clicked_slot:
+        # In submit mode after filling fields, prefer a primary submit
+        # button (Book / Reserve / Confirm) over generic Continue —
+        # GMR's final page has BOTH Continue (old widget) and Book
+        # (final). Continue re-opens the provider modal; Book commits.
+        if {submit!r} and plan:
+            book_js = '''
+(function(){{
+  var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"]'))
+    .filter(function(x){{
+      var r=x.getBoundingClientRect();
+      if (r.width===0||r.height===0) return false;
+      var s=window.getComputedStyle(x);
+      if (s.display==='none'||s.visibility==='hidden') return false;
+      if (x.disabled||x.getAttribute('aria-disabled')==='true') return false;
+      if (parseFloat(s.opacity) < 0.5) return false;
+      return true;
+    }});
+  var re = /^(book|submit|reserve|confirm|complete|place\\s+order|pay)\\b/i;
+  var b = btns.find(function(x){{ return re.test((x.innerText||x.value||'').trim()); }});
+  if (!b) return JSON.stringify({{clicked:false}});
+  b.scrollIntoView({{block:'center'}});
+  b.click();
+  return JSON.stringify({{clicked:true, text:(b.innerText||b.value||'').trim()}});
+}})()
+'''
+            bk = cdp('Runtime.evaluate', expression=book_js, returnByValue=True)
+            bk_result = json.loads(bk.get('result', {{}}).get('value', '{{}}'))
+            step_records[-1]['book_clicked'] = bk_result
+            if bk_result.get('clicked'):
+                time.sleep(5)  # let Book submit + confirmation page load
+                continue
         nb = cdp('Runtime.evaluate', expression={next_click_js!r}, returnByValue=True)
         nb_result = json.loads(nb.get('result', {{}}).get('value', '{{}}'))
         step_records[-1]['next_clicked'] = nb_result
@@ -1684,7 +1753,7 @@ for step in range({max_steps}):
         pv_result = json.loads(pv.get('result', {{}}).get('value', '{{}}'))
         if pv_result.get('clicked'):
             step_records[-1]['provider_picked'] = pv_result
-            time.sleep(5)  # provider modal → new page navigation
+            time.sleep(8)  # provider modal → new page navigation
             continue
 
         if cc_result.get('reason') == 'cta_disabled':
