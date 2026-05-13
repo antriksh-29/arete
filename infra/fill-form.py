@@ -904,6 +904,7 @@ SCROLL_RESERVATION_TO_BOTTOM_JS = r"""
 """
 
 
+
 # Reads back the visible Date dropdown trigger text AFTER we tried to
 # set it via DATE_DROPDOWN_JS. The orchestrator uses this to spot a
 # silent picker failure (we clicked something, but the trigger never
