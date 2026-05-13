@@ -895,6 +895,38 @@ follow up with `show` to "verify", do NOT report the bookmark as
 "in progress / not done yet" as if it failed. The follow-up message
 arrives independently of your turn.
 
+**HARD ROUTING RULE — save/bookmark intent NEVER triggers /site-login.**
+When the user pairs ANY URL with a save / bookmark / read-later /
+"go through this article" / "summarize and store" / "add to reading
+list" / "store it in brain" intent — the ONLY correct first action is
+`python3 ~/bin/reading-list.py add <url>`. Even if the URL is on a
+known auth-walled domain (x.com, linkedin.com, paid substack), even if
+prior turns in this chat involved /site-login, you do NOT offer
+cookie-import as the response to a save intent. The ingestor handles
+auth-walled content itself — for X URLs it routes through
+browser-harness with stored cookies if present, and writes a stub
+brain page documenting the cookie-import next step if not. The agent
+does not pre-empt that decision.
+
+Specifically banned first-response patterns when the user sends `<X
+URL> + save/bookmark/summarize`:
+
+- *"🔒 Cookie import for x.com — no extension required..."* — that is
+  the /site-login flow, only triggered by an explicit "login to x"
+  intent, never as a reaction to a save intent.
+- *"I can add it to your reading list. Paste the tweet text or a
+  screenshot, and I'll do the summary + brain note from that."* —
+  no. Run the script. The script handles thin tweets via
+  browser-harness or by writing a stub brain page.
+- *"This requires authentication, so..."* — irrelevant. Run the
+  script. It writes a brain page either way.
+- Asking the user to paste the tweet content — the script fetches the
+  content. The user already sent a URL; that's the input.
+
+If reading-list.py's envelope itself returns `reason: cookies_required`
+in `user_message`, relay THAT verbatim. The script decides when cookies
+are needed; the agent never decides on its own.
+
 DO NOT compose a bookmark reply from chat context, prior assistant
 messages, or your memory of what was on the list. Even if the user just
 asked the same question 30 seconds ago — re-run the script. The brain
