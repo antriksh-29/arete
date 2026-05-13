@@ -1769,22 +1769,42 @@ for step in range({max_steps}):
             pass
         book_js_pre = '''
 (function(){{
-  var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"]'))
+  // Modal-scoped search: if a visible [role=dialog] / [aria-modal=true]
+  // is open, restrict button search to its subtree. This prevents
+  // false-matches on the BACKGROUND slot-page "Continue" button which
+  // sits underneath the Your-Reservation overlay and would otherwise
+  // be clicked, re-popping the provider chooser modal.
+  function isVisible(el){{
+    var r=el.getBoundingClientRect();
+    if (r.width===0||r.height===0) return false;
+    var s=window.getComputedStyle(el);
+    if (s.display==='none'||s.visibility==='hidden') return false;
+    if (parseFloat(s.opacity) < 0.5) return false;
+    return true;
+  }}
+  var dialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]')).filter(isVisible);
+  // Pick the topmost: highest z-index, or just the last visible.
+  var root = document;
+  if (dialogs.length){{
+    dialogs.sort(function(a,b){{
+      var za = parseInt(window.getComputedStyle(a).zIndex || '0', 10) || 0;
+      var zb = parseInt(window.getComputedStyle(b).zIndex || '0', 10) || 0;
+      return zb - za;
+    }});
+    root = dialogs[0];
+  }}
+  var btns = Array.from(root.querySelectorAll('[role="button"], button, input[type="submit"]'))
     .filter(function(x){{
-      var r=x.getBoundingClientRect();
-      if (r.width===0||r.height===0) return false;
-      var s=window.getComputedStyle(x);
-      if (s.display==='none'||s.visibility==='hidden') return false;
+      if (!isVisible(x)) return false;
       if (x.disabled||x.getAttribute('aria-disabled')==='true') return false;
-      if (parseFloat(s.opacity) < 0.5) return false;
       return true;
     }});
   var re = /^(book|submit|reserve|reservar|réserver|prenotare|confirm|confirmar|complete|place\\s+order|pay)\\b/i;
   var b = btns.find(function(x){{ return re.test((x.innerText||x.value||'').trim()); }});
-  if (!b) return JSON.stringify({{clicked:false}});
+  if (!b) return JSON.stringify({{clicked:false, modal_scoped: root !== document, n_buttons: btns.length, sample: btns.slice(0,8).map(function(x){{return (x.innerText||'').trim().slice(0,30);}})}});
   b.scrollIntoView({{block:'center'}});
   b.click();
-  return JSON.stringify({{clicked:true, text:(b.innerText||b.value||'').trim()}});
+  return JSON.stringify({{clicked:true, text:(b.innerText||b.value||'').trim(), modal_scoped: root !== document}});
 }})()
 '''
         bk_pre = cdp('Runtime.evaluate', expression=book_js_pre, returnByValue=True)
@@ -1990,6 +2010,14 @@ submit = {submit!r}
 if submit:
     submit_exec = '''
 (function(){{
+  function isVisible(el){{
+    var r=el.getBoundingClientRect();
+    if (r.width===0||r.height===0) return false;
+    var s=window.getComputedStyle(el);
+    if (s.display==='none'||s.visibility==='hidden') return false;
+    if (parseFloat(s.opacity) < 0.5) return false;
+    return true;
+  }}
   // First scroll the most-likely-modal-container to the bottom so a
   // Book button sitting below the fold (Rules / Marketing prefs / TOS)
   // enters the DOM-visible range. GMR's Your-Reservation modal is a
@@ -2001,7 +2029,6 @@ if submit:
         if (c.scrollHeight > c.clientHeight) c.scrollTop = c.scrollHeight;
       }} catch(e) {{}}
     }});
-    // Also try the inner-most scrollable ancestor of any heading "Your reservation"
     var hs = Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"]'));
     var your = hs.find(function(h){{ return /your\s+reservation/i.test(h.innerText || ''); }});
     if (your){{
@@ -2016,14 +2043,24 @@ if submit:
     }}
   }}
   scrollContainers();
-  var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"]'));
+  // Modal-scoped: if a [role=dialog]/[aria-modal=true] is visible,
+  // restrict button search to its subtree. Prevents false-clicks on
+  // background-page buttons (slot-page "Continue") that sit underneath
+  // an overlay reservation modal.
+  var dialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]')).filter(isVisible);
+  var root = document;
+  if (dialogs.length){{
+    dialogs.sort(function(a,b){{
+      var za = parseInt(window.getComputedStyle(a).zIndex || '0', 10) || 0;
+      var zb = parseInt(window.getComputedStyle(b).zIndex || '0', 10) || 0;
+      return zb - za;
+    }});
+    root = dialogs[0];
+  }}
+  var btns = Array.from(root.querySelectorAll('[role="button"], button, input[type="submit"]'));
   var visible = btns.filter(function(x){{
-    var r = x.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) return false;
-    var s = window.getComputedStyle(x);
-    if (s.display === 'none' || s.visibility === 'hidden') return false;
+    if (!isVisible(x)) return false;
     if (x.disabled || x.getAttribute('aria-disabled') === 'true') return false;
-    if (parseFloat(s.opacity) < 0.5) return false;
     return true;
   }});
   // Two-pass: prefer the commit-verb buttons (book/reserve/confirm/...)
