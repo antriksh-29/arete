@@ -17,8 +17,12 @@ TASKS=$(jq -r '.tasks[]' "$STATE_FILE")
 [[ -z "$TASKS" ]] && exit 0
 
 # Compose with real newlines via printf -v, not bash "\n" literals.
+# The "for <YYYY-MM-DD>" suffix is load-bearing: the bot extracts it
+# from the prompt message and passes --date to `daily-tasks.sh review`
+# so a late reply (e.g. at 02:00 the next day) still applies to the
+# correct date. See skills/daily-task-manager/SKILL.md.
 LINES=()
-LINES+=("📋 Daily task review")
+LINES+=("📋 Daily task review for $TODAY")
 LINES+=("")
 LINES+=("Reply with status per number (done / tomorrow / later / skip):")
 LINES+=("")

@@ -186,13 +186,40 @@ cmd_remove() {
 # stdin OR args and apply each mark to the most recent state file (defaults
 # to today, or use --date YYYY-MM-DD). Used for the 22:30 IST review reply.
 cmd_review() {
+  # Parse flags. Supports two equivalent input paths:
+  #   --reply "<text>"     inline arg (preferred — survives model failovers)
+  #   <stdin>              piped text (legacy; still supported)
+  #   --date YYYY-MM-DD    target a specific date (default: today)
+  # Plain positional args after the flags are joined and treated as the
+  # reply text, for backward compatibility with `review 1.done 2.tomorrow`.
   local target_date
-  if [ "${1:-}" = "--date" ] && [ -n "${2:-}" ]; then
-    target_date="$2"
-    shift 2
-  else
-    target_date=$(today)
-  fi
+  target_date=$(today)
+  local reply_arg=""
+  local reply_seen=0
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --date)
+        if [ -z "${2:-}" ]; then
+          echo "ERROR: --date requires YYYY-MM-DD" >&2
+          return 2
+        fi
+        target_date="$2"
+        shift 2
+        ;;
+      --reply)
+        # Allow empty string — the regression guard below catches it
+        # with a clearer error than bash's ${var:?} would.
+        reply_arg="${2-}"
+        reply_seen=1
+        shift 2
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
   local f="$STATE_DIR/$target_date.json"
 
   if [ ! -f "$f" ]; then
@@ -201,10 +228,27 @@ cmd_review() {
   fi
 
   local input
-  if [ "$#" -gt 0 ]; then
+  if [ "$reply_seen" -eq 1 ]; then
+    # --reply was explicitly passed (possibly empty). Use it verbatim;
+    # do NOT read stdin (would block forever on a non-piped SSH/exec
+    # invocation, and would silently shadow the user's empty arg).
+    input="$reply_arg"
+  elif [ "$#" -gt 0 ]; then
     input="$*"
-  else
+  elif [ ! -t 0 ]; then
+    # stdin is a pipe (heredoc / CLI piping) — read it
     input=$(cat)
+  else
+    input=""
+  fi
+
+  # B1 regression guard: review without any input is a silent-failure
+  # waiting to happen. Fail loudly so the bot can't hallucinate a
+  # successful save. Caller MUST pass --reply "<text>" or pipe stdin.
+  if [ -z "${input// /}" ]; then
+    echo "ERROR: review called with no input. Pass --reply \"<text>\" or pipe a numbered reply via stdin." >&2
+    echo "       e.g. ~/bin/daily-tasks.sh review --reply \"1. done\\n2. tomorrow\"" >&2
+    return 2
   fi
 
   local count=0
@@ -212,9 +256,15 @@ cmd_review() {
     [ -z "$line" ] && continue
     # Match patterns like "1. tomorrow" / "2: done" / "3) later" / "4 - skip"
     local idx status
-    idx=$(echo "$line" | grep -oE '^[[:space:]]*[0-9]+' | grep -oE '[0-9]+')
+    # `|| true` because grep returning non-zero on no-match would trip
+    # `set -o pipefail` and kill the whole script before our count==0
+    # guard below has a chance to fire with a clear error.
+    idx=$(echo "$line" | grep -oE '^[[:space:]]*[0-9]+' 2>/dev/null | grep -oE '[0-9]+' || true)
     [ -z "$idx" ] && continue
-    status=$(echo "$line" | sed -E 's/^[[:space:]]*[0-9]+[.):\-[:space:]]*//' | tr '[:upper:]' '[:lower:]' | xargs)
+    # Strip leading whitespace, number, then the separator (any of . ) :
+    # space or dash). Dash MUST be last inside the bracket expression
+    # or sed -E reads it as a range operator and rejects the pattern.
+    status=$(echo "$line" | sed -E 's/^[[:space:]]*[0-9]+[[:space:].):-]*//' | tr '[:upper:]' '[:lower:]' | xargs)
     case "$status" in
       yes|y|done|completed|complete) status="yes" ;;
       tomorrow|push*tomorrow|defer|push) status="tomorrow" ;;
@@ -234,6 +284,15 @@ cmd_review() {
     count=$((count + 1))
     echo "  ✓ #$idx → $status: $task"
   done <<< "$input"
+
+  # B1 regression guard, part 2: input was non-empty but parsed to zero
+  # numbered status lines. Don't silently claim "Applied 0 status updates"
+  # — that's exactly the hallucination surface that masked last night's bug.
+  if [ "$count" -eq 0 ]; then
+    echo "ERROR: review input contained no parseable numbered status lines for $target_date." >&2
+    echo "       Expected lines like: 1. done   2. tomorrow   3. later   4. skip" >&2
+    return 3
+  fi
 
   rebuild_brain
   echo "✓ Applied $count status updates to $target_date"
