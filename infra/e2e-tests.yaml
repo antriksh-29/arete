@@ -51,6 +51,24 @@ tests:
     expects:
       reply_min_len: 20
 
+  # Bug-B1 regression: bot's daily-task-manager review path must
+  # actually persist statuses via daily-tasks.sh, not hallucinate a
+  # "Saved." reply. We probe this via the read side — after manually
+  # setting tasks and statuses on the VPS, the bot's "show today's
+  # tasks" must reflect the statuses (status emojis ✅ ➡️ ⏸️). The
+  # script's show output is canonical; if the bot fabricates it, the
+  # status emojis won't match the on-disk state file.
+  - id: tasks-show-with-statuses
+    skill: daily-task-manager
+    message: "show today's task list"
+    timeout: 60
+    expects:
+      reply_min_len: 20
+      # At least one status emoji must appear in the reply. Backfill of
+      # 2026-05-13 has 3 done + 2 tomorrow + 1 later, so all three
+      # symbols are expected when this runs against that date's state.
+      reply_regex: ['[✅➡️⏸️]']
+
   - id: water-status
     skill: water-log
     message: "did I hit my water goal today"

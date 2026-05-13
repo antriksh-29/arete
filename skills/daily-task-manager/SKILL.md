@@ -68,13 +68,34 @@ EOF
 # Mark a status
 ~/bin/daily-tasks.sh mark <index> <yes|tomorrow|later|delete>
 
-# Bulk review (22:30 IST prompt reply — pipe entire user reply)
-~/bin/daily-tasks.sh review <<EOF
+# Bulk review (22:00 IST prompt reply) — PREFER the --reply arg form.
+# Inline arg survives mid-turn model failovers (OpenAI→Anthropic) which
+# can drop stdin and silently apply zero updates (the May-13 outage).
+~/bin/daily-tasks.sh review --date 2026-05-13 --reply "1. done
+2. tomorrow
+3. later
+4. tomorrow
+5. done
+6. done"
+
+# stdin form still works for backward compatibility, but is fragile:
+~/bin/daily-tasks.sh review --date 2026-05-13 <<'EOF'
 1. done
 2. tomorrow
-3. push indefinitely
 EOF
 ```
+
+**MUST: always pass `--date <YYYY-MM-DD>` when handling a review reply.**
+The 22:00 IST prompt message includes `for <YYYY-MM-DD>` (e.g.
+`📋 Daily task review for 2026-05-13`). Extract that date and pass it
+verbatim. If the user replies past midnight, this keeps the update on
+the correct day's state file.
+
+**MUST: always use `--reply "<text>"` for the review reply.** The
+script will exit non-zero (code 2 or 3) if input is empty or contains
+no parseable status lines — never silently claim a save. If the script
+exits non-zero, relay the stderr verbatim. Do NOT compose a fake
+"saved" reply.
 
 ### Reads
 
