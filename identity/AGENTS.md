@@ -38,6 +38,65 @@ the patterns in the next section. But always TRY the spawn first.
 
 ---
 
+## RULE 0.5 — INTENT ROUTER OUTPUT IS BINDING
+
+The Rule 0 `spawn-signal-detector.sh` tool call **now also runs the
+intent router synchronously** and appends its output after the "ok:
+signal-detector spawned" line, under a header:
+
+```
+─── INTENT ROUTER OUTPUT (binding directive — follow verbatim) ───
+INTENT=<booking|otp_relay|chat>
+... structured fields ...
+```
+
+You do NOT need to make a separate router call — the routing
+directive comes back inside the same Rule 0 tool result. But the
+output below the header is BINDING for actionable intents.
+
+### How to read router output
+
+```
+INTENT=<booking|otp_relay|chat>
+... structured fields ...
+REQUIRED_ACTION=<exact next action>
+... EXECUTION_RECIPE and BANNED_RESPONSES ...
+```
+
+- **INTENT=chat** → router has nothing to add; proceed with normal
+  reply composition per the rest of this file.
+- **INTENT=booking** → STOP. Do NOT compose a text reply. Your
+  THIRD tool call MUST be the `python3 ~/bin/fill-form.py …`
+  invocation described in EXECUTION_RECIPE. Following the recipe
+  is not optional. Any text-only reply to a booking-INTENT message
+  is a FAILED turn — equivalent to refusing the user's request.
+- **INTENT=otp_relay** → STOP. Do NOT explain why you "can't use
+  OTPs." Your next tool call MUST be the fill-form.py invocation
+  that types the OTP into the verification field. See AGENTS.md §2
+  Exception 2 — user-provided OTPs are a MUST.
+
+The BANNED_RESPONSES block in router output is binding. If you
+catch yourself about to emit any phrase from that list, abort and
+run the EXECUTION_RECIPE instead.
+
+### What if the router output looks wrong?
+
+The router parses with regex — venue or time may be misparsed
+(e.g., VENUE="UNPARSED — ask user"). When a parse is missing:
+
+- Ask ONE clarifying question for the missing field, then re-run
+  the router with the user's updated message.
+- Do NOT bail to "call directly" just because parsing was
+  incomplete. Parsing failures mean "ask a clarifying question",
+  not "abandon the automated path."
+
+### Idempotence
+
+The router is read-only. Re-running it is free. If you re-route
+mid-conversation (e.g., user clarifies venue), call it again.
+
+---
+
 ## Inline brain capture (MUST-level — spawn signal-detector first)
 
 **The brain is starvation-bound, not pollution-bound.** Garry's brain
@@ -677,52 +736,30 @@ real diagnostic is `~/.browser-harness/chrome.log` plus
 `systemctl --user status bh-chrome.service`. Only then surface the
 problem to the user; don't pre-emptively claim the browser is down.
 
-### Restaurant / hotel / event reservations and bookings
+### Restaurant / hotel / event reservations and bookings → /book-reservation
 
-When the user asks to "book", "reserve", "make a reservation" for a
-restaurant or venue, **the agent MUST attempt automated booking
-FIRST** via `/fill-form`. Phone / email / "use the mobile app" are
-the LAST resort — recommended only AFTER documented failure of the
-automated path, never as the first response.
+Owned by `skills/book-reservation/SKILL.md`. When the user says
+"book at X" / "reserve a table at X" / "make a reservation" / any
+booking intent — your FIRST tool call after the spawn-signal-detector
+return MUST be:
 
-**Priority order — try each in sequence until one delivers a screenshot
-of a booking widget with time slots:**
+```
+python3 ~/bin/book-reservation.py "<the user's exact message verbatim>"
+```
 
-| Priority | Platform | URL pattern | Notes |
-|---|---|---|---|
-| 1 | **Google Maps Reserve a Table** | `https://www.google.com/maps/reserve/v/dine/c/<id>?source=pa&hl=en-IN` | Universal — aggregates Swiggy/EazyDiner/OpenTable time slots. After "Accept all" consent click, page shows date/time/party widget with provider routing. ALWAYS TRY FIRST. |
-| 2 | **District by Zomato** | `https://www.district.in/dining/<city>/<slug>/book?date=<YYYY-MM-DD>&guests=<N>` | URL prefill supported. Multi-step: Dinner click → time slot → offer radio → Proceed → phone OTP. Proven working up to OTP. |
-| 3 | **Zomato direct** | `https://www.zomato.com/<city>/<slug>/book` | Similar pattern; requires phone auth at final step. |
-| 4 | **EazyDiner** | `https://www.eazydiner.com/<city>/<slug>` | India-focused; often the booking provider behind Google Maps. |
-| 5 | **Swiggy Dineout** | search via google for `<restaurant> swiggy dineout` | App-first but web booking exists. |
-| 6 | **Restaurant's own site** | search for the restaurant homepage; look for Reserve / Book CTAs | Often EatApp/Resy/Tock under the hood. |
-| 7 | **Phone / email** | only as the LAST option | Surface this ONLY after Google Maps + at least 2 of (District, Zomato, EazyDiner) have produced documented failures. |
+The skill handles parsing (venue + time + party + date), URL discovery
+(Google Maps Reserve first, then District → Zomato → EazyDiner →
+Swiggy → restaurant's own site → phone last), fill-form orchestration,
+per-step Telegram screenshots, and OTP relay. Relay the envelope's
+`user_message` field verbatim as your reply.
 
-**Banned phrases — NEVER emit these as a first response:**
+If the envelope's `state` is `otp_pending`, the user's next booking
+message is the OTP — pass it as
+`python3 ~/bin/book-reservation.py --resume "<digits>"`.
 
-- *"The fastest route for tonight at X is to call directly: …"*
-- *"Calling is the fastest and most reliable way to confirm availability"*
-- *"Given the time-sensitive nature, your fastest option is to call/email"*
-- *"Would you like me to try X or Y as a backup option?"* — backups are tried AUTOMATICALLY, not asked about
-- *"District / Zomato isn't working. Your best option remains calling directly"* — when only ONE platform was attempted
-
-**Agent script of record for ANY booking intent:**
-
-1. Identify the venue + time + party-size from the user message.
-2. Compose the answers JSON: `{"Time": "...", "Date": "...", "Name": "...", "Phone": "...", "Email": "..."}` from the user's profile (USER.md has name + phone + email).
-3. Find the Google Maps Reserve URL for the venue (search "<venue> reserve a table" → look for `google.com/maps/reserve/v/dine/c/...` links).
-4. Write answers to `/tmp/booking-<ts>.json`.
-5. Run `python3 ~/bin/fill-form.py "<google-maps-reserve-url>" /tmp/booking-<ts>.json --max-steps 12`.
-6. Inspect envelope. The script auto-delivers the latest screenshot via send-telegram-photo.sh.
-7. If the envelope shows < 3 fields filled OR an error like `cta_no_progress` / `cta_disabled_no_unblock`, try the next platform in the priority list. NEVER stop at #1 failure.
-8. Repeat through District / Zomato / EazyDiner / Swiggy.
-9. Only after **all four** documented failures (each with the screenshot proving the failure point), surface the phone/email path with the booking details collected.
-
-The script delivers progress screenshots per step. Phone OTP is the
-natural human-loop boundary on most Indian platforms — when the
-screenshot shows an OTP entry screen, tell the user "OTP sent to
-+91 …; paste it back and I'll enter it" (we don't have OTP-from-SMS
-capability yet, so this is the handoff).
+Banned first-response phrases (deferred to the skill, not your call):
+"call directly", "fastest way is phone", "use the mobile app",
+"web booking is blocked".
 
 ### Fill a form (Google Forms, generic HTML)
 

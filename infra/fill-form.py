@@ -156,14 +156,58 @@ def bh_run(script, timeout=180):
 # select-options/date-input metadata.
 FIELDS_JS = r"""
 (function(){
+  function _ancestorHidden(el){
+    var n = el;
+    while (n && n !== document.body){
+      if (n.getAttribute && n.getAttribute('aria-hidden') === 'true') return true;
+      var s = window.getComputedStyle(n);
+      if (s.display === 'none' || s.visibility === 'hidden') return true;
+      if (parseFloat(s.opacity) < 0.05) return true;
+      n = n.parentElement;
+    }
+    return false;
+  }
   function visible(el){
     if (!el) return false;
     var r = el.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return false;
     if (!el.offsetParent && el.tagName !== 'BODY') return false;
+    if (_ancestorHidden(el)) return false;
     var s = window.getComputedStyle(el);
-    return s.visibility !== 'hidden' && s.display !== 'none';
+    if (s.visibility === 'hidden' || s.display === 'none') return false;
+    // Topmost-at-centre check: filters inputs covered by a modal
+    // overlay. The EazyDiner guest-checkout step renders a new modal
+    // over the old inline form; this rejects the now-stale inputs.
+    var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    if (cx >= 0 && cy >= 0 && cx <= window.innerWidth && cy <= window.innerHeight){
+      var hit = document.elementFromPoint(cx, cy);
+      if (hit && hit !== el && !el.contains(hit) && !hit.contains(el)) return false;
+    }
+    return true;
   }
+  // Prefer the most recent visible dialog/modal as the discovery
+  // scope — the topmost surface is where the user-actionable fields
+  // are. Falls back to the whole document if no modal is present.
+  function _discoveryRoot(){
+    var dialogs = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]'))
+      .filter(function(d){
+        var r = d.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) return false;
+        var s = window.getComputedStyle(d);
+        return s.display !== 'none' && s.visibility !== 'hidden';
+      });
+    if (dialogs.length === 0) return document;
+    // Pick the dialog with the largest rendered area — typically the
+    // foreground one (small confirmation popups have smaller area).
+    var best = dialogs[0], bestArea = 0;
+    dialogs.forEach(function(d){
+      var r = d.getBoundingClientRect();
+      var a = r.width * r.height;
+      if (a > bestArea){ bestArea = a; best = d; }
+    });
+    return best;
+  }
+  var ROOT = _discoveryRoot();
   function labelFor(el){
     // Direct <label for=...>
     if (el.id){
@@ -196,7 +240,7 @@ FIELDS_JS = r"""
   var seen = new Set();
   var fields = [];
   // Pass 1 — Google Forms-style listitems (rich heading + radios/checkboxes)
-  Array.from(document.querySelectorAll('div[role="listitem"]')).forEach(function(li){
+  Array.from(ROOT.querySelectorAll('div[role="listitem"]')).forEach(function(li){
     if (!visible(li)) return;
     var h = li.querySelector('[role="heading"], legend');
     var heading = h && h.innerText.trim() ? h.innerText.trim().replace(/\s*\*\s*$/, '') : '';
@@ -228,7 +272,7 @@ FIELDS_JS = r"""
   // Pass 2 — Plain HTML inputs not inside a listitem (generic forms,
   // checkout pages, hotel booking pages, etc.). Skip ones we already
   // captured.
-  Array.from(document.querySelectorAll('input, textarea, select')).forEach(function(el){
+  Array.from(ROOT.querySelectorAll('input, textarea, select')).forEach(function(el){
     if (!visible(el)) return;
     if (el.type === 'hidden' || el.type === 'submit' || el.type === 'button' || el.type === 'reset' || el.type === 'file') return;
     if (el.closest('div[role="listitem"]')) return;
@@ -462,6 +506,240 @@ NEXT_CLICK_JS = r"""
 # on restaurant aggregators (Zomato, District, OpenTable, Tock) and
 # hotel booking landing pages: a single "Book a Table" / "Reserve" /
 # "Make a reservation" / "Book now" CTA.
+# Picks the booking date by opening the Date dropdown (GMR widget,
+# District, OpenTable, Tock all follow this pattern) and clicking the
+# option matching the target. Target is one of: "today", "tomorrow",
+# or an ISO date "YYYY-MM-DD" — converted to the human label the
+# dropdown actually shows ("Today", "Tomorrow", "Wed, May 14", etc.).
+#
+# Why this matters: GMR's widget defaults to "Tomorrow" on first load
+# (verified via user mobile screenshot). Without this step the script
+# books the wrong day even if the time-slot click succeeds.
+DATE_DROPDOWN_JS = r"""
+(function(targetDate){
+""" + FRAMES_HELPER + r"""
+  // Build the list of labels we'll accept as a match for the target.
+  // targetDate is "today", "tomorrow", or "YYYY-MM-DD".
+  var t = String(targetDate || '').toLowerCase().trim();
+  var labels = [];
+  if (t === 'today' || t === 'tonight') labels = ['today'];
+  else if (t === 'tomorrow') labels = ['tomorrow'];
+  else if (/^\d{4}-\d{2}-\d{2}$/.test(t)){
+    // Build "Mon, May 14" / "May 14" / "14 May" forms.
+    var d = new Date(t + 'T00:00:00');
+    var months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    var wd = ['sun','mon','tue','wed','thu','fri','sat'];
+    var mm = months[d.getMonth()], dd = d.getDate(), wn = wd[d.getDay()];
+    labels = [
+      wn+', '+mm+' '+dd, mm+' '+dd, dd+' '+mm,
+      wn+' '+mm+' '+dd,
+    ];
+    // Also accept "Today"/"Tomorrow" if the date IS today/tomorrow.
+    var now = new Date(); now.setHours(0,0,0,0);
+    var diff = Math.round((d - now) / (24*3600*1000));
+    if (diff === 0) labels.push('today');
+    else if (diff === 1) labels.push('tomorrow');
+  } else {
+    return JSON.stringify({clicked: false, reason: 'unparseable_target', target: t});
+  }
+  // Find the Date dropdown — its label says "Date" and it has a
+  // selectable trigger (button / combobox / input).
+  var triggers = queryAll('button, [role="combobox"], [role="button"], select, input[readonly]');
+  function nearLabel(el, words){
+    var n = el; var depth = 0;
+    while (n && depth < 4){
+      var txt = (n.innerText || n.textContent || '').toLowerCase();
+      if (words.some(function(w){return txt.indexOf(w) >= 0;})) return true;
+      n = n.parentElement; depth++;
+    }
+    return false;
+  }
+  var dateTrigger = triggers.find(function(el){
+    var r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    var lab = (el.getAttribute('aria-label') || '').toLowerCase();
+    if (lab.indexOf('date') >= 0) return true;
+    // GMR widget has a DIV[role=button] with text "Today"/"Tomorrow"/
+    // weekday-name as the date trigger — no aria-label, no haspopup.
+    // Match on the visible text shape.
+    var txt = (el.innerText || '').trim();
+    if (/^(Today|Tomorrow)$/i.test(txt)) return true;
+    if (/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+/i.test(txt)) return true;
+    // Fallback — short trigger whose nearby text includes "Date"
+    if (txt.length < 40 && nearLabel(el, ['date'])) return true;
+    return false;
+  });
+  if (!dateTrigger){
+    return JSON.stringify({clicked: false, reason: 'no_date_dropdown'});
+  }
+  // Check if the dropdown's current value already matches the target
+  // (avoid an unnecessary click that re-opens the menu).
+  var current = (dateTrigger.innerText || dateTrigger.value || '').trim().toLowerCase();
+  if (labels.some(function(L){return current.indexOf(L) >= 0;})){
+    return JSON.stringify({clicked: false, reason: 'already_selected', current: current});
+  }
+  dateTrigger.scrollIntoView({block: 'center'});
+  dateTrigger.click();
+  // Wait 600ms (synchronously via busy loop — we're in a single CDP
+  // call) for the option list to render. browser-harness will sleep
+  // afterwards so 600ms is enough for most popovers.
+  var end = Date.now() + 600;
+  while (Date.now() < end){}
+
+  // Two dropdown shapes we have to handle:
+  //  (A) "Today" / "Tomorrow" / "Mon Aug 14" — a list of [role=option]
+  //      / li / [role=menuitem]. Match against label strings.
+  //  (B) Calendar grid — GMR widget. Cells contain only a day-of-month
+  //      number like "12". Need to navigate to the target month (via
+  //      next/prev arrows) and click the cell whose text equals the
+  //      target's day-of-month, scoped to the visible month.
+  var options = queryAll('[role="option"], li, [role="menuitem"], div[tabindex="0"]');
+  var pick = null;
+  for (var i = 0; i < options.length && !pick; i++){
+    var ot = (options[i].innerText || '').trim().toLowerCase();
+    if (!ot || ot.length > 50) continue;
+    for (var j = 0; j < labels.length; j++){
+      if (ot.indexOf(labels[j]) >= 0){
+        pick = options[i]; break;
+      }
+    }
+  }
+  if (pick){
+    pick.scrollIntoView({block: 'center'});
+    pick.click();
+    return JSON.stringify({clicked: true, kind: 'date_dropdown', target: t, picked: (pick.innerText||'').trim().slice(0, 40)});
+  }
+
+  // Calendar path. Only for ISO targets (today/tomorrow already tried
+  // via labels above and we'd have matched if they existed).
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)){
+    var d = new Date(t + 'T00:00:00');
+    var months = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+    var targetMonth = months[d.getMonth()];
+    var targetYear = d.getFullYear();
+    var targetDay = d.getDate();
+    function visibleGrid(){
+      // GMR's calendar doesn't use role="grid" — fall back to scanning
+      // the whole document. Returning `document` makes pickCell search
+      // every visible button on the page; aria-label match is strict
+      // enough to disambiguate.
+      var grids = queryAll('[role="grid"], table, div[role="application"]')
+        .filter(function(g){
+          var r = g.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) return false;
+          var s = window.getComputedStyle(g);
+          return s.display !== 'none' && s.visibility !== 'hidden';
+        });
+      return grids[0] || document;
+    }
+    function visibleMonthHeader(){
+      // GMR's calendar shows "May 2026" as a heading sibling of the grid.
+      var hs = queryAll('h1, h2, h3, [role="heading"], [aria-live]');
+      for (var i = 0; i < hs.length; i++){
+        var txt = (hs[i].innerText || '').trim().toLowerCase();
+        if (!txt || txt.length > 30) continue;
+        var m = txt.match(/(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})/);
+        if (m){
+          var r = hs[i].getBoundingClientRect();
+          var s = window.getComputedStyle(hs[i]);
+          if (r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'){
+            return {el: hs[i], month: m[1], year: parseInt(m[2], 10)};
+          }
+        }
+      }
+      return null;
+    }
+    function findArrow(direction){
+      // direction: "next" or "prev"
+      var btns = queryAll('button, [role="button"], [aria-label]')
+        .filter(function(b){
+          var r = b.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) return false;
+          var s = window.getComputedStyle(b);
+          if (s.display === 'none' || s.visibility === 'hidden') return false;
+          var lab = ((b.getAttribute('aria-label') || '') + ' ' + (b.innerText || '')).toLowerCase();
+          if (direction === 'next' && /next|forward|→|›/.test(lab)) return true;
+          if (direction === 'prev' && /prev|previous|back|←|‹/.test(lab)) return true;
+          return false;
+        });
+      return btns[0] || null;
+    }
+    function pickCell(grid, day, monthName){
+      // Cells inside the calendar have aria-label like
+      // "Tuesday, 12 May" — much more unambiguous than the text-only
+      // "12". Match on aria-label first; fall back to text "12" if
+      // aria-label is unavailable. Filter out aria-disabled cells
+      // (past dates appear with the same number but greyed out).
+      var cells = Array.from(grid.querySelectorAll('[role="gridcell"], [role="button"], button, td'));
+      var monthCap = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+      // Build acceptable aria-label fragments (case-insensitive).
+      var labelFrags = [
+        ', ' + day + ' ' + monthName.toLowerCase(),
+        ', ' + day + ' ' + monthCap,
+        ' ' + day + ' ' + monthCap + ' ',
+        ' ' + day + ' ' + monthCap,
+      ];
+      for (var i = 0; i < cells.length; i++){
+        var c = cells[i];
+        if (c.getAttribute('aria-disabled') === 'true') continue;
+        if (c.disabled) continue;
+        var s = window.getComputedStyle(c);
+        if (s.pointerEvents === 'none') continue;
+        if (parseFloat(s.opacity) < 0.5) continue;
+        var aria = (c.getAttribute('aria-label') || '').toLowerCase();
+        if (aria){
+          var matched = false;
+          for (var lf = 0; lf < labelFrags.length; lf++){
+            if (aria.indexOf(labelFrags[lf].toLowerCase()) >= 0){ matched = true; break; }
+          }
+          if (matched) return c;
+        } else {
+          var txt = (c.innerText || c.textContent || '').trim();
+          if (txt === String(day)) return c;
+        }
+      }
+      return null;
+    }
+    // Navigate up to 12 months in either direction to land on the
+    // target month/year, then click the day cell.
+    for (var nav = 0; nav < 12; nav++){
+      var header = visibleMonthHeader();
+      if (!header) break;
+      if (header.month === targetMonth && header.year === targetYear){
+        var grid = visibleGrid();
+        if (!grid){
+          return JSON.stringify({clicked: false, reason: 'calendar_grid_not_found',
+                                  header: header.month + ' ' + header.year});
+        }
+        var cell = pickCell(grid, targetDay, targetMonth);
+        if (!cell){
+          return JSON.stringify({clicked: false, reason: 'date_cell_not_found',
+                                  target_day: targetDay, header: header.month + ' ' + header.year});
+        }
+        cell.scrollIntoView({block: 'center'});
+        cell.click();
+        return JSON.stringify({clicked: true, kind: 'calendar', target: t,
+                                picked: header.month + ' ' + targetDay + ', ' + header.year});
+      }
+      // Decide direction
+      var curIdx = months.indexOf(header.month) + header.year * 12;
+      var tgtIdx = months.indexOf(targetMonth) + targetYear * 12;
+      var direction = (tgtIdx > curIdx) ? 'next' : 'prev';
+      var arrow = findArrow(direction);
+      if (!arrow){
+        return JSON.stringify({clicked: false, reason: 'no_' + direction + '_arrow',
+                                header: header.month + ' ' + header.year});
+      }
+      arrow.click();
+      var w = Date.now() + 350;
+      while (Date.now() < w){}
+    }
+  }
+  return JSON.stringify({clicked: false, reason: 'date_option_not_found', target: t, labels_tried: labels});
+})('DATE_PLACEHOLDER')
+"""
+
+
 # Clicks a Lunch/Dinner/Brunch meal-period selector. Returns whether
 # anything was clicked. Used as a separate step before time-slot
 # matching, so the page has time to refresh slots between clicks.
@@ -504,6 +782,83 @@ MEAL_PERIOD_CLICK_JS = r"""
 })('TIME_PLACEHOLDER')
 """
 
+# Opens the Time-preference dropdown and picks an option matching the
+# user's target time. On GMR's widget the Time combobox (role=combobox,
+# aria-haspopup=listbox) reveals every 30-min slot from midnight to
+# midnight — far more than the visible slot grid. After this click the
+# slot grid refreshes around the picked time.
+TIME_DROPDOWN_JS = r"""
+(function(targetTime){
+""" + FRAMES_HELPER + r"""
+  function parse24h(s){
+    var m = (s||'').match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+    if (!m) return null;
+    var h = parseInt(m[1], 10);
+    var mm = m[2] ? parseInt(m[2], 10) : 0;
+    var ap = (m[3] || '').toLowerCase();
+    if (ap === 'pm' && h < 12) h += 12;
+    if (ap === 'am' && h === 12) h = 0;
+    return h * 60 + mm;
+  }
+  var want = parse24h(String(targetTime));
+  if (want === null) return JSON.stringify({clicked: false, reason: 'unparseable_time'});
+
+  // Find the Time combobox — distinguished by current text matching
+  // a time like "7:00 pm". Avoid the Party combobox (text is a digit
+  // like "2") and any other comboboxes.
+  var triggers = queryAll('[role="combobox"], button')
+    .filter(function(b){
+      var r = b.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return false;
+      var s = window.getComputedStyle(b);
+      return s.display !== 'none' && s.visibility !== 'hidden';
+    });
+  var timeTrigger = triggers.find(function(b){
+    var t = (b.innerText || '').trim();
+    return /^\d{1,2}(:\d{2})?\s*(am|pm)\b/i.test(t);
+  });
+  if (!timeTrigger) return JSON.stringify({clicked: false, reason: 'no_time_dropdown'});
+
+  // If already showing target time, skip
+  var current = (timeTrigger.innerText || '').trim();
+  if (parse24h(current) === want){
+    return JSON.stringify({clicked: false, reason: 'already_selected', current: current});
+  }
+  timeTrigger.scrollIntoView({block: 'center'});
+  timeTrigger.click();
+  var end = Date.now() + 600;
+  while (Date.now() < end){}
+  // Look for option with matching parsed time.
+  var options = queryAll('[role="option"], li, [role="menuitem"], [role="button"]')
+    .filter(function(o){
+      var r = o.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return false;
+      var t = (o.innerText || '').trim();
+      return t.length < 20 && /\d{1,2}(:\d{2})?\s*(am|pm)/i.test(t);
+    });
+  var match = null, bestDelta = 1e9;
+  for (var i = 0; i < options.length; i++){
+    var t = (options[i].innerText || '').trim();
+    var v = parse24h(t);
+    if (v === null) continue;
+    var d = Math.abs(v - want);
+    if (d < bestDelta && d <= 5){
+      bestDelta = d;
+      match = options[i];
+    }
+  }
+  if (!match){
+    return JSON.stringify({clicked: false, reason: 'no_matching_time_option',
+                            target: String(targetTime), options_seen: options.length});
+  }
+  match.scrollIntoView({block: 'center'});
+  match.click();
+  return JSON.stringify({clicked: true, kind: 'time_dropdown', target: String(targetTime),
+                          picked: (match.innerText||'').trim()});
+})('TIME_PLACEHOLDER')
+"""
+
+
 # Picks a time-slot button matching the user's requested time. Pure
 # slot click — assumes meal period has already been selected. Returns
 # the list of visible slot texts if no match within tolerance, so the
@@ -516,7 +871,27 @@ TIME_SLOT_CLICK_JS = r"""
       .filter(function(b){
         var r = b.getBoundingClientRect();
         var s = window.getComputedStyle(b);
-        return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
+        if (!(r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none')) return false;
+        // Filter out calendar cells — a button inside a [role=grid] or
+        // calendar container is almost certainly a day-of-month cell,
+        // not a time slot. Without this, parse24h("22") matches and we
+        // accidentally click May 22 thinking it's 10 PM.
+        var n = b;
+        while (n && n !== document.body){
+          var role = n.getAttribute && n.getAttribute('role');
+          if (role === 'grid' || role === 'gridcell' || role === 'application') return false;
+          if (role === 'listbox' || role === 'menu' || role === 'option' || role === 'menuitem') return false;
+          if (n.tagName === 'TABLE') return false;
+          n = n.parentElement;
+        }
+        // Also exclude buttons that ARE listbox options themselves —
+        // the GMR Time dropdown opens a listbox where each option has
+        // a time string like "10:00 pm" and matches our parser. Without
+        // this, the dropdown's 10 PM option gets clicked instead of
+        // a real grid slot, and the booking commits the default slot.
+        var brole = b.getAttribute && b.getAttribute('role');
+        if (brole === 'option' || brole === 'menuitem') return false;
+        return true;
       });
   }
   function parse24h(s){
@@ -546,13 +921,20 @@ TIME_SLOT_CLICK_JS = r"""
       bestSlot = btns[i];
     }
   }
-  if (bestSlot){
-    var nearTarget = bestDelta > 30;
+  // Strict match — only click if the target time exists within ±5
+  // minutes. Wider matches (e.g. user wants 10 PM but only 8 PM is
+  // available) are explicitly NOT clicked — return the available list
+  // so the orchestrator can ask the user to pick an alternative
+  // instead of silently booking the wrong slot.
+  if (bestSlot && bestDelta <= 5){
     bestSlot.scrollIntoView({block: 'center'});
     bestSlot.click();
-    return JSON.stringify({clicked: true, kind: 'time_slot', text: (bestSlot.innerText||'').trim().slice(0, 60), delta_min: bestDelta, near_target: nearTarget, available: allSlots.slice(0, 20)});
+    return JSON.stringify({clicked: true, kind: 'time_slot', text: (bestSlot.innerText||'').trim().slice(0, 60), delta_min: bestDelta, available: allSlots.slice(0, 20)});
   }
-  return JSON.stringify({clicked: false, reason: 'no_slots_found', target: String(targetTime), available: allSlots.slice(0, 20)});
+  if (allSlots.length > 0){
+    return JSON.stringify({clicked: false, reason: 'target_time_unavailable', target: String(targetTime), closest: bestSlot ? (bestSlot.innerText||'').trim().slice(0, 60) : null, closest_delta_min: bestDelta, available: allSlots.slice(0, 20)});
+  }
+  return JSON.stringify({clicked: false, reason: 'no_slots_found', target: String(targetTime), available: []});
 })('TIME_PLACEHOLDER')
 """
 
@@ -741,22 +1123,64 @@ EXECUTE_PLAN_JS = r"""
     var n = el.getAttribute('name');
     return n || '';
   }
+  function _ancestorHidden(el){
+    var n = el;
+    while (n && n !== document.body){
+      if (n.getAttribute && n.getAttribute('aria-hidden') === 'true') return true;
+      var s = window.getComputedStyle(n);
+      if (s.display === 'none' || s.visibility === 'hidden') return true;
+      if (parseFloat(s.opacity) < 0.05) return true;
+      n = n.parentElement;
+    }
+    return false;
+  }
+  function _topmostAt(el){
+    // Returns true if `el` is the element that would receive a click
+    // at its visual centre. Filters out stale form inputs covered by
+    // a modal overlay (the bug at the EazyDiner guest-checkout step).
+    var r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    if (cx < 0 || cy < 0 || cx > window.innerWidth || cy > window.innerHeight) return true; // off-screen — let scroll handle later
+    var hit = document.elementFromPoint(cx, cy);
+    if (!hit) return false;
+    return hit === el || el.contains(hit) || hit.contains(el);
+  }
+  function _isFillable(el){
+    if (el.type === 'hidden' || el.type === 'submit' || el.type === 'button') return false;
+    var r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    if (!el.offsetParent && el.tagName !== 'BODY') return false;
+    if (_ancestorHidden(el)) return false;
+    if (!_topmostAt(el)) return false;
+    var s = window.getComputedStyle(el);
+    if (s.visibility === 'hidden' || s.display === 'none') return false;
+    return true;
+  }
   function findInputByLabel(heading){
     var target = norm(heading);
-    var inputs = Array.from(document.querySelectorAll('input, textarea, select'));
-    return inputs.find(function(el){
-      if (el.type === 'hidden' || el.type === 'submit' || el.type === 'button') return false;
-      var r = el.getBoundingClientRect();
-      if (r.width === 0 || r.height === 0) return false;
-      // offsetParent==null catches display:none on element OR any
-      // ancestor — required to skip stale forms still in DOM but
-      // hidden by a new modal/route.
-      if (!el.offsetParent && el.tagName !== 'BODY') return false;
-      var s = window.getComputedStyle(el);
-      if (s.visibility === 'hidden' || s.display === 'none') return false;
-      var lbl = norm(labelFor(el));
-      return lbl && (lbl === target || lbl.indexOf(target) >= 0 || target.indexOf(lbl) >= 0);
-    });
+    // Prefer inputs inside a visible dialog/modal — the EazyDiner
+    // guest-checkout step renders a fresh modal over the old inline
+    // form; scoping to it avoids re-filling the hidden stale fields.
+    var dialog = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]'))
+      .find(function(d){
+        var r = d.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) return false;
+        var s = window.getComputedStyle(d);
+        return s.display !== 'none' && s.visibility !== 'hidden';
+      });
+    var scopes = dialog ? [dialog, document] : [document];
+    for (var si = 0; si < scopes.length; si++){
+      var scope = scopes[si];
+      var inputs = Array.from(scope.querySelectorAll('input, textarea, select'));
+      var match = inputs.find(function(el){
+        if (!_isFillable(el)) return false;
+        var lbl = norm(labelFor(el));
+        return lbl && (lbl === target || lbl.indexOf(target) >= 0 || target.indexOf(lbl) >= 0);
+      });
+      if (match) return match;
+    }
+    return null;
   }
   function _scoreMatch(a, b){
     var nA = norm(a), nB = norm(b);
@@ -999,6 +1423,8 @@ def build_driver_script(url, all_answers, submit, shot_path, max_steps=6):
     offer_radio_click_js = OFFER_RADIO_CLICK_JS
     time_slot_click_js = TIME_SLOT_CLICK_JS
     meal_period_click_js = MEAL_PERIOD_CLICK_JS
+    date_dropdown_js = DATE_DROPDOWN_JS
+    time_dropdown_js = TIME_DROPDOWN_JS
     provider_pick_js = PROVIDER_PICK_JS
     shot_after_submit = shot_path.replace(".png", "-after-submit.png")
     shot_step_prefix = shot_path.replace(".png", "-step")
@@ -1116,12 +1542,34 @@ for step in range({max_steps}):
     step_records.append({{'step': step, 'fields_seen': len(headings),
                           'plan_size': len(plan), 'verify_state': verify}})
 
-    # 5. Look for Next button. Only fire if we actually filled fields
-    #    this iteration — otherwise a generic "Continue" on a booking
-    #    widget loops forever without picking a time slot first.
+    # If we just filled multi-field text inputs (Name/Phone/Email),
+    # we've reached the human-confirm boundary on the booking flow
+    # (provider's contact-info modal). Stop here so the screenshot
+    # the user sees is the filled form, not a subsequent modal-loop
+    # iteration. The orchestrator decides next: wait for confirm, OTP,
+    # or fall through to another platform.
+    text_fills = []
     if plan:
+        text_fills = [f for f in plan_result.get('filled', []) if f.get('mode') == 'text']
+    if plan and len(text_fills) >= 2 and not plan_result.get('errors') and not {submit!r}:
+        # In review mode (no --submit): stop here so the user sees the
+        # filled form, not a downstream modal-loop iteration.
+        # In submit mode (--submit): keep going so NEXT_CLICK can fire
+        # on the Continue button and push past the form.
+        time.sleep(2)
+        capture_screenshot(shot_p)  # re-capture after settle
+        break
+
+    # 5. Look for Next button. Fire when we filled fields this step
+    #    OR when the previous step clicked a time-slot — both are
+    #    "we just provided input, advance the wizard" states. Guard
+    #    against generic Continue loops by gating on a recent action.
+    just_clicked_slot = bool(step_records[-2:-1] and
+                             step_records[-2:-1][0].get('time_slot_attempt', {{}}).get('clicked'))
+    if plan or just_clicked_slot:
         nb = cdp('Runtime.evaluate', expression={next_click_js!r}, returnByValue=True)
         nb_result = json.loads(nb.get('result', {{}}).get('value', '{{}}'))
+        step_records[-1]['next_clicked'] = nb_result
         if nb_result.get('clicked'):
             time.sleep(3)  # let next page load
             continue
@@ -1143,6 +1591,38 @@ for step in range({max_steps}):
         # (e.g., GMR widget under the EazyDiner modal) are noise.
         ts_answer_allowed = (not plan)
 
+        # (a0) Date dropdown — GMR / OpenTable / Tock widgets default
+        #      to today OR tomorrow depending on the time of day.
+        #      Click the dropdown and pick the user's target date BEFORE
+        #      reading the slot grid. ONE click per run.
+        d_answer = None
+        for k in all_answers:
+            nk = norm(k)
+            if nk == 'date' or 'date' in nk.split():
+                d_answer = all_answers[k]; break
+        if ts_answer_allowed and d_answer and not any(r.get('date_dropdown_clicked') for r in step_records):
+            dd_js = ({date_dropdown_js!r}).replace('DATE_PLACEHOLDER', str(d_answer).replace("'", ""))
+            dd = cdp('Runtime.evaluate', expression=dd_js, returnByValue=True)
+            dd_result = json.loads(dd.get('result', {{}}).get('value', '{{}}'))
+            step_records[-1]['date_dropdown_clicked'] = dd_result
+            if dd_result.get('clicked'):
+                time.sleep(4)  # let the slot grid refresh for the new date
+                continue
+
+        # (a1) Time dropdown — GMR's Time combobox reveals every 30-min
+        #      slot from midnight to midnight (the visible grid is only
+        #      a subset near the current preference). Open the dropdown
+        #      and pick the user's target time so the slot grid
+        #      refreshes around it. ONE click per run.
+        if ts_answer_allowed and ts_answer and not any(r.get('time_dropdown_clicked') for r in step_records):
+            td_js = ({time_dropdown_js!r}).replace('TIME_PLACEHOLDER', str(ts_answer).replace("'", ""))
+            td = cdp('Runtime.evaluate', expression=td_js, returnByValue=True)
+            td_result = json.loads(td.get('result', {{}}).get('value', '{{}}'))
+            step_records[-1]['time_dropdown_clicked'] = td_result
+            if td_result.get('clicked'):
+                time.sleep(4)  # let the slot grid refresh
+                continue
+
         # (a) If we have a time target AND haven't already done a
         #     meal-period click, try clicking Lunch/Dinner/Brunch first
         #     so the slot list refreshes. ONE meal-period click per run.
@@ -1155,8 +1635,13 @@ for step in range({max_steps}):
                 time.sleep(4)  # let the time-slot row refresh
                 continue
 
-        # (b) Time-slot button
-        if ts_answer_allowed and ts_answer:
+        # (b) Time-slot button. Skip if we already clicked a matching
+        #     slot in the previous step — the URL-change reset can
+        #     re-enable this key but we don't want to re-click forever;
+        #     fall through to CTA / Continue so we actually advance.
+        prev_ts_clicked = bool(step_records and step_records[-2:-1]
+                                and step_records[-2:-1][0].get('time_slot_attempt', {{}}).get('clicked'))
+        if ts_answer_allowed and ts_answer and not prev_ts_clicked:
             ts_js = ({time_slot_click_js!r}).replace('TIME_PLACEHOLDER', str(ts_answer).replace("'", ""))
             ts = cdp('Runtime.evaluate', expression=ts_js, returnByValue=True)
             ts_result = json.loads(ts.get('result', {{}}).get('value', '{{}}'))
@@ -1230,7 +1715,17 @@ if submit:
     submit_exec = '''
 (function(){{
   var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"]'));
-  var b = btns.find(function(x){{ return /^(submit|send|senden|gönder|enviar|envoyer|invia|送信|book|reserve|confirm|complete|place order|pay)\\b/i.test(((x.innerText||x.value||'').trim())); }});
+  var primaryRe = /^(submit|send|senden|gönder|enviar|envoyer|invia|送信|book|reserve|confirm|complete|place\s+order|pay|continue|next|proceed|weiter|suivant|siguiente|continuar|avanti)\b/i;
+  var visible = btns.filter(function(x){{
+    var r = x.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    var s = window.getComputedStyle(x);
+    if (s.display === 'none' || s.visibility === 'hidden') return false;
+    if (x.disabled || x.getAttribute('aria-disabled') === 'true') return false;
+    if (parseFloat(s.opacity) < 0.5) return false;
+    return true;
+  }});
+  var b = visible.find(function(x){{ return primaryRe.test(((x.innerText||x.value||'').trim())); }});
   if (!b) return JSON.stringify(false);
   b.scrollIntoView({{block: 'center'}});
   b.click();
@@ -1307,7 +1802,12 @@ def main():
     photo_send_err = ""
     send_helper = os.path.expanduser("~/bin/send-telegram-photo.sh")
     if os.path.isfile(send_helper) and os.path.isfile(shot_path):
-        caption = "form filled — review before submit" if not submit else "form submitted — confirmation page"
+        if not submit:
+            caption = "form filled — review before submit"
+        elif result.get("submitted"):
+            caption = "submit click fired — verify on screenshot"
+        else:
+            caption = "submit attempted — no submit/continue button matched; screenshot may still be the filled form"
         ps_path = shot_path.replace(".png", "-after-submit.png") if (submit and result.get("submitted")) else shot_path
         try:
             r = subprocess.run([send_helper, ps_path, caption], capture_output=True, text=True, timeout=30)
