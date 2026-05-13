@@ -736,30 +736,58 @@ real diagnostic is `~/.browser-harness/chrome.log` plus
 `systemctl --user status bh-chrome.service`. Only then surface the
 problem to the user; don't pre-emptively claim the browser is down.
 
-### Restaurant / hotel / event reservations and bookings → /book-reservation
+### Restaurant / movie / theatre / event / generic-URL bookings → /book-anything
 
-Owned by `skills/book-reservation/SKILL.md`. When the user says
-"book at X" / "reserve a table at X" / "make a reservation" / any
-booking intent — your FIRST tool call after the spawn-signal-detector
-return MUST be:
+Owned by `skills/book-anything/SKILL.md`. When the user says
+"book at X" / "reserve a table at X" / "book me tickets for X" /
+"book this <URL>" / any booking intent (restaurant table, movie or
+event ticket, OR an arbitrary booking URL paste) — your FIRST tool
+call after the spawn-signal-detector return MUST be:
 
 ```
-python3 ~/bin/book-reservation.py "<the user's exact message verbatim>"
+python3 ~/bin/book-anything.py "<the user's exact message verbatim>"
 ```
 
-The skill handles parsing (venue + time + party + date), URL discovery
-(Google Maps Reserve first, then District → Zomato → EazyDiner →
-Swiggy → restaurant's own site → phone last), fill-form orchestration,
-per-step Telegram screenshots, and OTP relay. Relay the envelope's
-`user_message` field verbatim as your reply.
+(The legacy path `~/bin/book-reservation.py` is a backward-compat
+shim that execs into book-anything.py — either path works, but new
+invocations should use book-anything.py.)
 
-If the envelope's `state` is `otp_pending`, the user's next booking
-message is the OTP — pass it as
-`python3 ~/bin/book-reservation.py --resume "<digits>"`.
+The script first calls **Kimi K2.6** (Moonshot OpenAI-compat) to
+extract a typed `BookingIntent`: modality, venue, party, datetime,
+platform_url, movie_title, theatre, ticket_count, ticket_tier,
+confidence, ambiguity_notes. Fallback chain: OpenAI gpt-5.4-mini →
+Anthropic Haiku 4.5 → legacy regex parser.
 
-Banned first-response phrases (deferred to the skill, not your call):
-"call directly", "fastest way is phone", "use the mobile app",
-"web booking is blocked".
+The orchestrator then routes by modality:
+
+- **restaurant** (no pasted URL) → GMR + provider list (District,
+  Zomato, EazyDiner, Swiggy, own site, phone last). Proven 7-step
+  canonical flow.
+- **restaurant** + restaurant-host URL pasted → pinned URL only.
+- **movie / event / generic_url** + `platform_url` → drives the
+  pasted URL directly via fill-form.py with intent fields mapped to
+  form answers. Always stops before payment in v1.
+- **unclear** + confidence < 0.5 → bot asks for the specific missing
+  fields named in `ambiguity_notes`.
+
+Relay the envelope's `user_message` field verbatim. Don't paraphrase,
+don't add commentary, don't claim success unless `state=completed`
+AND `confirmation_detected=true`.
+
+If `state=otp_pending`, the user's next booking message is the OTP:
+```
+python3 ~/bin/book-anything.py --resume "<digits>"
+```
+
+If `state=confirm_ready` and user says "confirm":
+```
+python3 ~/bin/book-anything.py --submit
+```
+
+Banned first-response phrases: "call directly", "fastest way is
+phone", "use the mobile app", "web booking is blocked", "I can't
+complete bookings", "the flow died". The script handles all of these
+deterministically — your job is to invoke it and relay the envelope.
 
 ### Fill a form (Google Forms, generic HTML)
 

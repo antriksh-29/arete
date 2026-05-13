@@ -1,0 +1,142 @@
+# Eval suite for book-anything (formerly book-reservation).
+# Covers routing triggers, LLM extractor correctness, and the smoke envelope.
+skill: book-anything
+script: infra/book-anything.py
+version: 3
+
+# Routing — does the agent correctly route these utterances to /book-anything?
+triggers:
+  - id: ba-001
+    utterance: "book a table at Uru Brewpark for 2 tonight at 8 PM"
+    has_url: false
+    expect_skill: book-anything
+  - id: ba-002
+    utterance: "reserve a table for 4 tomorrow at 7 PM at District"
+    has_url: false
+    expect_skill: book-anything
+  - id: ba-003
+    utterance: "make a reservation at Soka for tonight"
+    has_url: false
+    expect_skill: book-anything
+  - id: ba-004
+    utterance: "i want to book Pi at 9 PM for 2"
+    has_url: false
+    expect_skill: book-anything
+  - id: ba-005
+    utterance: "can you book Uru for me tonight at 8"
+    has_url: false
+    expect_skill: book-anything
+  - id: ba-006
+    utterance: "book a table for 6"
+    has_url: false
+    expect_skill: book-anything
+  # New triggers (multi-modality)
+  - id: ba-007
+    utterance: "please book a table for today - 8:30PM - 2 people - Foo, Forum Rex Walk, Bangalore"
+    has_url: false
+    expect_skill: book-anything
+    expect_extract:
+      modality: restaurant
+      venue: Foo
+      party: 2
+      time_contains: "8:30"
+  - id: ba-008
+    utterance: "Foo, Forum Rex Walk, Bangalore, today 8:30 PM, 2 people"
+    has_url: false
+    expect_skill: book-anything
+    expect_extract:
+      modality: restaurant
+      venue: Foo
+      party: 2
+  - id: ba-009
+    utterance: "book 2 tickets for Avengers tonight 9pm at PVR Forum"
+    has_url: false
+    expect_skill: book-anything
+    expect_extract:
+      modality: movie
+      movie_title_contains: "Avengers"
+      theatre_contains: "PVR Forum"
+      ticket_count: 2
+  - id: ba-010
+    utterance: "https://in.bookmyshow.com/movies/bengaluru/inception/ET00xxxxx book 2 tickets"
+    has_url: true
+    expect_skill: book-anything
+    expect_extract:
+      modality: movie
+      ticket_count: 2
+      platform_url_present: true
+  - id: ba-011
+    utterance: "https://district.in/events/some-comedy-show book me 1 gold"
+    has_url: true
+    expect_skill: book-anything
+    expect_extract:
+      modality: event
+      ticket_count: 1
+      ticket_tier_contains: "old"  # case-insensitive substring "Gold"
+  - id: ba-012
+    utterance: "book this https://forms.gle/some-form for me"
+    has_url: true
+    expect_skill: book-anything
+    expect_extract:
+      modality: generic_url
+      platform_url_present: true
+
+  # Negatives — these should NOT route to /book-anything
+  - id: ba-not-001
+    utterance: "what's Uru's menu"
+    has_url: false
+    expect_skill: chat
+  - id: ba-not-002
+    utterance: "save https://example.com for later"
+    has_url: true
+    expect_skill: reading-list
+  - id: ba-not-003
+    utterance: "what movies are playing this weekend"
+    has_url: false
+    expect_skill: chat
+
+# LLM extractor — exact correctness on the screenshot-failure cases that
+# regex couldn't handle.
+extractor:
+  - id: ex-screenshot-1
+    cmd: python3 infra/booking_intent.py "please book a table for today - 8:30PM - 2 people - Foo, Forum Rex Walk, Bangalore"
+    expect_stdout_contains:
+      - '"modality": "restaurant"'
+      - '"venue": "Foo"'
+      - '"area": "Forum Rex Walk"'
+      - '"party": 2'
+  - id: ex-screenshot-2
+    cmd: python3 infra/booking_intent.py "Foo, Forum Rex Walk, Bangalore, today 8:30 PM, 2 people"
+    expect_stdout_contains:
+      - '"venue": "Foo"'
+      - '"party": 2'
+  - id: ex-restaurant-pump-house
+    cmd: python3 infra/booking_intent.py "book Pump House for 2 on 17 May at 10 PM"
+    expect_stdout_contains:
+      - '"modality": "restaurant"'
+      - '"venue": "Pump House"'
+      - '"party": 2'
+  - id: ex-movie-with-url
+    cmd: python3 infra/booking_intent.py "https://in.bookmyshow.com/movies/bengaluru/inception/ET00xxxxx book 2 tickets"
+    expect_stdout_contains:
+      - '"modality": "movie"'
+      - '"ticket_count": 2'
+      - '"platform_url": "https://in.bookmyshow.com'
+  - id: ex-unclear
+    cmd: python3 infra/booking_intent.py "book a table"
+    expect_stdout_contains:
+      - '"modality": "unclear"'
+      - '"ambiguity_notes":'
+
+smoke:
+  cmd: python3 infra/book-anything.py --smoke
+  expect_exit: 0
+  expect_stdout_contains: '"ok": true'
+
+outputs:
+  - id: ba-out-smoke
+    cmd: python3 infra/book-anything.py --smoke
+    expect_keys: ["ok", "skill", "user_message"]
+  - id: ba-out-extractor-smoke
+    cmd: python3 infra/booking_intent.py "book a table"
+    expect_keys: ["source", "intent"]
