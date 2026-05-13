@@ -880,6 +880,30 @@ TIME_DROPDOWN_JS = r"""
 """
 
 
+# Scrolls the GMR Your-Reservation modal (and any modal/dialog) to its
+# bottom so the Book button — which lives below Rules + Marketing + TOS
+# — enters the viewport before the submit-click pass scans for it.
+SCROLL_RESERVATION_TO_BOTTOM_JS = r"""
+(function(){
+  var hs = Array.from(document.querySelectorAll('h1,h2,h3,[role="heading"]'));
+  var your = hs.find(function(h){ return /your\s+reservation/i.test(h.innerText || ''); });
+  if (your){
+    var n = your;
+    while (n && n !== document.body){
+      var s = window.getComputedStyle(n);
+      if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && n.scrollHeight > n.clientHeight){
+        n.scrollTop = n.scrollHeight; break;
+      }
+      n = n.parentElement;
+    }
+  }
+  var dlgs = document.querySelectorAll('[role="dialog"], [aria-modal="true"]');
+  dlgs.forEach(function(d){ if (d.scrollHeight > d.clientHeight) d.scrollTop = d.scrollHeight; });
+  return 'ok';
+})()
+"""
+
+
 # Reads back the visible Date dropdown trigger text AFTER we tried to
 # set it via DATE_DROPDOWN_JS. The orchestrator uses this to spot a
 # silent picker failure (we clicked something, but the trigger never
@@ -1546,6 +1570,7 @@ def build_driver_script(url, all_answers, submit, shot_path, max_steps=6):
     confirmation_detect_js = CONFIRMATION_DETECT_JS
     verify_date_trigger_js = VERIFY_DATE_TRIGGER_JS
     verify_time_trigger_js = VERIFY_TIME_TRIGGER_JS
+    scroll_reservation_to_bottom_js = SCROLL_RESERVATION_TO_BOTTOM_JS
     shot_after_submit = shot_path.replace(".png", "-after-submit.png")
     shot_step_prefix = shot_path.replace(".png", "-step")
     return f"""
@@ -1727,6 +1752,47 @@ for step in range({max_steps}):
     #    against generic Continue loops by gating on a recent action.
     just_clicked_slot = bool(step_records[-2:-1] and
                              step_records[-2:-1][0].get('time_slot_attempt', {{}}).get('clicked'))
+    # In submit mode ALWAYS try the commit-verb (Book/Reserve/Confirm)
+    # button first, even when plan is empty. The reservation review
+    # page after contact-fill has plan == [] but a Book button at the
+    # bottom of the modal. Without this gate, the loop falls through
+    # to next_click_js which prefers Continue and re-pops the provider
+    # chooser, looping forever.
+    if {submit!r}:
+        # Scroll the reservation modal to the bottom so the Book button
+        # (below Rules + Marketing prefs + TOS) enters the viewport.
+        try:
+            cdp('Runtime.evaluate', expression={scroll_reservation_to_bottom_js!r}, returnByValue=True)
+            time.sleep(0.4)
+        except Exception:
+            pass
+        book_js_pre = '''
+(function(){{
+  var btns = Array.from(document.querySelectorAll('[role="button"], button, input[type="submit"]'))
+    .filter(function(x){{
+      var r=x.getBoundingClientRect();
+      if (r.width===0||r.height===0) return false;
+      var s=window.getComputedStyle(x);
+      if (s.display==='none'||s.visibility==='hidden') return false;
+      if (x.disabled||x.getAttribute('aria-disabled')==='true') return false;
+      if (parseFloat(s.opacity) < 0.5) return false;
+      return true;
+    }});
+  var re = /^(book|submit|reserve|reservar|réserver|prenotare|confirm|confirmar|complete|place\\s+order|pay)\\b/i;
+  var b = btns.find(function(x){{ return re.test((x.innerText||x.value||'').trim()); }});
+  if (!b) return JSON.stringify({{clicked:false}});
+  b.scrollIntoView({{block:'center'}});
+  b.click();
+  return JSON.stringify({{clicked:true, text:(b.innerText||b.value||'').trim()}});
+}})()
+'''
+        bk_pre = cdp('Runtime.evaluate', expression=book_js_pre, returnByValue=True)
+        bk_pre_result = json.loads(bk_pre.get('result', {{}}).get('value', '{{}}'))
+        step_records[-1]['book_clicked_pre'] = bk_pre_result
+        if bk_pre_result.get('clicked'):
+            time.sleep(5)
+            continue
+
     if plan or just_clicked_slot:
         # In submit mode after filling fields, prefer a primary submit
         # button (Book / Reserve / Confirm) over generic Continue —
