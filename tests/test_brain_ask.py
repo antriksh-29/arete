@@ -175,6 +175,57 @@ def test_ask_returns_not_found_for_missing_slug(tmp_path, monkeypatch):
     assert "Bookmark or ingest" in result["user_message"]
 
 
+def test_resolve_pointer_free_text_delegates_to_brain_find(tmp_path, monkeypatch):
+    """Free-text pointers (anything that isn't a slug / URL / "last")
+    delegate to brain-find.py. This is the 2026-05-14 fix for the
+    v100 follow-up where `last` had drifted off the user's intended
+    article."""
+    mod = _import()
+    monkeypatch.setattr(mod, "BRAIN_DIR", tmp_path)
+    monkeypatch.setattr(mod, "LAST_BOOKMARK_PATH", tmp_path / ".last-bookmark.json")
+
+    # Stub the subprocess that would shell out to brain-find.py
+    import subprocess as sp
+    def fake_run(cmd, *a, **kw):
+        if isinstance(cmd, list) and any("brain-find" in c for c in cmd):
+            envelope = {
+                "ok": True,
+                "best": "media/social/x-nishank-20260512",
+                "confident": True,
+                "candidates": [{"slug": "media/social/x-nishank-20260512", "score": 1.0, "reason": "handle==nishanksingla"}],
+            }
+            return sp.CompletedProcess(cmd, 0, json.dumps(envelope), "")
+        return sp.CompletedProcess(cmd, 0, "", "")
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    # find() expects brain-find.py to exist next to brain-ask.py
+    monkeypatch.setattr(mod.Path, "exists", lambda self: True)
+
+    # "Nishank's article" is neither a slug nor a URL nor "last" —
+    # must fall through to brain-find.
+    slug = mod._resolve_pointer("Nishank's article")
+    assert slug == "media/social/x-nishank-20260512"
+
+
+def test_resolve_pointer_slug_shape_bypasses_brain_find(tmp_path, monkeypatch):
+    """Literal slug shape ('a/b' with no spaces) must be passed through
+    without calling brain-find — would be wasted work."""
+    mod = _import()
+    monkeypatch.setattr(mod, "BRAIN_DIR", tmp_path)
+    monkeypatch.setattr(mod, "LAST_BOOKMARK_PATH", tmp_path / ".last-bookmark.json")
+
+    import subprocess as sp
+    calls = []
+    def fake_run(cmd, *a, **kw):
+        calls.append(cmd)
+        return sp.CompletedProcess(cmd, 0, "", "")
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    slug = mod._resolve_pointer("media/social/x-nishank-20260512")
+    assert slug == "media/social/x-nishank-20260512"
+    # No subprocess shell-out happened (brain-find not called)
+    assert not any(isinstance(c, list) and any("brain-find" in str(p) for p in c) for c in calls)
+
+
 def test_resolve_pointer_handles_last_url_and_slug(tmp_path, monkeypatch):
     mod = _import()
     monkeypatch.setattr(mod, "BRAIN_DIR", tmp_path)
