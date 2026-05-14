@@ -21,11 +21,36 @@ run_smoke "daily-task-manager" "bash" "$SCRIPT" || exit 1
 TMP="$(mktemp -d -t dtm-test-XXXX)"
 trap 'rm -rf "$TMP"' EXIT
 
-STATE="$TMP/.brain-bootstrap-raw/state/daily-tasks"
-mkdir -p "$STATE"
+# Phase 2: seed the v2 task-centric layout so `review` has tasks to
+# operate on. Three tasks → three task files + a daily pointer file.
+V2="$TMP/.brain-bootstrap-raw/state/daily-tasks/v2"
+mkdir -p "$V2/tasks" "$V2/daily"
 TODAY=$(TZ=Asia/Kolkata date +%Y-%m-%d)
-cat > "$STATE/$TODAY.json" <<EOF
-{"date":"$TODAY","tasks":["alpha","beta","gamma"],"statuses":{}}
+NOW="$(date -u +%Y-%m-%dT%H:%M:%S+05:30)"
+
+IDS=()
+for TITLE in alpha beta gamma; do
+  ID=$(python3 -c "import uuid;print(uuid.uuid4())")
+  IDS+=("$ID")
+  NORM=$(echo "$TITLE" | tr '[:upper:]' '[:lower:]')
+  cat > "$V2/tasks/$ID.json" <<EOF
+{
+  "id": "$ID",
+  "title": "$TITLE",
+  "title_norm": "$NORM",
+  "created_date": "$TODAY",
+  "created_at": "$NOW",
+  "events": [{"date":"$TODAY","status":"open","ts":"$NOW"}],
+  "current_status": "open",
+  "closed_at": null
+}
+EOF
+done
+
+# Comma-join IDs as JSON array
+IDS_JSON=$(printf '"%s",' "${IDS[@]}" | sed 's/,$//')
+cat > "$V2/daily/$TODAY.json" <<EOF
+{"date":"$TODAY","task_ids":[$IDS_JSON]}
 EOF
 
 fail() { echo "✗ daily-task-manager guards FAILED: $1"; exit 1; }
@@ -52,8 +77,15 @@ HOME="$TMP" bash "$SCRIPT" review --reply "1. done
 rc=$?
 [ "$rc" -eq 0 ] || fail "valid --reply did not exit 0 (got $rc)"
 
-# Verify state was actually mutated (3 statuses present)
-count=$(jq '.statuses | length' "$STATE/$TODAY.json" 2>/dev/null)
-[ "$count" = "3" ] || fail "expected 3 statuses, got $count"
+# Verify state was actually mutated (3 task files now have an event
+# for today with a non-open status: yes / tomorrow / later).
+mutated=0
+for ID in "${IDS[@]}"; do
+  last_status=$(jq -r '.current_status' "$V2/tasks/$ID.json" 2>/dev/null)
+  case "$last_status" in
+    yes|tomorrow|later) mutated=$((mutated + 1)) ;;
+  esac
+done
+[ "$mutated" -eq 3 ] || fail "expected 3 tasks with non-open status, got $mutated"
 
 echo "✓ daily-task-manager review guards ok (exit 2 / 2 / 3 / 0; 3 statuses applied)"
