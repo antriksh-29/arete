@@ -97,10 +97,35 @@ mid-conversation (e.g., user clarifies venue), call it again.
 
 ---
 
-## RULE 0.7 — DO NOT NARRATE TOOL DECISIONS TO TELEGRAM
+## RULE 0.7 — DO NOT NARRATE TOOL DECISIONS, RELAY `user_message` BYTE-FOR-BYTE
 
 **Tool calls are silent.** The user sees the `user_message` field of
-the tool's JSON envelope, relayed verbatim — NOTHING ELSE.
+the tool's JSON envelope, relayed **byte-for-byte** — NOTHING ELSE.
+
+**Verbatim means verbatim.** When you relay `user_message`:
+
+- ✅ Copy the entire field exactly as it came back. Same characters,
+  same line breaks, same emojis, same order.
+- ❌ Do NOT paraphrase. Do NOT "make it more natural". Do NOT smooth
+  out the wording.
+- ❌ Do NOT convert numbered lists into bullets, or bullets into
+  numbered lists, or either into prose. If the script returns
+  `"1. foo\n2. bar"`, the user sees `"1. foo\n2. bar"` — not
+  `"• foo\n• bar"` or `"foo, bar"`.
+- ❌ Do NOT strip leading emojis (🔎 🕸️ 📚 🗒️ 🧬 🧠 📥 ✅ ⚠️ 🔒).
+  They're the script's envelope marker and the user uses them to
+  identify which capability replied.
+- ❌ Do NOT drop the trailing `📎 source: <slug>` / `📎 sources: ...`
+  line. That's the user's click-through path back to the brain page.
+  Without it the user can't follow up with "tell me more about that"
+  or click into the source. Citation strip = regression.
+- ❌ Do NOT re-shape lists. If a numbered list of bookmarks comes
+  back as 5 entries, the user sees 5 entries. Don't combine, don't
+  truncate, don't pick the "best one" to present.
+
+The agent's role is **transport**, not editorial. Scripts already
+shape their output for Telegram (line wrapping, emoji headers,
+truncation). Re-shaping is a regression.
 
 Specifically banned in user-visible replies:
 
@@ -132,6 +157,25 @@ internal; the user never reads it.
   content, so I should use brain-ask. The previous resolution used
   `last` and returned a QOVES article, which may have been the wrong
   source…"* — same shape, despite the §6 rule already being present.
+- 2026-05-14 (Layer 3 probe): agent paraphrased `brain-search`'s
+  envelope. Script returned:
+  ```
+  🔎 Found 3 matches for 'ambition':
+  1. ambition, survivorship bias, persistence
+     Posted by: Nishank Singla (@nishanksingla)
+     ...
+     📎 media/social/x-nishank-20260512
+  ```
+  Agent emitted: `"Found these on ambition in your brain: • Nishank's
+  post on turning 34..."` — stripped the 🔎 header, bullet-ized the
+  numbered list, dropped every per-result `📎` citation. Same regression
+  hit `brain-graph` (🕸️ dropped, source citation dropped) and
+  `brain-compare` (📎 sources line dropped). brain-ask --persona was
+  the only Layer 3 capability that relayed verbatim — because its
+  `user_message` was single-prose, so the agent couldn't see a
+  "summarize this list" affordance. That's the tell: when the script
+  output looks list-shaped, the agent paraphrases. Don't. Relay
+  byte-for-byte.
 
 That's why this rule lives in the RULE 0.x prelude block (read on
 every turn) and not buried mid-doc.
