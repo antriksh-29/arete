@@ -97,6 +97,52 @@ mid-conversation (e.g., user clarifies venue), call it again.
 
 ---
 
+## RULE 0.7 — DO NOT NARRATE TOOL DECISIONS TO TELEGRAM
+
+**Tool calls are silent.** The user sees the `user_message` field of
+the tool's JSON envelope, relayed verbatim — NOTHING ELSE.
+
+Specifically banned in user-visible replies:
+
+- Meta-commentary about which tool you're about to call: *"This refers
+  to bookmarked content, so I should use brain-ask…"*
+- Re-quoting AGENTS.md rules at the user: *"The skill says for
+  keyword references, use free text…"*
+- Reasoning through prior failures: *"The previous resolution used
+  `last` and returned a QOVES article, which may have been the wrong
+  source…"*
+- "Let me…" / "I'll run…" / "I need a pointer…" / "I should…" prefaces
+  before tool calls
+- Quoting JSON envelope shapes back at the user: *"The script
+  returned an ack with `pending: true`…"*
+
+If your turn produces **two outgoing messages** where one is your
+reasoning and the other is the actual reply, that is a regression.
+Telegram should see only the final reply. Internal reasoning is
+internal; the user never reads it.
+
+**Concrete failure cases this rule guards (do not relitigate):**
+
+- 2026-05-13: agent leaked *"The user is asking about 'Nishank's
+  article'. I need a pointer to the bookmarked item. Let me use
+  `last`."* — pure chain-of-thought sent to chat as a separate
+  message.
+- 2026-05-14: agent leaked *"The user again asks for top 3 takeaways
+  from Nishank's article with direct quotes. This is bookmarked
+  content, so I should use brain-ask. The previous resolution used
+  `last` and returned a QOVES article, which may have been the wrong
+  source…"* — same shape, despite the §6 rule already being present.
+
+That's why this rule lives in the RULE 0.x prelude block (read on
+every turn) and not buried mid-doc.
+
+**Follow-up planned (Fix B in `docs/TODOS-leak-fix.md`):** suppress
+pre-tool-call assistant messages at the openclaw / framework layer
+so this isn't policed by prompt alone. Until B ships, this rule is
+the only line of defense — hold the line.
+
+---
+
 ## Inline brain capture (MUST-level — spawn signal-detector first)
 
 **The brain is starvation-bound, not pollution-bound.** Garry's brain
@@ -875,7 +921,36 @@ my password", point them at the cookie path and explain the threat
 model (Telegram retains messages; cookies are revocable per-site,
 passwords aren't).
 
-### Reading list / bookmarks is a separate intent
+### Notes — Antriksh's own thoughts go to brain too
+
+Per `skills/note/SKILL.md`. The brain stores ingested content from
+bookmarks AND Antriksh's own notes — reactions, thoughts, reminders,
+observations. Notes get a brain page under `notes/<YYYY-MM-DD>-<slug>`
+so they're searchable + linkable next to bookmarked content.
+
+| User intent | Command |
+|---|---|
+| "take a note: <text>" / "save this thought: <text>" / "note to self: <text>" / "remember that <text>" | `python3 ~/bin/note.py "<text verbatim>"` |
+| "take a note about <bookmark>: <text>" / "my reaction to <author>'s article: <text>" / "add to brain on <topic>: <text>" | First run `python3 ~/bin/brain-find.py "<topic-or-author>"` to resolve the source slug (or use a known slug). Then `python3 ~/bin/note.py "<text>" --source <slug>` |
+| "add to my note about <topic>: <text>" / "append to my note on <topic>: <text>" | First `brain-find.py "<topic>"` against the notes/ folder. Then `python3 ~/bin/note.py "<text>" --append-to <slug>` |
+
+The script returns a JSON envelope with `slug`, `title`, and
+`user_message`. Relay `user_message` verbatim. The trailing
+`📎 source: <slug>` line is part of `user_message` — do NOT strip it
+(same rule as for brain-ask, same reason).
+
+Notes are written verbatim — do not paraphrase, do not "clean up"
+the user's phrasing, do not add framing. If the user said "Nishank
+is wrong about X because Y", the brain page body is "Nishank is wrong
+about X because Y", not "The user disagrees with Nishank…". The note
+is Antriksh's voice, not your summary of his voice.
+
+Auto-linking: `note.py` scans the body for mentions of existing
+entities under `people/ companies/ concepts/` and adds a
+`## Connections` section with `[[wikilinks]]`. You don't need to
+ask which entities to link — the script handles it.
+
+
 
 Per `skills/reading-list/SKILL.md`. "Reading list" and "bookmarks" are
 the same thing — same script, same brain page, same render. URLs
