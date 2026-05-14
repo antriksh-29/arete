@@ -1,0 +1,27 @@
+skill: brain-search
+script: infra/brain-search.py
+version: 1
+
+triggers:
+  - id: bs-001
+    utterance: "find articles about ambition"
+    expect_skill: brain-search
+  - id: bs-002
+    utterance: "what's in my brain about founder-mode"
+    expect_skill: brain-search
+  - id: bs-003
+    utterance: "anything I saved on survivorship bias"
+    expect_skill: brain-search
+  - id: bs-004
+    utterance: "what was I reading about persistence last week"
+    expect_skill: brain-search
+  - id: bs-005
+    utterance: "search for compounding"
+    expect_skill: brain-search
+
+  - id: bs-neg-001
+    utterance: "what does Nishank's article say about ambition?"
+    expect_skill: brain-ask
+  - id: bs-neg-002
+    utterance: "compare Nishank and Paul Graham on ambition"
+    expect_skill: brain-compare

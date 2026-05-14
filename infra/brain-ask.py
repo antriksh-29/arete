@@ -189,7 +189,22 @@ def _resolve_pointer(pointer):
     return slug
 
 
-def ask(slug, question):
+def _load_persona(persona_slug):
+    """Load a brain entity page as the reader's frame (Pattern 6 —
+    contextual explanation). Defaults to people/antriksh.md so the
+    bot can pitch answers calibrated to who is asking. Returns the
+    page body or empty string if missing."""
+    if not persona_slug:
+        return ""
+    path = BRAIN_DIR / f"{persona_slug}.md"
+    if path.exists():
+        return path.read_text()
+    r = subprocess.run([GBRAIN, "get", persona_slug],
+                       capture_output=True, text=True)
+    return r.stdout if r.returncode == 0 else ""
+
+
+def ask(slug, question, persona_slug=""):
     raw_text, raw_source = _load_raw_sidecar(slug)
     page_text, page_source = _load_brain_page(slug)
     if not raw_text and not page_text:
@@ -198,10 +213,18 @@ def ask(slug, question):
             "user_message": f"🧠 No brain page at `{slug}`. Bookmark or ingest the URL first, then ask again.",
         }
 
+    persona_text = _load_persona(persona_slug) if persona_slug else ""
+
     # Assemble the LLM payload. Even when both are present, send both —
     # the brain page carries the LLM's prior analysis + entity links,
     # the raw sidecar carries verbatim source quotes.
     parts = [f"BRAIN PAGE SLUG: {slug}\n"]
+    if persona_text:
+        parts.append(
+            f"READER FRAME ({persona_slug}, {len(persona_text)} chars):\n"
+            f"This is who's asking. Calibrate your answer to their context, "
+            f"vocabulary, and current focus.\n---\n{persona_text[:8000]}\n---"
+        )
     if page_text:
         parts.append(f"BRAIN PAGE BODY ({len(page_text)} chars):\n---\n{page_text[:30000]}\n---")
     if raw_text:
@@ -238,15 +261,36 @@ def ask(slug, question):
         "source": raw_source or page_source or "gbrain_get",
         "raw_chars": len(raw_text),
         "page_chars": len(page_text),
+        "persona": persona_slug if persona_text else "",
         "provider": provider,
     }
 
 
 def main():
-    if len(sys.argv) < 3:
-        sys.exit('Usage: brain-ask.py <slug|"last"|url> "<question>"')
-    pointer = sys.argv[1]
-    question = sys.argv[2]
+    # Args:
+    #   brain-ask.py <pointer> <question>
+    #   brain-ask.py <pointer> <question> --persona <persona-slug>
+    # Persona defaults to people/antriksh when --persona is passed
+    # with no value or with "self".
+    argv = sys.argv[1:]
+    persona_slug = ""
+    if "--persona" in argv:
+        idx = argv.index("--persona")
+        # Next token is the persona slug; if it's missing or starts
+        # with '--', use the default
+        if idx + 1 < len(argv) and not argv[idx + 1].startswith("--"):
+            persona_slug = argv[idx + 1]
+            del argv[idx:idx + 2]
+        else:
+            persona_slug = "people/antriksh"
+            del argv[idx:idx + 1]
+        if persona_slug == "self":
+            persona_slug = "people/antriksh"
+
+    if len(argv) < 2:
+        sys.exit('Usage: brain-ask.py <slug|"last"|url> "<question>" [--persona [people/...]]')
+    pointer = argv[0]
+    question = argv[1]
     if question == "--smoke":
         print(json.dumps({"ok": True, "skill": "brain-ask", "user_message": "brain-ask smoke ok"}))
         return
@@ -259,7 +303,7 @@ def main():
         }))
         return
 
-    result = ask(slug, question)
+    result = ask(slug, question, persona_slug=persona_slug)
     print(json.dumps(result))
 
 

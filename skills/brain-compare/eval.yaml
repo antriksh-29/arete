@@ -1,0 +1,24 @@
+skill: brain-compare
+script: infra/brain-compare.py
+version: 1
+
+triggers:
+  - id: bc-001
+    utterance: "compare Nishank and Paul Graham on ambition"
+    expect_skill: brain-compare
+  - id: bc-002
+    utterance: "what does Tobi say vs Paul Graham about founder mode"
+    expect_skill: brain-compare
+  - id: bc-003
+    utterance: "contrast the QOVES page with Nishank's piece"
+    expect_skill: brain-compare
+  - id: bc-004
+    utterance: "Nishank vs Tobi on persistence"
+    expect_skill: brain-compare
+  - id: bc-005
+    utterance: "compare these two articles for me"
+    expect_skill: brain-compare
+
+  - id: bc-neg-001
+    utterance: "what does Nishank say about ambition"
+    expect_skill: brain-ask
