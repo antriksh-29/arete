@@ -950,6 +950,13 @@ reply. Do NOT rephrase. Do NOT add a preamble. Do NOT append "let me
 know if you want more". The script has been tuned to produce a
 clean, quote-bearing answer.
 
+**The trailing `📎 source: <slug>` line is part of `user_message`.
+DO NOT strip it.** Earlier the agent treated wikilink-shaped citations
+(`[[slug]]`) as internal-only and removed them on relay; we switched
+to a plain-text format with the paperclip emoji so it's unambiguously
+user-facing. Trimming the source line is a regression — when in
+doubt, paste the whole `user_message` byte-for-byte and stop.
+
 Specifically banned behaviors when the user asks about bookmarked
 content:
 

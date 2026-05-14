@@ -48,9 +48,11 @@ INGEST_X = "/home/botuser/bin/ingest-x-thread.py"
 INGEST_YOUTUBE = "/home/botuser/bin/ingest-youtube.py"
 INGEST_HTML = "/home/botuser/bin/ingest-html.py"
 WORKER_BIN = "/home/botuser/bin/reading-list-worker.py"
+MIGRATE_WORKER_BIN = "/home/botuser/bin/migrate-worker.py"
 # Worker stderr log — short retention is fine, the systemd journal
 # captures the worker as well when it's invoked via the timer.
 WORKER_LOG = "/tmp/reading-list-worker.log"
+MIGRATE_WORKER_LOG = "/tmp/migrate-worker.log"
 
 
 def log(msg):
@@ -689,15 +691,36 @@ def cmd_drop(target):
     print(json.dumps({"ok": True, "user_message": f"🗑️  Removed from bookmarks: {item['title'] or item['url']}"}))
 
 
-def cmd_migrate(force=False):
-    """Walk all rows; for any row missing a brain page or posted_by /
-    one_liner, run the right ingestor and update the row. With --force,
-    re-ingest every row even if it already looks complete.
+def _spawn_migrate_worker(force):
+    """Detach migrate-worker.py — it walks every row serially, runs
+    the right ingestor (writing brain pages + raw sidecars), and
+    posts a Telegram summary at the end. Survives this process
+    exiting via start_new_session."""
+    if not os.path.isfile(MIGRATE_WORKER_BIN):
+        log(f"migrate worker missing at {MIGRATE_WORKER_BIN}; will run inline")
+        return False
+    try:
+        stderr_fp = open(MIGRATE_WORKER_LOG, "a")
+    except OSError as e:
+        log(f"could not open migrate log {MIGRATE_WORKER_LOG}: {e}")
+        stderr_fp = subprocess.DEVNULL
+    args = ["python3", MIGRATE_WORKER_BIN]
+    if force:
+        args.append("--force")
+    subprocess.Popen(
+        args,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=stderr_fp,
+        start_new_session=True,
+    )
+    return True
 
-    When the ingestor succeeds (returns a brain_page slug), its fresh
-    fields ALWAYS win over the stored row's old values — stale V1
-    titles like `@handle: tweet text with t.co URLs` must not bleed
-    forward."""
+
+def _migrate_inline(force):
+    """Legacy synchronous migrate kept for smoke tests / CI where the
+    worker isn't present. Same behavior as the original cmd_migrate
+    before async: walk rows, hydrate, save."""
     state = load_state()
     updated = 0
     skipped = 0
@@ -713,29 +736,79 @@ def cmd_migrate(force=False):
                 skipped += 1
                 continue
             f = hydrate_row(url, r["kind"])
-            had_brain = bool(f["brain_page"])
-            if had_brain:
-                # Ingestor succeeded — its fields win unconditionally.
+            if f["brain_page"]:
                 r["title"] = f["title"] or clean_cell(r.get("title"))
                 r["posted_by"] = f["posted_by"] or url_host(url)
                 r["one_liner"] = f["one_liner"]
                 r["brain_page"] = f["brain_page"]
                 updated += 1
             else:
-                # Ingestor failed — keep whatever fresh shallow data
-                # hydrate_row produced, fall back to existing values
-                # so we don't blank a row.
                 r["title"] = f["title"] or clean_cell(r.get("title"))
                 r["posted_by"] = f["posted_by"] or r.get("posted_by") or url_host(url)
                 r["one_liner"] = r.get("one_liner", "")
                 r["brain_page"] = r.get("brain_page", "")
                 failed += 1
     save_state(state)
+    return updated, skipped, failed
+
+
+def cmd_migrate(force=False):
+    """Ack-and-spawn: validate that there's work to do, fire migrate
+    in the background, return immediately. The worker walks every
+    row serially (browser-harness has a single Chrome), writes brain
+    pages + raw sidecars, then sends one summary Telegram message.
+
+    Prior behavior ran inline and hit the 120s per-turn timeout for
+    any queue >2-3 rows. Pinned behind READING_LIST_SYNC=1 for smoke
+    tests."""
+    sync_mode = os.environ.get("READING_LIST_SYNC") == "1"
+    if sync_mode:
+        updated, skipped, failed = _migrate_inline(force)
+        print(json.dumps({
+            "ok": True, "updated": updated, "skipped": skipped, "failed": failed,
+            "user_message": (
+                f"📚 Migration done. {updated} rows ingested deep, "
+                f"{skipped} already complete, {failed} failed (kept with shallow fields)."
+            ),
+        }))
+        return
+
+    # Async path
+    state = load_state()
+    todo = 0
+    for bucket in ("queue", "read"):
+        for r in state[bucket]:
+            if force or not r.get("brain_page") or not r.get("posted_by") or not r.get("one_liner"):
+                todo += 1
+
+    if todo == 0:
+        print(json.dumps({
+            "ok": True, "pending": False,
+            "user_message": "📚 Nothing to migrate — every bookmark already has a brain page + sidecar.",
+        }))
+        return
+
+    spawned = _spawn_migrate_worker(force)
+    if not spawned:
+        # Fallback: do it inline. Will likely hit turn timeout but at
+        # least the migrate path still functions when the worker isn't
+        # deployed (first deploy of this change, etc).
+        updated, skipped, failed = _migrate_inline(force)
+        print(json.dumps({
+            "ok": True, "updated": updated, "skipped": skipped, "failed": failed,
+            "user_message": (
+                f"📚 Migration done (inline fallback — migrate-worker not installed). "
+                f"{updated} ingested, {skipped} skipped, {failed} failed."
+            ),
+        }))
+        return
+
+    flag_note = " (force re-ingest)" if force else ""
     print(json.dumps({
-        "ok": True, "updated": updated, "skipped": skipped, "failed": failed,
+        "ok": True, "pending": True, "todo": todo,
         "user_message": (
-            f"📚 Migration done. {updated} rows ingested deep, "
-            f"{skipped} already complete, {failed} failed (kept with shallow fields)."
+            f"📚 Migrating {todo} bookmark{'s' if todo != 1 else ''}{flag_note} in the background. "
+            f"I'll send a summary when done — usually a few minutes."
         ),
     }))
 

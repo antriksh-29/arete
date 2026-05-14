@@ -125,8 +125,10 @@ def test_ask_uses_raw_sidecar_when_present_for_quotes(tmp_path, monkeypatch):
     # The system prompt forbids speculation + requires verbatim quotes
     assert "quote VERBATIM" in captured["system"]
     assert "If the answer isn't in the material" in captured["system"]
-    # The user_message field (relayed verbatim to Telegram) ends with a citation
-    assert "[[media/social/x-nishank-20260512]]" in result["user_message"]
+    # The user_message field (relayed verbatim to Telegram) ends with a
+    # plain-text citation — wikilink syntax got stripped by the agent on
+    # relay in production, so we use 📎 + bare slug instead.
+    assert "📎 source: media/social/x-nishank-20260512" in result["user_message"]
     # And contains the actual quote
     assert "survivorship bias" in result["user_message"]
 
@@ -246,5 +248,6 @@ def test_main_top_takeaways_with_quotes_end_to_end(tmp_path, monkeypatch, capsys
     assert "survivorship bias dressed as advice" in env["user_message"]
     assert "still here next year" in env["user_message"]
     assert "felt like quitting" in env["user_message"]
-    # Citation appended
-    assert "from [[media/social/x-nishank-20260512]]" in env["user_message"]
+    # Citation appended in plain-text form so the agent doesn't strip
+    # it as markdown-only on the way to Telegram.
+    assert "📎 source: media/social/x-nishank-20260512" in env["user_message"]
