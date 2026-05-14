@@ -1,0 +1,36 @@
+# Eval suite for the note-taking skill.
+skill: note
+script: infra/note.py
+version: 1
+
+triggers:
+  - id: note-001
+    utterance: "take a note: founder-mode applies differently at seed vs growth"
+    expect_skill: note
+  - id: note-002
+    utterance: "save this thought: ambition without survivorship-bias awareness is cosplay"
+    expect_skill: note
+  - id: note-003
+    utterance: "note to self: revisit the persistence framing next week"
+    expect_skill: note
+  - id: note-004
+    utterance: "remember that startups need cash runway plus narrative runway"
+    expect_skill: note
+  - id: note-005
+    utterance: "my reaction to Nishank's article: the asymmetry is in seed-stage compounding"
+    expect_skill: note
+  - id: note-006
+    utterance: "add to my note on survivorship-bias: the stage axis matters more than the topic axis"
+    expect_skill: note
+
+  # NOT these — disambiguates note from reading-list / brain-ask
+  - id: note-neg-001
+    utterance: "save this: https://x.com/nishanksingla/status/2052819273010238771"
+    has_url: true
+    expect_skill: reading-list
+  - id: note-neg-002
+    utterance: "what does Nishank say about ambition?"
+    expect_skill: brain-ask
+  - id: note-neg-003
+    utterance: "what are the top 3 takeaways?"
+    expect_skill: brain-ask
