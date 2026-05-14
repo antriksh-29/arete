@@ -55,15 +55,57 @@ DESIRED=(
   # well under gpt-5.4-mini's 200K TPM ceiling (the silent-hang
   # regression from bug #1).
   "agents.defaults.bootstrapTotalMaxChars=100000"
+
 )
 
-python3 - "$CONFIG" "$MODE" "${DESIRED[@]}" <<'PYEOF'
+# messages.messagePrefix — managed as a here-string so multi-line is
+# clean and we don't have to escape \n. POSITIVE-framed Kimi-friendly
+# output discipline (the earlier "BANNED phrases" list backfired —
+# Kimi K2.6 echoed the banned tokens). Re-runnable: this script
+# overwrites VPS drift on every deploy.
+MESSAGE_PREFIX="$(cat <<'PREFIX_EOF'
+[SYSTEM PREAMBLE]
+Your assistant turn output is EXACTLY ONE of:
+  (a) A tool call.
+  (b) The verbatim stdout (or user_message field) of the most recent tool call.
+Nothing else. No planning narration. No "The user wants...", "I need to...", "Let me...", "I'll run...", "Now I should...". If you find yourself writing those, you have failed the turn — abort, emit the tool call instead.
+
+First tool call MUST be: exec ~/bin/spawn-signal-detector.sh "<user message verbatim>"
+
+Its stdout ends with an INTENT ROUTER OUTPUT block. Follow it deterministically:
+
+- INTENT=chat → no router-mandated action; compose a normal reply per AGENTS.md / SKILL.md.
+- INTENT=task_review → run ~/bin/daily-tasks.sh review --date <Y-M-D> --reply "<reply verbatim>". Relay stdout verbatim. Never claim "Applied 0 status updates" without a clean retry.
+- INTENT=task_set → run ~/bin/daily-tasks.sh set with the task list. Relay stdout verbatim.
+- INTENT=task_add → run ~/bin/daily-tasks.sh add. Relay stdout verbatim.
+- INTENT=task_mark → run ~/bin/daily-tasks.sh mark / remove per recipe. Relay stdout verbatim.
+- INTENT=task_backlog → run ~/bin/daily-tasks.sh backlog [--age-gte N]. Relay stdout VERBATIM. Do NOT compose from brain pages. Reply MUST start with "📋 Backlog —".
+- INTENT=task_stats → run ~/bin/daily-tasks.sh stats --window <window>. Relay stdout VERBATIM. Reply MUST start with "📊 Stats —". Never count from memory.
+- INTENT=task_history → run ~/bin/daily-tasks.sh history <range>. Relay stdout verbatim.
+- INTENT=task_show → run ~/bin/daily-tasks.sh show <target>. Relay stdout VERBATIM with status emojis intact. Never add suffixes like "— pending" or categorize into "Work"/"Personal" sections.
+- INTENT=booking → run python3 ~/bin/book-reservation.py "<user msg>". Relay envelope user_message verbatim.
+- INTENT=booking_confirm → run python3 ~/bin/book-reservation.py --submit. Relay verbatim.
+- INTENT=booking_pick_time → run python3 ~/bin/book-reservation.py --pick-time "<time>". Relay verbatim.
+- INTENT=otp_relay → run book-reservation.py --resume "<otp>" or fill-form.py with the OTP. Never refuse.
+
+Tool results are authoritative. If a script returns "no tasks for <date>", relay that — do not invent an empty list. If a script exits nonzero, relay stderr — do not fabricate success.
+
+User message follows:
+PREFIX_EOF
+)"
+
+python3 - "$CONFIG" "$MODE" "$MESSAGE_PREFIX" "${DESIRED[@]}" <<'PYEOF'
 import datetime, json, shutil, sys
 from pathlib import Path
 
 config_path = Path(sys.argv[1])
 mode = sys.argv[2]
-desired = sys.argv[3:]
+message_prefix = sys.argv[3]
+desired = sys.argv[4:]
+
+# Append the prefix knob to desired list so it goes through the same
+# diff + write machinery as the numeric knobs.
+desired = list(desired) + [("messages.messagePrefix", message_prefix)]
 
 with open(config_path) as f:
     cfg = json.load(f)
@@ -83,14 +125,22 @@ def set_(obj, path, value):
         obj = obj[k]
     obj[parts[-1]] = value
 
-changes = []
-for spec in desired:
+def parse_spec(spec):
+    """Each entry is either a 'k=v' string (numeric/JSON-literal knobs)
+    or a (path, value) tuple for pre-parsed string knobs like the
+    message prefix."""
+    if isinstance(spec, tuple):
+        return spec
     path, raw_val = spec.split("=", 1)
-    # Try parsing as JSON literal (int / bool / string)
     try:
         new_val = json.loads(raw_val)
     except json.JSONDecodeError:
         new_val = raw_val
+    return path, new_val
+
+changes = []
+for spec in desired:
+    path, new_val = parse_spec(spec)
     current = get(cfg, path)
     if current != new_val:
         changes.append((path, current, new_val))
@@ -99,12 +149,15 @@ if mode == "check":
     print(f"=== {config_path}")
     print(f"=== checking {len(desired)} managed knob(s)")
     for spec in desired:
-        path, raw_val = spec.split("=", 1)
-        try: target = json.loads(raw_val)
-        except: target = raw_val
+        path, target = parse_spec(spec)
         current = get(cfg, path)
         tag = "✓" if current == target else "✗"
-        print(f"  {tag} {path} = {current!r}  (target {target!r})")
+        # Truncate long string values in the check display
+        cur_disp = repr(current)
+        tgt_disp = repr(target)
+        if len(cur_disp) > 80: cur_disp = cur_disp[:80] + "..."
+        if len(tgt_disp) > 80: tgt_disp = tgt_disp[:80] + "..."
+        print(f"  {tag} {path} = {cur_disp}  (target {tgt_disp})")
     sys.exit(0 if not changes else 1)
 
 if not changes:
@@ -113,7 +166,11 @@ if not changes:
 
 print(f"=== {len(changes)} change(s) {'would be' if mode == 'dry' else 'will be'} applied")
 for path, current, new_val in changes:
-    print(f"  {path}: {current!r} → {new_val!r}")
+    cur_disp = repr(current)
+    tgt_disp = repr(new_val)
+    if len(cur_disp) > 80: cur_disp = cur_disp[:80] + "..."
+    if len(tgt_disp) > 80: tgt_disp = tgt_disp[:80] + "..."
+    print(f"  {path}: {cur_disp} → {tgt_disp}")
 
 if mode == "dry":
     sys.exit(0)

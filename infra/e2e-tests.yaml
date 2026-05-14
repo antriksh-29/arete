@@ -60,14 +60,57 @@ tests:
   # status emojis won't match the on-disk state file.
   - id: tasks-show-with-statuses
     skill: daily-task-manager
-    message: "show today's task list"
+    # Probe yesterday explicitly so the assertion has tasks to check.
+    # "today" can be empty on a fresh day and this test would false-fail.
+    message: "show yesterday's task list"
     timeout: 60
     expects:
       reply_min_len: 20
-      # At least one status emoji must appear in the reply. Backfill of
-      # 2026-05-13 has 3 done + 2 tomorrow + 1 later, so all three
-      # symbols are expected when this runs against that date's state.
+      # At least one status emoji must appear in the reply. The 2026-05-13
+      # backfill has done/tomorrow/later/deleted, so at least one of these
+      # symbols MUST appear if the bot is reading state correctly. If the
+      # bot hallucinates "all pending", emojis won't be there.
+      reply_regex: ['[✅➡️⏸️🗑️]']
+
+  # Phase 2: cross-day lineage queries. These exist only after the
+  # v2 data model migrates: backlog, history span, weekly stats,
+  # task lineage detail.
+  - id: tasks-backlog-query
+    skill: daily-task-manager
+    # Use explicit script-shaped phrasing so the bot can't drift into a
+    # brain-composed "personal goals / business" reply. The canonical
+    # backlog response from daily-tasks.sh starts with "📋 Backlog —".
+    message: "show my daily-tasks backlog"
+    timeout: 90
+    expects:
+      reply_min_len: 30
+      # Strict assertion: the script's output header MUST appear.
+      # Anything else means the bot composed a reply without invoking
+      # daily-tasks.sh backlog (the Phase 2 script).
+      reply_contains:
+        - "Backlog"
+      # Age-in-days like "(7d)" or "(10d)" is also a script-only token.
+      reply_regex: ['\(\d+d\)']
+
+  - id: tasks-show-yesterday-statuses
+    skill: daily-task-manager
+    message: "show yesterday's tasks"
+    timeout: 60
+    expects:
+      reply_min_len: 20
+      # Backfilled 2026-05-13 must render with status emojis,
+      # proving the bot is reading v2 lineage state correctly.
       reply_regex: ['[✅➡️⏸️]']
+
+  - id: tasks-stats-week
+    skill: daily-task-manager
+    message: "how many tasks did I close this week"
+    timeout: 60
+    expects:
+      reply_min_len: 20
+      # Stats reply should have either "completion" / percentage / a
+      # done count. Don't pin format too tightly — bot may paraphrase.
+      reply_regex: ['\d+(\s*%|\s*/\s*\d+|\s+(done|completed|task))|completion']
 
   - id: water-status
     skill: water-log

@@ -145,6 +145,29 @@ for today"). Do NOT also dump the list back; the user can ask for it.
 For `show` output: relay verbatim. Status emojis (✅ done, ➡️ tomorrow,
 ⏸️ later, 🗑️ deleted, • open) come from the script. Don't reformat.
 
+**HARD RULE — daily-task queries MUST invoke `~/bin/daily-tasks.sh`.**
+This applies to ALL daily-task intents including the v2 commands
+(`backlog`, `history`, `stats`, `task`). The script is the only
+source of truth; the brain pages it auto-generates are read-only views.
+
+DO NOT compose a daily-task reply from:
+- chat context (the user might have just asked the same thing — re-run anyway)
+- `gbrain query / search / get_page` against `habits/daily-tasks*` (those are stale views)
+- your memory of what was on the list
+- adjacent "what's pending in your life" framing that pulls from
+  goals/projects pages (`originals/`, `entities/`, etc.)
+
+If the user asks "what's pending" / "my backlog" / "stale tasks" /
+"open tasks": run `~/bin/daily-tasks.sh backlog` and relay verbatim.
+If they ask about a time span: run `~/bin/daily-tasks.sh history <range>`.
+If they ask about completion / push rate / how many done this week:
+run `~/bin/daily-tasks.sh stats --window week|month|all`.
+
+Backlog reply starts with `📋 Backlog —`; stats reply starts with
+`📊 Stats —`. If your reply doesn't start with one of these emoji
+headers when the user asked a backlog/stats question, you didn't
+invoke the script — abort and call it.
+
 ## Architectural rules
 
 - **NEVER regurgitate** from conversation history. Even if you replied
