@@ -180,10 +180,13 @@ internal; the user never reads it.
 That's why this rule lives in the RULE 0.x prelude block (read on
 every turn) and not buried mid-doc.
 
-**Follow-up planned (Fix B in `docs/TODOS-leak-fix.md`):** suppress
-pre-tool-call assistant messages at the openclaw / framework layer
-so this isn't policed by prompt alone. Until B ships, this rule is
-the only line of defense — hold the line.
+**Follow-up planned (Fix B in `docs/TODOS-relay-discipline.md`):**
+enforce relay discipline at the openclaw / framework layer — both
+suppress pre-tool-call assistant messages (class 1: reasoning leaks)
+AND forward `tool_result.user_message` byte-for-byte rather than the
+model's post-tool free-form rewrite (class 2: paraphrase regression
+on list-shaped outputs like brain-search / brain-graph / brain-compare).
+Until B ships, this rule is the only line of defense — hold the line.
 
 ---
 
