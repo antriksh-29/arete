@@ -180,7 +180,12 @@ def ask(slug, question):
     # The agent relays user_message verbatim to Telegram; keep it lean,
     # no envelope chrome. Add a single citation line at the bottom for
     # the brain page slug, so the user can navigate to the source.
-    user_message = answer + f"\n\n— from [[{slug}]]"
+    #
+    # Plain-text format on purpose: earlier we tried `— from [[<slug>]]`
+    # and the agent stripped it on relay (treated the wikilink as
+    # internal-only). The 📎 emoji + bare slug survives because it
+    # looks like a normal user-facing reference.
+    user_message = answer + f"\n\n📎 source: {slug}"
     return {
         "ok": True,
         "slug": slug,

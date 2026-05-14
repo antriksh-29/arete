@@ -352,6 +352,118 @@ def test_xref_drainer_enqueue_and_drain_roundtrip(tmp_path, monkeypatch):
         assert isinstance(rec["linked_failed"], list)
 
 
+def test_cmd_migrate_async_spawns_worker_returns_ack_fast(tmp_path, monkeypatch):
+    """Migrate was hitting the 120s per-turn timeout because it
+    iterated rows synchronously. New behavior: cmd_migrate counts
+    pending rows, spawns infra/migrate-worker.py detached, and prints
+    an ack envelope with `pending: true` and a "I'll send a summary
+    when done" user_message — same shape as cmd_add's async path."""
+    rl = _import_reading_list()
+    monkeypatch.setattr(rl, "BRAIN_DIR", tmp_path)
+    monkeypatch.setattr(rl, "LIST_PATH", tmp_path / "lists" / "to-read.md")
+    monkeypatch.setattr(rl, "git_commit", lambda: None)
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, "", ""))
+
+    # Seed two queue rows that need re-ingest (no brain_page)
+    list_path = tmp_path / "lists" / "to-read.md"
+    list_path.parent.mkdir(parents=True, exist_ok=True)
+    list_path.write_text(
+        "# To read\n\n## Queue\n\n"
+        "| # | Title | Posted by | One-liner | Kind | URL | Added | Brain page |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| 1 | t1 | @a | | x_thread | https://x.com/a/status/1 | 2026-05-12 |  |\n"
+        "| 2 | t2 | @b | | x_thread | https://x.com/b/status/2 | 2026-05-12 |  |\n"
+    )
+
+    # Stub ingestor — if cmd_migrate runs INLINE, this gets called.
+    # Async path must NOT call it (worker runs ingest, not cmd_migrate).
+    ingest_calls = []
+    monkeypatch.setattr(rl, "run_ingestor", lambda u, k: (ingest_calls.append((u, k)), {
+        "title": "x", "posted_by": "x", "one_liner": "x", "brain_page": "x"
+    })[1])
+
+    popen_calls = []
+    class FakePopen:
+        def __init__(self, args, **kwargs):
+            popen_calls.append({"args": list(args), "kwargs": kwargs})
+    monkeypatch.setattr(rl.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(os.path, "isfile", lambda p: p == rl.MIGRATE_WORKER_BIN or p == rl.WORKER_BIN)
+
+    buf = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", buf)
+    rl.cmd_migrate(force=False)
+
+    env = json.loads(buf.getvalue().strip())
+    assert env["ok"] is True
+    assert env["pending"] is True
+    assert env["todo"] == 2
+    assert "background" in env["user_message"]
+    assert "summary" in env["user_message"]
+    # No inline ingest happened
+    assert ingest_calls == []
+    # Worker was spawned exactly once
+    assert len(popen_calls) == 1
+    call = popen_calls[0]
+    assert call["args"][:2] == ["python3", rl.MIGRATE_WORKER_BIN]
+    assert "--force" not in call["args"]
+    assert call["kwargs"].get("start_new_session") is True
+
+
+def test_cmd_migrate_async_passes_force_flag(tmp_path, monkeypatch):
+    rl = _import_reading_list()
+    monkeypatch.setattr(rl, "BRAIN_DIR", tmp_path)
+    monkeypatch.setattr(rl, "LIST_PATH", tmp_path / "lists" / "to-read.md")
+    monkeypatch.setattr(rl, "git_commit", lambda: None)
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, "", ""))
+    list_path = tmp_path / "lists" / "to-read.md"
+    list_path.parent.mkdir(parents=True, exist_ok=True)
+    # Already-complete row — without --force this is skipped (todo=0)
+    list_path.write_text(
+        "# To read\n\n## Queue\n\n"
+        "| # | Title | Posted by | One-liner | Kind | URL | Added | Brain page |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| 1 | Full | @a | hi | x_thread | https://x.com/a/status/1 | 2026-05-12 | media/social/x-a-20260512 |\n"
+    )
+    popen_calls = []
+    monkeypatch.setattr(rl.subprocess, "Popen",
+                        lambda args, **kw: popen_calls.append(list(args)))
+    monkeypatch.setattr(os.path, "isfile", lambda p: p == rl.MIGRATE_WORKER_BIN)
+    monkeypatch.setattr(sys, "stdout", io.StringIO())
+    rl.cmd_migrate(force=True)
+    assert len(popen_calls) == 1
+    assert "--force" in popen_calls[0]
+
+
+def test_cmd_migrate_async_nothing_to_do_short_circuits(tmp_path, monkeypatch):
+    """When every row already has brain_page + posted_by + one_liner
+    AND --force isn't set, no worker spawn — just a friendly "nothing
+    to migrate" envelope."""
+    rl = _import_reading_list()
+    monkeypatch.setattr(rl, "BRAIN_DIR", tmp_path)
+    monkeypatch.setattr(rl, "LIST_PATH", tmp_path / "lists" / "to-read.md")
+    monkeypatch.setattr(rl, "git_commit", lambda: None)
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, "", ""))
+    list_path = tmp_path / "lists" / "to-read.md"
+    list_path.parent.mkdir(parents=True, exist_ok=True)
+    list_path.write_text(
+        "# To read\n\n## Queue\n\n"
+        "| # | Title | Posted by | One-liner | Kind | URL | Added | Brain page |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| 1 | Full | @a | hi | x_thread | https://x.com/a/status/1 | 2026-05-12 | media/social/x-a-20260512 |\n"
+    )
+    popen_calls = []
+    monkeypatch.setattr(rl.subprocess, "Popen",
+                        lambda *a, **k: popen_calls.append(a))
+    buf = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", buf)
+    rl.cmd_migrate(force=False)
+    env = json.loads(buf.getvalue().strip())
+    assert env["ok"] is True
+    assert env.get("pending") in (False, None)
+    assert "Nothing to migrate" in env["user_message"]
+    assert popen_calls == []
+
+
 def test_xref_drain_idempotent_when_queue_empty(tmp_path, monkeypatch):
     drainer_path = REPO / "infra" / "xref-drainer.py"
     spec = importlib.util.spec_from_file_location("xref_drainer_empty", drainer_path)
