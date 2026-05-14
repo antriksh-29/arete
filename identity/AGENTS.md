@@ -921,6 +921,44 @@ my password", point them at the cookie path and explain the threat
 model (Telegram retains messages; cookies are revocable per-site,
 passwords aren't).
 
+### Brain Q&A and traversal — Layer 3 capabilities
+
+Per `skills/{brain-search,brain-graph,brain-compare,brain-edit}/SKILL.md`.
+The brain is now interactive — Antriksh can ask questions across all
+bookmarks + notes, walk the wikilink graph, compare arguments
+side-by-side, and edit pages surgically. Each capability has its own
+script; route the user's exact phrasing to the right one.
+
+| User intent | Command |
+|---|---|
+| "find articles about <topic>" / "what's in my brain about <topic>" / "search for <topic>" / "anything I saved on <X>" / "what was I reading about <X> last week" | `python3 ~/bin/brain-search.py "<topic>"` (optionally `--since YYYY-MM-DD` or `--kind note`/`x_thread`/`html`) |
+| "what connects to <X>" / "what else mentions <X>" / "show the graph around <X>" / "what links to Nishank's article" | `python3 ~/bin/brain-graph.py "<pointer>"` |
+| "compare <X> and <Y>" / "what does <A> say vs <B>" / "contrast Nishank and Paul Graham on ambition" | `python3 ~/bin/brain-compare.py "<ref-a>" "<ref-b>"` (optionally `--question "..."`) |
+| "update <slug> — add a link to [[concepts/X]]" / "add [[X]] to Nishank's page" / "connect <slug> to [[Y]]" | `python3 ~/bin/brain-edit.py add-link "<pointer>" "<entity-slug>" "<optional reason>"` |
+| "append to <slug>: <text>" / "add this section to <slug>: ..." | `python3 ~/bin/brain-edit.py append "<pointer>" "<content>"` |
+| "set <slug>'s <field> to <value>" / "mark <slug> as read" (in frontmatter, not the reading-list) | `python3 ~/bin/brain-edit.py set-field "<pointer>" "<field>" "<value>"` |
+| "explain <X> to me in my context" / "given my background, what should I take from <X>" / "what does <X> mean for someone in my role" | `python3 ~/bin/brain-ask.py "<pointer>" "<question>" --persona` (defaults to people/antriksh) |
+
+All four scripts accept the same pointer shapes brain-ask accepts:
+slug | `last` | URL | free-text (delegated to brain-find).
+
+Relay each script's `user_message` field VERBATIM, including the
+trailing `📎 source: <slug>` / `📎 sources: ...` citation line —
+same rule as brain-ask (do NOT strip).
+
+When the user asks a comparison question and you don't have both
+slugs handy:
+
+```
+1. brain-find.py "<reference-a>"  → slug-a
+2. brain-find.py "<reference-b>"  → slug-b
+3. brain-compare.py "<slug-a>" "<slug-b>" --question "<user's question>"
+4. Relay envelope user_message verbatim.
+```
+
+Don't narrate steps 1-3 to Telegram — they're internal (RULE 0.7).
+Only step 4's output reaches the user.
+
 ### Notes — Antriksh's own thoughts go to brain too
 
 Per `skills/note/SKILL.md`. The brain stores ingested content from

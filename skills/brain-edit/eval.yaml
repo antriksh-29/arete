@@ -1,0 +1,20 @@
+skill: brain-edit
+script: infra/brain-edit.py
+version: 1
+
+triggers:
+  - id: be-001
+    utterance: "add [[concepts/path-dependence]] to Nishank's brain page"
+    expect_skill: brain-edit
+  - id: be-002
+    utterance: "update Nishank's page — add a link to [[concepts/path-dependence]]"
+    expect_skill: brain-edit
+  - id: be-003
+    utterance: "connect the Tobi page to [[concepts/founder-mode]]"
+    expect_skill: brain-edit
+  - id: be-004
+    utterance: "append to Nishank's brain page: a new section about stage axis"
+    expect_skill: brain-edit
+  - id: be-005
+    utterance: "set the rating on Nishank's page to 5"
+    expect_skill: brain-edit

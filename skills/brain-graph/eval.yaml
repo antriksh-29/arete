@@ -1,0 +1,20 @@
+skill: brain-graph
+script: infra/brain-graph.py
+version: 1
+
+triggers:
+  - id: bg-001
+    utterance: "what connects to Nishank's article"
+    expect_skill: brain-graph
+  - id: bg-002
+    utterance: "what else mentions founder-mode"
+    expect_skill: brain-graph
+  - id: bg-003
+    utterance: "show the graph around the Tobi tweet"
+    expect_skill: brain-graph
+  - id: bg-004
+    utterance: "show backlinks for paulgraham founder mode"
+    expect_skill: brain-graph
+  - id: bg-005
+    utterance: "what links to this"
+    expect_skill: brain-graph
