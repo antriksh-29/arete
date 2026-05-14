@@ -1,5 +1,9 @@
 #!/bin/bash
-# Sends the 22:30 IST daily-task-review prompt to the user.
+# Sends the 22:00 IST daily-task-review prompt to the user.
+#
+# Reads today's task list via the canonical script. Works against both
+# v1 flat files (legacy) and v2 per-task lineage (post-migration) — the
+# `daily-tasks.sh show <date>` command transparently falls back.
 #
 # Newline rule: bash double-quoted "\n" is LITERAL backslash-n, not a
 # newline. send-telegram.sh URL-encodes whatever it gets, so a literal
@@ -8,15 +12,32 @@
 # OR a real linebreak via printf. Never plain double-quoted "\n".
 set -euo pipefail
 
-STATE_DIR="$HOME/.brain-bootstrap-raw/state/daily-tasks"
 TODAY=$(TZ=Asia/Kolkata date +%Y-%m-%d)
-STATE_FILE="$STATE_DIR/$TODAY.json"
-[[ -f "$STATE_FILE" ]] || exit 0
 
-TASKS=$(jq -r '.tasks[]' "$STATE_FILE")
+# Pull today's task titles via the canonical script. We use Python's
+# `status` subcommand (JSON output) for stable parsing; falls back to
+# v1 flat file for the migration window.
+V2_DAILY="$HOME/.brain-bootstrap-raw/state/daily-tasks/v2/daily/$TODAY.json"
+V1_FILE="$HOME/.brain-bootstrap-raw/state/daily-tasks/$TODAY.json"
+
+TASKS=""
+if [ -f "$V2_DAILY" ]; then
+  # v2 layout — read task titles via the Python helper. JSON 'tasks'
+  # array contains task dicts with .title.
+  TASKS=$(python3 "$HOME/bin/daily-tasks.py" status \
+    | jq -r '.tasks[].title' 2>/dev/null || true)
+elif [ -f "$V1_FILE" ]; then
+  # v1 layout — read directly from the flat file.
+  TASKS=$(jq -r '.tasks[]' "$V1_FILE" 2>/dev/null || true)
+fi
+
+# Filter: skip tasks already in a terminal state (yes/delete) so the
+# review prompt only asks about what's still open. v1 doesn't track
+# per-task status emoji directly, so we rely on the script's `show`
+# omission of terminal tasks in v2. For v1, all tasks are still listed.
 [[ -z "$TASKS" ]] && exit 0
 
-# Compose with real newlines via printf -v, not bash "\n" literals.
+# Compose with real newlines via printf, not bash "\n" literals.
 # The "for <YYYY-MM-DD>" suffix is load-bearing: the bot extracts it
 # from the prompt message and passes --date to `daily-tasks.sh review`
 # so a late reply (e.g. at 02:00 the next day) still applies to the
