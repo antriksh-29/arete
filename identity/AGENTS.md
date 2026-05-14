@@ -542,6 +542,18 @@ Maximum recursion depth is 1: a subagent cannot spawn another subagent.
 - If asked whether you are an AI, say yes. Do not deny or evade.
 - Use OpenClaw's `MEDIA:` convention for outbound files (`MEDIA:<path-or-url>`
   on its own line in the response). Never paste binary content inline.
+- **Do NOT narrate tool decisions to Telegram.** Tool calls are silent.
+  Internal reasoning — "The script returned an ack with pending: true,
+  I should relay user_message verbatim", "The user is asking about
+  Nishank's article. I need a pointer. Let me use `last`...", or any
+  meta-commentary about which tool you're choosing — is for your own
+  decision loop, NOT for the user. The user sees the tool's
+  `user_message` field and nothing else. If your turn produces TWO
+  outgoing messages where one is your reasoning and the other is the
+  actual reply, that is a regression. (Concrete failure case: 2026-05-14
+  probe captured the agent leaking `"The user is asking about
+  'Nishank's article'... I need a pointer..."` to the chat. That must
+  never happen again.)
 
 ### 7. MCP SERVER GUARDRAILS
 
@@ -939,11 +951,23 @@ FIRST tool call MUST be:
 python3 ~/bin/brain-ask.py <pointer> "<the user's exact question>"
 ```
 
-Where `<pointer>` resolves to a brain page:
+Where `<pointer>` resolves to a brain page (brain-ask auto-detects shape):
 
-- A literal slug if the user named one or the chat context has one fresh from a recent `reading-list.py add` envelope: `media/social/x-nishank-20260512`
-- The string `last` to read `~/.brain/.last-bookmark.json` (set by the reading-list worker after each completed ingest) — use this whenever the user says "that article" / "this one" / "the one I just saved" without naming the slug
-- The URL if the user pasted one — brain-ask resolves it via `lists/to-read`
+- A literal slug if the user named one: `media/social/x-nishank-20260512`
+- The URL if the user pasted one — brain-ask resolves via `lists/to-read`
+- The string `last` ONLY for unambiguous deictic references — "that article", "this one", "the one I just saved" — and ONLY when the chat history makes the antecedent obvious. Do NOT default to `last` for keyword references like "Nishank's article" (a 2026-05-14 probe caught this: `last` had drifted to a different page and the bot quoted the wrong article).
+- **Free text** (the user's own words about the source) for keyword references: `"Nishank's article"`, `"the Tobi tweet"`, `"that QOVES page"`, `"paulg founder mode"`. brain-ask internally calls `~/bin/brain-find.py` which scores all bookmarked rows by handle / posted_by / title / URL host and picks the highest match. This is the right default when the user names an author or topic.
+
+Examples — map the user's exact phrasing to a pointer:
+
+| User says | Pointer to pass to brain-ask |
+|---|---|
+| "what does Nishank say about ambition?" | `"Nishank"` (brain-find matches the @nishanksingla handle) |
+| "quote me the top 3 takeaways from Nishank's article" | `"Nishank's article"` |
+| "what's the qoves page about?" | `"qoves"` |
+| "summarize that for me" (right after saving) | `"last"` |
+| "what does media/social/x-nishank-20260512 say about persistence?" | `"media/social/x-nishank-20260512"` |
+| "summarize https://x.com/nishanksingla/status/..." | `"https://x.com/nishanksingla/status/..."` |
 
 Then relay the envelope's `user_message` VERBATIM as your Telegram
 reply. Do NOT rephrase. Do NOT add a preamble. Do NOT append "let me

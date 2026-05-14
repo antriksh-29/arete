@@ -126,12 +126,51 @@ def _resolve_url_to_slug(url):
     return ""
 
 
+SLUG_RE = re.compile(r"^[a-z][\w.-]*\/[\w./-]+$")
+
+
+def _resolve_via_brain_find(query):
+    """Shell out to brain-find.py for free-text resolution. Returns
+    (slug, candidates_list, confident_bool) — slug is empty when no
+    match. We use a subprocess instead of importing so brain-find's
+    failures (gbrain not on PATH, brain index missing) don't poison
+    this script."""
+    here = Path(__file__).resolve().parent
+    bf = here / "brain-find.py"
+    if not bf.exists():
+        bf = Path("/home/botuser/bin/brain-find.py")
+    if not bf.exists():
+        return "", [], False
+    try:
+        r = subprocess.run(
+            ["python3", str(bf), query],
+            capture_output=True, text=True, timeout=45, check=False,
+        )
+    except Exception as e:
+        log(f"brain-find invocation failed: {e}")
+        return "", [], False
+    if r.returncode != 0:
+        return "", [], False
+    try:
+        env = json.loads(r.stdout.strip().splitlines()[-1])
+    except (json.JSONDecodeError, IndexError):
+        return "", [], False
+    if not env.get("ok"):
+        return "", env.get("candidates", []), False
+    return env.get("best", ""), env.get("candidates", []), bool(env.get("confident"))
+
+
 def _resolve_pointer(pointer):
     """Map the CLI argument to a brain page slug. Accepts:
       - a literal slug ("media/social/x-nishank-20260512")
       - "last" — read ~/.brain/.last-bookmark.json
       - a URL — look it up in lists/to-read.md
-    Returns the slug or empty string."""
+      - free-text — delegated to brain-find.py (since 2026-05-14
+        when the v100 follow-up probe showed `last` was a bad default
+        for keyword references like "Nishank's article")
+    Returns the slug or empty string. The free-text path returns ""
+    on no-match — the caller decides how to surface that.
+    """
     if pointer.startswith("http://") or pointer.startswith("https://"):
         return _resolve_url_to_slug(pointer)
     if pointer.lower() == "last":
@@ -142,7 +181,12 @@ def _resolve_pointer(pointer):
             except (json.JSONDecodeError, OSError):
                 return ""
         return ""
-    return pointer
+    # Literal slug shape — pass through
+    if SLUG_RE.match(pointer) and " " not in pointer:
+        return pointer
+    # Anything else → free-text via brain-find
+    slug, _candidates, _confident = _resolve_via_brain_find(pointer)
+    return slug
 
 
 def ask(slug, question):
