@@ -105,6 +105,15 @@ exits non-zero, relay the stderr verbatim. Do NOT compose a fake
 ~/bin/daily-tasks.sh show <YYYY-MM-DD>
 ~/bin/daily-tasks.sh show -3                # 3 days ago
 ~/bin/daily-tasks.sh carryover              # used by morning briefing
+
+# v2 (cross-day) queries — backed by per-task lineage:
+~/bin/daily-tasks.sh backlog                            # open tasks aged ≥7d, oldest first
+~/bin/daily-tasks.sh backlog --age-gte 14               # tighter threshold
+~/bin/daily-tasks.sh backlog --include-later            # include parked tasks
+~/bin/daily-tasks.sh history 2026-05-04..2026-05-13     # span archive
+~/bin/daily-tasks.sh stats --window week                # completion %, push count
+~/bin/daily-tasks.sh stats --window month
+~/bin/daily-tasks.sh task <uuid-prefix-or-title>        # full lineage for one task
 ```
 
 ## Resolver patterns
@@ -117,11 +126,16 @@ exits non-zero, relay the stderr verbatim. Do NOT compose a fake
 | "I finished #1" / "done with X" | `mark <index> yes` |
 | "push #2 to tomorrow" / "defer #3" | `mark <index> tomorrow` |
 | "park #2 indefinitely" / "later" | `mark <index> later` |
-| Numbered status reply after 22:30 review prompt | `review` (heredoc, full reply) |
+| Numbered status reply after 22:00 review prompt | `review --date <YYYY-MM-DD> --reply "<text>"` |
 | "share today's task list" / "what's on my plate" | `show` |
 | "yesterday's tasks" | `show yesterday` |
 | "tasks for May 4" | `show 2026-05-04` (resolve to YYYY-MM-DD) |
 | "tasks 3 days ago" | `show -3` |
+| "what's pending from my end" / "my backlog" / "stale tasks" | `backlog` |
+| "what's been stuck for 2 weeks" | `backlog --age-gte 14` |
+| "show me tasks from May 4 to May 13" | `history 2026-05-04..2026-05-13` |
+| "how many tasks did I close this week" | `stats --window week` |
+| "lineage of <task>" / "history of <task>" | `task "<title-substring>"` |
 
 After a mutation, reply with the script's one-line ack ("✓ Stored 4 tasks
 for today"). Do NOT also dump the list back; the user can ask for it.
