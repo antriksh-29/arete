@@ -1,0 +1,30 @@
+skill: brain-find
+script: infra/brain-find.py
+version: 1
+
+# brain-find is primarily an internal resolver called by other
+# brain-* skills, but the agent CAN invoke it directly for
+# disambiguation. Routing assertions here cover both shapes:
+#   1. Direct invocation when the user asks which page matches a phrase
+#   2. The negative cases — what brain-find is NOT for
+triggers:
+  - id: bf-001
+    utterance: "which brain page matches the QOVES article"
+    expect_skill: brain-find
+  - id: bf-002
+    utterance: "did I bookmark anything by Nishank Singla"
+    expect_skill: brain-find
+
+  # NOT these — every other phrasing should hit a different skill
+  - id: bf-neg-001
+    utterance: "find articles about ambition"
+    expect_skill: brain-search
+  - id: bf-neg-002
+    utterance: "what does Nishank say about ambition"
+    expect_skill: brain-ask
+  - id: bf-neg-003
+    utterance: "what connects to Nishank's article"
+    expect_skill: brain-graph
+  - id: bf-neg-004
+    utterance: "compare Nishank and Paul Graham"
+    expect_skill: brain-compare

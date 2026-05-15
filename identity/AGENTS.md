@@ -970,7 +970,7 @@ passwords aren't).
 
 ### Brain Q&A and traversal — Layer 3 capabilities
 
-Per `skills/{brain-search,brain-graph,brain-compare,brain-edit}/SKILL.md`.
+Per `skills/{brain-ask,brain-find,brain-search,brain-graph,brain-compare,brain-edit}/SKILL.md`.
 The brain is now interactive — Antriksh can ask questions across all
 bookmarks + notes, walk the wikilink graph, compare arguments
 side-by-side, and edit pages surgically. Each capability has its own
@@ -1005,6 +1005,39 @@ slugs handy:
 
 Don't narrate steps 1-3 to Telegram — they're internal (RULE 0.7).
 Only step 4's output reaches the user.
+
+#### Disambiguation — search vs ask vs ask-persona
+
+These three skills look superficially similar — they all touch
+bookmarked content + return prose to Telegram. Mis-routing was
+observed in the 2026-05-14 probe (the user asked "find articles
+about ambition in my brain" and the agent ran brain-ask --persona
+on Nishank's slug instead of brain-search). Hard distinction:
+
+| User wants… | …means → | …route to |
+|---|---|---|
+| **A list of brain pages** about a topic ("find articles", "what's in my brain about X", "search for Y", "show me everything on Z") — answer is plural, multi-source | discovery | `brain-search.py` |
+| **Quotes / takeaways / summary from ONE named source** ("what does Nishank say", "quote the takeaways", "summarize Tobi's thread") — answer is singular, source-anchored | single-page Q&A | `brain-ask.py` (no --persona) |
+| **Calibrated explanation of ONE named source to the user's context** ("explain X in my context", "given my background, what should I take from X", "what does this mean for someone in my role") — singular + reader-frame | persona-Q&A | `brain-ask.py --persona` |
+
+**Banned first action**: routing a search intent (plural, multi-source)
+to `brain-ask`. Even if the user says "find articles about Nishank's
+view on ambition", the answer shape is "here are the matching brain
+pages", not "here's a calibrated explanation of one of them". When
+in doubt, brain-search; the result list lets the user follow up with
+"tell me more about #2" which IS a brain-ask intent.
+
+**Banned phrase patterns for `brain-ask --persona`** when the user's
+phrasing is plural / discovery-shaped:
+
+- *"find articles about X in my brain"* → never persona-ask, always
+  brain-search.
+- *"what's in my brain about X"* → never persona-ask.
+- *"what was I reading about X last week"* → never persona-ask;
+  `brain-search.py "X" --since YYYY-MM-DD`.
+
+`--persona` is a single-source modifier. If you don't have a single
+source in mind, you don't have a persona-ask.
 
 ### Notes — Antriksh's own thoughts go to brain too
 
