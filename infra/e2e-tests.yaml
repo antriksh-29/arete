@@ -60,9 +60,11 @@ tests:
   # status emojis won't match the on-disk state file.
   - id: tasks-show-with-statuses
     skill: daily-task-manager
-    # Probe yesterday explicitly so the assertion has tasks to check.
-    # "today" can be empty on a fresh day and this test would false-fail.
-    message: "show yesterday's task list"
+    # Probe 2026-05-13 explicitly — it has backfilled tasks with mixed
+    # statuses. "yesterday"/"today" can be empty on fresh days and
+    # the test would false-fail. Update this date only when 05-13
+    # data is intentionally cleared.
+    message: "show tasks for 2026-05-13"
     timeout: 60
     expects:
       reply_min_len: 20
@@ -94,7 +96,9 @@ tests:
 
   - id: tasks-show-yesterday-statuses
     skill: daily-task-manager
-    message: "show yesterday's tasks"
+    # Probe 2026-05-13 explicitly (same reason as tasks-show-with-statuses:
+    # actual yesterday may be empty). Test name retained for history.
+    message: "show 2026-05-13 tasks"
     timeout: 60
     expects:
       reply_min_len: 20
