@@ -175,15 +175,47 @@ def fetch_weather():
 # -------------------- 3. Pending tasks --------------------
 
 def fetch_tasks(cap=5):
+    """Carryover from yesterday's `tomorrow`-tagged tasks + indefinite
+    queue (`later`-parked). Returned as a single flat list of bullets
+    for backward compatibility with old briefing format. The newer
+    fetch_carryover/fetch_stuck split below is preferred."""
     out = run("/home/botuser/bin/daily-tasks-briefing-append.sh", timeout=20)
     if not out:
         return None
-    # Output has multiple "## Section" headers. Extract bullet items only.
     items = []
     for line in out.split("\n"):
         line = line.strip()
         if line.startswith("- ") or line.startswith("* "):
             items.append("• " + line[2:].strip())
+    if not items:
+        return None
+    return items[:cap]
+
+
+def fetch_stuck_backlog(age_gte=14, cap=3):
+    """Top N oldest open tasks that have been pending ≥`age_gte` days.
+    Surfaced separately in the briefing so the user sees what's
+    actually been stuck for too long, not just yesterday's carryover.
+
+    Returns list of bullet strings like:
+        "• (15d) refactor onboarding flow — since 2026-04-29"
+    or None if backlog is empty.
+    """
+    out = run(f"/home/botuser/bin/daily-tasks.sh backlog --age-gte {age_gte}", timeout=20)
+    if not out:
+        return None
+    items = []
+    # daily-tasks.sh backlog lines look like:
+    #   "➡️ (15d) some title  — since 2026-04-29"
+    # Strip the leading status emoji + space, keep age + title + since.
+    for line in out.split("\n"):
+        line = line.strip()
+        # Match lines that start with a status glyph followed by " (Nd)"
+        if "(" in line and "d) " in line and "— since" in line:
+            # Drop the leading emoji + space. Find the first '('.
+            paren_idx = line.find("(")
+            if paren_idx > 0:
+                items.append(f"• {line[paren_idx:]}")
     if not items:
         return None
     return items[:cap]
@@ -386,7 +418,7 @@ def fetch_fitness():
 
 # -------------------- Composition --------------------
 
-def compose(events, weather_lines, task_lines, email_items, market_lines, fitness, dry_run=False):
+def compose(events, weather_lines, task_lines, stuck_lines, email_items, market_lines, fitness, dry_run=False):
     """Build the briefing text with HTML bold headers. Returns (text, length)."""
     today_str = TODAY_IST.strftime("%a %d %b")
     suffix = " (DRY RUN)" if dry_run else ""
@@ -415,6 +447,11 @@ def compose(events, weather_lines, task_lines, email_items, market_lines, fitnes
             sections += ["", f"🌦️ <b>Weather — Bangalore</b>"] + weather_lines
         if task_lines:
             sections += ["", "📋 <b>Carryover from yesterday</b>"] + task_lines
+        if stuck_lines:
+            # Stuck callout: surface a few tasks aged ≥14d. These are the
+            # things that have been carried/parked repeatedly and are the
+            # most likely to slip through the cracks.
+            sections += ["", "⚠️ <b>Stuck (open ≥ 14d)</b>"] + stuck_lines
         if email_lines:
             sections += ["", "📥 <b>Today's check-ins</b>"] + email_lines
         if market_lines:
@@ -466,15 +503,17 @@ def main():
     events = fetch_calendar()
     weather_lines = fetch_weather()
     task_lines = fetch_tasks()
+    stuck_lines = fetch_stuck_backlog(age_gte=14, cap=3)
     email_items = fetch_emails()
     market_lines = fetch_markets()
     fitness = fetch_fitness()
 
     log(f"events={len(events) if events else 0} weather={'ok' if weather_lines else 'none'} "
-        f"tasks={len(task_lines) if task_lines else 0} emails={len(email_items) if email_items else 0} "
+        f"tasks={len(task_lines) if task_lines else 0} stuck={len(stuck_lines) if stuck_lines else 0} "
+        f"emails={len(email_items) if email_items else 0} "
         f"market={'ok' if market_lines else 'none'} fitness={'ok' if fitness else 'none'}")
 
-    text = compose(events, weather_lines, task_lines, email_items, market_lines, fitness, dry_run=dry_run)
+    text = compose(events, weather_lines, task_lines, stuck_lines, email_items, market_lines, fitness, dry_run=dry_run)
     log(f"composed {len(text)} chars")
 
     if no_send:

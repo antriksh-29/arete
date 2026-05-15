@@ -262,12 +262,18 @@ def cmd_set(args) -> int:
     """Replace today's list. Each new title is matched against the
     open-task index by title_norm; matches REUSE the existing UUID
     (cross-day lineage), non-matches create new tasks. Yesterday's
-    `tomorrow` tasks auto-carry into the new daily list."""
+    `tomorrow` tasks auto-carry into the new daily list.
+
+    When the user's new list overlaps (by title_norm) with a
+    carried-over `tomorrow` task, the default behaviour is to EXIT 4
+    with a structured collision response so the bot can prompt the
+    user. Pass --on-collision merge|keep-both|skip to bypass."""
     titles = read_titles_from_args_or_stdin(args)
     if not titles:
         print("ERROR: set requires at least one task (positional args or stdin)", file=sys.stderr)
         return 2
-    return _apply_list(titles, mode="set", date_str=today_str(), no_merge=args.no_merge)
+    return _apply_list(titles, mode="set", date_str=today_str(),
+                       no_merge=args.no_merge, on_collision=args.on_collision)
 
 
 def cmd_add(args) -> int:
@@ -275,7 +281,8 @@ def cmd_add(args) -> int:
     if not titles:
         print("ERROR: add requires at least one task", file=sys.stderr)
         return 2
-    return _apply_list(titles, mode="add", date_str=today_str(), no_merge=args.no_merge)
+    return _apply_list(titles, mode="add", date_str=today_str(),
+                       no_merge=args.no_merge, on_collision=args.on_collision)
 
 
 def read_titles_from_args_or_stdin(args) -> list[str]:
@@ -292,7 +299,55 @@ def read_titles_from_args_or_stdin(args) -> list[str]:
     return [t.strip() for t in raw if t.strip()]
 
 
-def _apply_list(titles: list[str], mode: str, date_str: str, no_merge: bool) -> int:
+def _collision_user_message(collisions: list[tuple[str, str, str]]) -> str:
+    """Render a human-readable prompt for the bot to relay to the user.
+    The bot reads `user_message` from the JSON envelope and asks the
+    user verbatim."""
+    if len(collisions) == 1:
+        nt, _, ct = collisions[0]
+        return (
+            f"I already have \"{ct}\" carried over from yesterday's tomorrow list. "
+            f"You're trying to add \"{nt}\" which looks like the same thing.\n\n"
+            "Reply with one of:\n"
+            "• `merge` — same task, just keep yesterday's lineage (recommended)\n"
+            "• `keep both` — treat them as separate tasks\n"
+            "• `skip` — drop the new one, keep just yesterday's copy"
+        )
+    lines = [
+        f"I have {len(collisions)} tasks carried over from yesterday that look like "
+        "duplicates of what you're adding now:",
+        "",
+    ]
+    for nt, _, ct in collisions:
+        lines.append(f"  • new: \"{nt}\"   vs   carryover: \"{ct}\"")
+    lines += [
+        "",
+        "Reply with one of:",
+        "• `merge` — same tasks, keep yesterday's lineage (recommended)",
+        "• `keep both` — treat them all as separate tasks",
+        "• `skip` — drop the new ones, keep just yesterday's copies",
+    ]
+    return "\n".join(lines)
+
+
+def _apply_list(titles: list[str], mode: str, date_str: str, no_merge: bool,
+                on_collision: Optional[str] = None) -> int:
+    """Apply a list of titles as either set or add.
+
+    Carryover-collision handling (eng-review O2 path B): when `mode=set`
+    and yesterday had `tomorrow`-tagged tasks that title-norm-match an
+    incoming title, the default behaviour is to ASK the caller.
+
+    on_collision values:
+      None (default) — collisions trigger exit 4 + structured stdout so
+                       the bot can prompt the user.
+      "merge"         — silently reuse the carried-over UUID (no dup).
+      "keep-both"     — let the new title create a fresh task alongside
+                        the carried-over one (--no-merge effect for
+                        colliding titles only).
+      "skip"          — drop the colliding new title; keep just the
+                        carried-over copy.
+    """
     ensure_dirs()
     index = load_index()
     by_norm = index["by_title_norm"]
@@ -301,21 +356,73 @@ def _apply_list(titles: list[str], mode: str, date_str: str, no_merge: bool) -> 
     existing_ids = list(daily["task_ids"]) if mode == "add" else []
 
     # Carryover yesterday's tomorrow-tagged tasks BEFORE applying the
-    # new list, so dedupe-by-title_norm naturally collapses any
-    # collisions. Only on `set` (add doesn't reset the day).
+    # new list, so we can detect carry-over collisions explicitly.
+    carry_ids: list[str] = []
     if mode == "set":
         carry_ids = carryover_task_ids(date_str)
         existing_ids = list(carry_ids)
+
+    # Pre-scan for collisions between incoming titles and carryover tasks.
+    # Only `set` mode + non-no-merge produces real collisions worth
+    # prompting on.
+    collisions: list[tuple[str, str, str]] = []  # (new_title, carry_task_id, carry_title)
+    if mode == "set" and not no_merge and carry_ids:
+        carry_norm_to_id = {}
+        for cid in carry_ids:
+            ct = load_task(cid)
+            if ct:
+                carry_norm_to_id[ct["title_norm"]] = (cid, ct["title"])
+        for title in titles:
+            norm = title_norm(title)
+            if norm in carry_norm_to_id:
+                cid, ctitle = carry_norm_to_id[norm]
+                collisions.append((title, cid, ctitle))
+
+    # If unresolved collisions exist, ask the caller — exit 4.
+    if collisions and on_collision is None:
+        out = {
+            "status": "collision",
+            "date": date_str,
+            "collisions": [
+                {"new_title": nt, "carryover_task_id": cid[:8], "carryover_title": ct}
+                for nt, cid, ct in collisions
+            ],
+            "next_action": "Re-run with --on-collision <merge|keep-both|skip>",
+            "user_message": _collision_user_message(collisions),
+        }
+        print(json.dumps(out, indent=2, ensure_ascii=False))
+        return 4
 
     final_ids: list[str] = list(existing_ids)
     reused_count = 0
     new_count = 0
     carry_collision_count = 0
+    collision_norms = {title_norm(nt) for nt, _, _ in collisions}
 
     for title in titles:
         norm = title_norm(title)
         if not norm:
             continue
+
+        # Apply on_collision strategy for the specific colliding titles.
+        # Non-colliding titles flow through the normal match-or-create
+        # path below.
+        is_collision = norm in collision_norms
+        if is_collision:
+            if on_collision == "skip":
+                # Drop the new title; carryover copy stays in final_ids.
+                carry_collision_count += 1
+                continue
+            if on_collision == "keep-both":
+                # Force-create a new task, ignoring the carryover match.
+                t = new_task(title, date_str)
+                save_task(t)
+                final_ids.append(t["id"])
+                new_count += 1
+                continue
+            # on_collision == "merge" (or None and we got past the gate):
+            # fall through to normal match-by-norm path which reuses the
+            # carryover task's UUID.
 
         match_id = None if no_merge else by_norm.get(norm)
 
@@ -860,15 +967,20 @@ def _render_today_page() -> str:
     lines = [
         "---",
         "type: habit",
-        "title: Daily Tasks",
+        "title: Daily Tasks (today's list, what's on my plate)",
         "name: Daily Tasks",
         f"updated: {today}",
-        "tags: [daily, productivity]",
+        "tags: [daily, productivity, tasks, todo, today]",
+        "aliases: [todays-tasks, my-tasks, whats-on-my-plate, daily-todo]",
         "---",
         "",
-        "# Daily Tasks",
+        "# Daily Tasks — today's list (whats on my plate, my tasks today)",
         "",
-        "Auto-rebuilt by `~/bin/daily-tasks.sh`. Source of truth is",
+        "What I'm working on today. Use for *what's on my plate*, *whats on my "
+        "plate*, *my tasks today*, *today's task list*, *share today's tasks*, "
+        "*what am I working on*.",
+        "",
+        "Source of truth: `~/bin/daily-tasks.sh show`. Per-task lineage at",
         "`~/.brain-bootstrap-raw/state/daily-tasks/v2/tasks/<uuid>.json`.",
         "",
         f"## Today ({today})",
@@ -917,18 +1029,30 @@ def _render_backlog_page() -> str:
             rows.append((age, t))
     rows.sort(key=lambda x: -x[0])
 
+    # Lead paragraph is intentionally keyword-dense so gbrain semantic
+    # search ranks this page for queries like "pending tasks", "what's
+    # open", "stale tasks", "stuck items".
     lines = [
         "---",
         "type: habit",
-        "title: Daily Tasks — Backlog",
+        "title: Daily Tasks — Backlog (pending, open, stale, stuck tasks)",
         "name: Daily Tasks Backlog",
         f"updated: {today_str()}",
-        "tags: [daily, productivity, backlog]",
+        "tags: [daily, productivity, backlog, pending, open, stale, stuck]",
+        "aliases: [pending-tasks, open-tasks, stale-tasks, stuck-tasks, my-backlog]",
         "---",
         "",
-        "# Daily Tasks — Backlog",
+        "# Daily Tasks — Backlog (pending tasks, open tasks, stale tasks, stuck tasks)",
         "",
-        f"Tasks open ≥ {BACKLOG_AGE_DEFAULT} days. Oldest first.",
+        "This page lists my **pending tasks** / **open tasks** / **stale tasks** / **stuck tasks** —",
+        f"things still to be done that have been open ≥ {BACKLOG_AGE_DEFAULT} days. "
+        "Use this for queries like *what's pending from my end*, *my backlog*, "
+        "*what's stuck*, *whats stuck*, *aged tasks*, *open tasks from earlier "
+        "this week/month*.",
+        "",
+        f"Source of truth: `~/bin/daily-tasks.sh backlog`. Re-run that script for live numbers.",
+        "",
+        "## Backlog (oldest first)",
         "",
     ]
     if not rows:
@@ -944,15 +1068,20 @@ def _render_history_page() -> str:
     lines = [
         "---",
         "type: habit",
-        "title: Daily Tasks — History",
+        "title: Daily Tasks — History (archive, past tasks, what I did)",
         "name: Daily Tasks History",
         f"updated: {today_str()}",
-        "tags: [daily, productivity, history]",
+        "tags: [daily, productivity, history, archive, past]",
+        "aliases: [task-history, past-tasks, task-archive, what-i-did]",
         "---",
         "",
-        "# Daily Tasks — History",
+        "# Daily Tasks — History archive",
         "",
-        "Reverse-chronological archive. v1 entries marked.",
+        "Past task lists, reverse-chronological. Use for *what did I do "
+        "yesterday/last week/last month*, *tasks from <date>*, *task archive*, "
+        "*history of my tasks*.",
+        "",
+        "Source of truth: `~/bin/daily-tasks.sh history <start>..<end>`.",
         "",
     ]
     # Collect all dates from v2 daily + v1 flat
@@ -1033,13 +1162,19 @@ def _render_stats_page() -> str:
     lines = [
         "---",
         "type: habit",
-        "title: Daily Tasks — Stats",
+        "title: Daily Tasks — Stats (completion rate, productivity metrics)",
         "name: Daily Tasks Stats",
         f"updated: {today_str()}",
-        "tags: [daily, productivity, stats]",
+        "tags: [daily, productivity, stats, completion, metrics]",
+        "aliases: [task-stats, completion-rate, productivity-stats]",
         "---",
         "",
         "# Daily Tasks — Stats",
+        "",
+        "Completion rate + push/drop breakdown. Use for *how many tasks did I "
+        "close this week/month*, *task completion rate*, *productivity stats*.",
+        "",
+        "Source of truth: `~/bin/daily-tasks.sh stats --window week|month|all`.",
         "",
     ]
     lines += fmt("Last 7 days", week_counts)
@@ -1099,11 +1234,17 @@ def main(argv: list[str]) -> int:
     p_set.add_argument("tasks", nargs="*")
     p_set.add_argument("--no-merge", action="store_true",
                        help="don't reuse UUIDs across days even on title match")
+    p_set.add_argument("--on-collision", choices=["merge", "keep-both", "skip"],
+                       default=None,
+                       help="strategy when new title overlaps a carried-over task")
     p_set.set_defaults(func=cmd_set)
 
     p_add = sub.add_parser("add", help="append to today's list")
     p_add.add_argument("tasks", nargs="*")
     p_add.add_argument("--no-merge", action="store_true")
+    p_add.add_argument("--on-collision", choices=["merge", "keep-both", "skip"],
+                       default=None,
+                       help="strategy when new title overlaps a carried-over task")
     p_add.set_defaults(func=cmd_add)
 
     p_remove = sub.add_parser("remove", aliases=["rm", "delete"], help="remove a task")

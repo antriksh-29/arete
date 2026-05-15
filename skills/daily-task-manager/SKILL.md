@@ -126,6 +126,7 @@ exits non-zero, relay the stderr verbatim. Do NOT compose a fake
 | "I finished #1" / "done with X" | `mark <index> yes` |
 | "push #2 to tomorrow" / "defer #3" | `mark <index> tomorrow` |
 | "park #2 indefinitely" / "later" | `mark <index> later` |
+| Reply to a carryover-collision prompt: "merge", "keep both", "skip" | Re-run last `set`/`add` with `--on-collision merge\|keep-both\|skip` |
 | Numbered status reply after 22:00 review prompt | `review --date <YYYY-MM-DD> --reply "<text>"` |
 | "share today's task list" / "what's on my plate" | `show` |
 | "yesterday's tasks" | `show yesterday` |
