@@ -19,9 +19,33 @@
 #       in docs/E2E-FINDINGS.md).
 #
 #   agents.defaults.model.primary           ← moonshot/kimi-k2.6
-#   agents.defaults.model.fallbacks         ← [gpt-5.4-mini, haiku-4-5]
+#   agents.defaults.model.fallbacks         ← [haiku-4-5]
+#       NOTE: gpt-5.4-mini was REMOVED from the chain 2026-05-15 due to
+#       a session-format incompatibility: OpenClaw saves OpenAI responses
+#       that include `reasoning` items as message references, but fails
+#       to preserve the reasoning item itself in session state. The next
+#       turn then sends a dangling reference to OpenAI which rejects
+#       with `400 Item 'msg_X' was provided without its required
+#       'reasoning' item: 'rs_X'`. This poison-pills the session — once
+#       OpenAI serves a turn, every subsequent turn cascade-fails until
+#       the session resets. Cleanest fix: keep OpenAI out of the chain
+#       until OpenClaw fixes session-format normalization across
+#       provider switches. Both Kimi and Haiku use simple message
+#       format with no reasoning items, so no schema mismatch possible.
 #   agents.defaults.models["moonshot/kimi-k2.6"].params.thinking
 #                                           ← {type: "disabled"} (instant)
+#
+#   Per-agent model pins (signal-detector, feedback-learner) ←
+#                                           ← moonshot/kimi-k2.6
+#       Originally pinned to openai/gpt-5.4-mini for cost. But OpenAI's
+#       responses-API messages include `reasoning` items that OpenClaw
+#       doesn't preserve in session state — every signal-detector turn
+#       on OpenAI poison-pills its session, surfacing as
+#       "⚠️ Something went wrong" to the user (signal-detector runs on
+#       every Telegram message via RULE 0). Pinning to Kimi keeps cost
+#       low (~same $/token as gpt-5.4-mini), eliminates the schema
+#       issue, and inherits instant-mode discipline from
+#       agents.defaults.models.
 #       Kimi K2.6 as primary with cross-provider fallback chain.
 #       Instant mode is mandatory for the Telegram path — without it,
 #       Kimi runs default thinking-mode generations that blow the 180s
@@ -122,6 +146,9 @@ desired = list(desired) + [("messages.messagePrefix", message_prefix)]
 # Model routing knobs — paths contain "/" (model refs) and "." inside
 # keys so we must use list-form paths to bypass the dotted split.
 desired = desired + [
+    # LOCKED 2026-05-15 by user order: Kimi K2.6 is the primary model,
+    # gpt-5.4-mini and haiku are secondary. DO NOT CHANGE without
+    # explicit user instruction.
     (["agents", "defaults", "model", "primary"],
      "moonshot/kimi-k2.6"),
     (["agents", "defaults", "model", "fallbacks"],
@@ -137,6 +164,15 @@ desired = desired + [
     # the plaintext key would leak it.
 ]
 
+# Per-agent model overrides — applied after the path-based knobs.
+# Format: {"<agent.id>": "<provider/model>"}. Agents matching by id
+# in agents.list[] will have their .model field set. Missing agents
+# are reported but not added (defensive — don't invent agent rows).
+PER_AGENT_MODEL = {
+    "signal-detector": "openai/gpt-5.4-mini",
+    "feedback-learner": "openai/gpt-5.4-mini",
+}
+
 with open(config_path) as f:
     cfg = json.load(f)
 
@@ -144,11 +180,18 @@ def _parts(path):
     return path if isinstance(path, list) else path.split(".")
 
 def _fmt(path):
-    return path if isinstance(path, str) else ".".join(path)
+    return path if isinstance(path, str) else ".".join(str(p) for p in path)
+
+def _has(obj, k):
+    if isinstance(obj, dict):
+        return k in obj
+    if isinstance(obj, list) and isinstance(k, int):
+        return 0 <= k < len(obj)
+    return False
 
 def get(obj, path):
     for k in _parts(path):
-        if not isinstance(obj, dict) or k not in obj:
+        if not _has(obj, k):
             return None
         obj = obj[k]
     return obj
@@ -156,10 +199,18 @@ def get(obj, path):
 def set_(obj, path, value):
     parts = _parts(path)
     for k in parts[:-1]:
-        if k not in obj or not isinstance(obj[k], dict):
-            obj[k] = {}
+        if not _has(obj, k):
+            # Auto-create dicts only — array slots must already exist.
+            if isinstance(obj, dict):
+                obj[k] = {}
+            else:
+                raise KeyError(f"cannot traverse into {type(obj).__name__} at key {k!r}")
         obj = obj[k]
-    obj[parts[-1]] = value
+    last = parts[-1]
+    if isinstance(obj, list) and isinstance(last, int):
+        obj[last] = value
+    else:
+        obj[last] = value
 
 def parse_spec(spec):
     """Each entry is either a 'k=v' string (numeric/JSON-literal knobs)
@@ -180,6 +231,18 @@ for spec in desired:
     current = get(cfg, path)
     if current != new_val:
         changes.append((path, current, new_val))
+
+# Per-agent model overrides (lookup by id in agents.list[])
+agent_list = cfg.get("agents", {}).get("list", []) or []
+agent_index = {a.get("id"): i for i, a in enumerate(agent_list) if isinstance(a, dict)}
+for agent_id, target_model in PER_AGENT_MODEL.items():
+    if agent_id not in agent_index:
+        print(f"  WARN: per-agent override skipped — no agents.list[] entry with id={agent_id}", file=sys.stderr)
+        continue
+    idx = agent_index[agent_id]
+    current = agent_list[idx].get("model")
+    if current != target_model:
+        changes.append((["agents", "list", idx, "model"], current, target_model))
 
 if mode == "check":
     print(f"=== {config_path}")
