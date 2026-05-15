@@ -18,6 +18,19 @@
 #       (was hitting it every few turns and silent-hanging — bug #1
 #       in docs/E2E-FINDINGS.md).
 #
+#   agents.defaults.model.primary           ← moonshot/kimi-k2.6
+#   agents.defaults.model.fallbacks         ← [gpt-5.4-mini, haiku-4-5]
+#   agents.defaults.models["moonshot/kimi-k2.6"].params.thinking
+#                                           ← {type: "disabled"} (instant)
+#       Kimi K2.6 as primary with cross-provider fallback chain.
+#       Instant mode is mandatory for the Telegram path — without it,
+#       Kimi runs default thinking-mode generations that blow the 180s
+#       request timeout (verified 2026-05-15 from gateway journal:
+#       every Kimi turn timed out and fell through to gpt-5.4-mini).
+#       Instant mode also prevents reasoning_content leaking into
+#       user-facing text (the original 2026-05-14 symptom).
+#       See docs/KIMI-INTEGRATION-FINDINGS.md for the resolution.
+#
 # Usage:
 #   bash infra/configure-openclaw.sh          # apply (default)
 #   bash infra/configure-openclaw.sh --check  # report current state, no writes
@@ -40,15 +53,14 @@ fi
 # All knobs we manage. Format: "<dot.path>=<value>".
 # python types: ints stay ints. Strings need quoting. Bools as JSON.
 DESIRED=(
-  # bootstrapMaxChars is the PER-FILE limit. AGENTS.md is ~48K chars
-  # and was being truncated at 40K, cutting off daily-task-manager
-  # routing rules (live at line 871+ of AGENTS.md) and silently
-  # breaking the skill — bot would hallucinate "saved" replies
-  # without actually invoking ~/bin/daily-tasks.sh. Bumped to 50000
-  # so full AGENTS.md survives injection. Keep ~10K headroom over
-  # the file's current size so adding routing rules doesn't re-break
-  # truncation.
-  "agents.defaults.bootstrapMaxChars=60000"
+  # bootstrapMaxChars is the PER-FILE limit. AGENTS.md is ~65K chars
+  # as of 2026-05-15 (grew past the 60000 ceiling and was being
+  # silently 9%-truncated per `openclaw doctor`). Bumped to 80000
+  # to give ~15K headroom over current size — buys runway before the
+  # next bump. Earlier history: bumped from 40000 → 50000 → 60000
+  # each time AGENTS.md grew (routing rules at line 871+ were getting
+  # cut, silently breaking daily-task-manager).
+  "agents.defaults.bootstrapMaxChars=80000"
   # bootstrapTotalMaxChars is the WHOLE-bootstrap budget (AGENTS.md +
   # all loaded SKILL.md files). Bumped 60K → 100K so the full
   # AGENTS.md + a healthy chunk of SKILL.md content both fit. Still
@@ -107,18 +119,42 @@ desired = sys.argv[4:]
 # diff + write machinery as the numeric knobs.
 desired = list(desired) + [("messages.messagePrefix", message_prefix)]
 
+# Model routing knobs — paths contain "/" (model refs) and "." inside
+# keys so we must use list-form paths to bypass the dotted split.
+desired = desired + [
+    (["agents", "defaults", "model", "primary"],
+     "moonshot/kimi-k2.6"),
+    (["agents", "defaults", "model", "fallbacks"],
+     ["openai/gpt-5.4-mini", "anthropic/claude-haiku-4-5"]),
+    (["agents", "defaults", "models", "moonshot/kimi-k2.6", "params", "thinking"],
+     {"type": "disabled"}),
+    # NOTE: models.providers.moonshot.apiKey is NOT managed here.
+    # OpenClaw does not interpolate ${VAR} in models.providers (only
+    # SecretRef syntax in some contexts that we couldn't confirm),
+    # so the key must be stored inline. It lives in openclaw.json
+    # as plaintext (file is mode 600) and is set during initial
+    # provisioning. Don't add a knob for it — version-controlling
+    # the plaintext key would leak it.
+]
+
 with open(config_path) as f:
     cfg = json.load(f)
 
+def _parts(path):
+    return path if isinstance(path, list) else path.split(".")
+
+def _fmt(path):
+    return path if isinstance(path, str) else ".".join(path)
+
 def get(obj, path):
-    for k in path.split("."):
+    for k in _parts(path):
         if not isinstance(obj, dict) or k not in obj:
             return None
         obj = obj[k]
     return obj
 
 def set_(obj, path, value):
-    parts = path.split(".")
+    parts = _parts(path)
     for k in parts[:-1]:
         if k not in obj or not isinstance(obj[k], dict):
             obj[k] = {}
@@ -157,7 +193,7 @@ if mode == "check":
         tgt_disp = repr(target)
         if len(cur_disp) > 80: cur_disp = cur_disp[:80] + "..."
         if len(tgt_disp) > 80: tgt_disp = tgt_disp[:80] + "..."
-        print(f"  {tag} {path} = {cur_disp}  (target {tgt_disp})")
+        print(f"  {tag} {_fmt(path)} = {cur_disp}  (target {tgt_disp})")
     sys.exit(0 if not changes else 1)
 
 if not changes:
@@ -170,7 +206,7 @@ for path, current, new_val in changes:
     tgt_disp = repr(new_val)
     if len(cur_disp) > 80: cur_disp = cur_disp[:80] + "..."
     if len(tgt_disp) > 80: tgt_disp = tgt_disp[:80] + "..."
-    print(f"  {path}: {cur_disp} → {tgt_disp}")
+    print(f"  {_fmt(path)}: {cur_disp} → {tgt_disp}")
 
 if mode == "dry":
     sys.exit(0)

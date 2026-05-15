@@ -2,22 +2,68 @@
 
 Records which model runs which task and why. Update on any change.
 
+**This doc is documentation, not config.** The runtime sources of truth are:
+
+- **OpenClaw main agent loop** (every Telegram turn, briefings, meeting
+  prep): `~/.openclaw/openclaw.json` on the VPS — specifically
+  `agents.defaults.model.{primary, fallbacks}` and
+  `agents.defaults.models["<ref>"].params.thinking`. Managed
+  idempotently by `infra/configure-openclaw.sh` — change knobs there
+  and redeploy, do not hand-edit on the VPS.
+- **Python scripts** (`bootstrap-enrich.mjs`, `ingest-pdf.py`,
+  `web-search.sh`, etc.): `~/bin/llm.py` tier abstraction with
+  hardcoded provider/model strings — edit `llm.py` to change tier
+  mappings.
+
+If you change either source of truth, update this doc in the same
+commit. Drift between this doc and the live config has burned us
+twice (2026-05-14 Kimi cutover, see `docs/KIMI-INTEGRATION-FINDINGS.md`).
+
 ---
 
-## Active routing (2026-05-04 — moved primary off Anthropic)
+## Active routing (2026-05-15 — Kimi K2.6 promoted to primary)
 
-**Why the change:** on 2026-05-03 evening, our `ANTHROPIC_API_KEY` hit a
-billing cap. Both primary (Haiku 4.5) and fallback (Sonnet 4.6) failed —
-same provider, same key. The Telegram bot was effectively down for the
-duration. Decision: make OpenAI the primary for everything, keep
-Anthropic as cross-provider failover. Single point of failure goes
-from "one provider" to "two unrelated providers must both fail."
+**Why the change:** Kimi K2.6 (256K context, strong tool-use, ~$0.60/$3.00
+per 1M in/out tokens) is materially cheaper than the gpt-5.4-mini
+primary for the agent's heavy-context Telegram path (AGENTS.md +
+SKILL.md bootstrap ≈ 75K chars per turn). The 2026-05-14 cutover
+attempt failed silently — config was switched but `params.thinking`
+was never configured, so every Kimi turn hit thinking-mode generation
+that blew the 180s gateway timeout and fell through to gpt-5.4-mini.
+Resolved 2026-05-15 with `thinking: {type: "disabled"}` (instant mode).
+Verified via Telethon E2E (5/5 pass, 6–21s round-trip, zero fallback
+events).
 
-### Provider chain by tier
+### OpenClaw main-agent chain (Telegram, briefings, meeting prep)
+
+| Position | Model | Notes |
+|---|---|---|
+| Primary | `moonshot/kimi-k2.6` | Instant mode (`params.thinking: {type: "disabled"}`). Sub-25s round-trip in practice. Auth via plaintext key in `openclaw.json` (hygiene follow-up: move to env). |
+| Fallback 1 | `openai/gpt-5.4-mini` | Cross-provider cushion for Moonshot outage / rate-limit. Auth from gateway shell env (`OPENAI_API_KEY`). |
+| Fallback 2 | `anthropic/claude-haiku-4-5` | Last resort if both above fail. Auth from `~/.openclaw/agents/main/agent/auth-profiles.json`. |
+
+**Failover triggers:** rate-limit signals only (429, "quota", "resource
+exhausted", etc). 5xx, network errors, and 400/401 do NOT trigger
+auto-failover — they surface as request failures. See
+`.context/attachments/kimi-k2.6-openclaw-config-deep-dive.md` §Gap 1.
+
+**Per-agent overrides** (`agents.list[]` in `openclaw.json`):
+
+- `main` → inherits the chain above (Telegram-facing).
+- `signal-detector` → pinned to `openai/gpt-5.4-mini` (every user
+  message captures to brain via this; cheap + fast required).
+- `feedback-learner` → pinned to `openai/gpt-5.4-mini` (background
+  retrospective analyser).
+
+### Python-script tier chain (`~/bin/llm.py`)
+
+Unchanged from 2026-05-04. These scripts do not currently route
+through Kimi — they hit OpenAI / Anthropic directly via the tier
+abstraction. Migrating tiers to Moonshot is a separate decision.
 
 | Tier | Primary | Fallback (cross-provider) | Where used |
 |---|---|---|---|
-| **mini** | `openai/gpt-5.4-mini` | `anthropic/claude-haiku-4-5` | Default for everything |
+| **mini** | `openai/gpt-5.4-mini` | `anthropic/claude-haiku-4-5` | Default for all Python LLM calls |
 | **full** | `openai/gpt-5.4` | `anthropic/claude-sonnet-4-6` | Reserved for tasks needing more reasoning than mini delivers (currently none — registered for future use) |
 | **nano** | `openai/gpt-5.4-nano` | `anthropic/claude-haiku-4-5` | Reserved for narrow classification (currently none — see "deferred optimizations" below) |
 | **vision** | `openai/gpt-5.4-mini` | `openai/gpt-5.4` | Image OCR / image understanding (`~/bin/image-ocr.py`) |

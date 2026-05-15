@@ -1,8 +1,26 @@
 # Kimi K2.6 integration findings (2026-05-14)
 
-Status: open. Bot routing through Kimi K2.6 leaks chain-of-thought as
-user-facing text and doesn't invoke `exec` tool calls. The fix is
-inside OpenClaw, not at the prompt layer.
+Status: **RESOLVED 2026-05-15.** Root cause was `params.thinking`
+missing from `openclaw.json`, not an OpenClaw upstream bug. Kimi was
+running in default thinking mode → long chain-of-thought generations →
+180s gateway timeout on most turns (silent fallback to gpt-5.4-mini)
+and reasoning_content leaking into user-facing text on the rare turns
+that did complete in time.
+
+**Fix:** added `agents.defaults.models["moonshot/kimi-k2.6"].params.thinking
+= {"type": "disabled"}` (instant mode). Codified in
+`infra/configure-openclaw.sh`. Verified 2026-05-15 via Telethon E2E:
+5/5 tests passed, Kimi served all 5 directly, no fallback events,
+6–21s round-trip per turn.
+
+Also fixed: fallback chain trimmed from
+`[gpt-5.4-mini, sonnet-4-6, haiku-4-5]` to
+`[gpt-5.4-mini, haiku-4-5]` per user's spec — sonnet is unnecessary
+mid-tier given gpt-5.4-mini handles fallback well.
+
+Historical findings below preserved for reference.
+
+---
 
 ## Symptom
 
