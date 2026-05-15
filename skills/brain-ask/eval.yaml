@@ -1,0 +1,37 @@
+skill: brain-ask
+script: infra/brain-ask.py
+version: 2
+
+triggers:
+  - id: ba-001
+    utterance: "what does Nishank say about ambition?"
+    expect_skill: brain-ask
+  - id: ba-002
+    utterance: "quote the top 3 takeaways from Tobi's tweet"
+    expect_skill: brain-ask
+  - id: ba-003
+    utterance: "summarize the QOVES article"
+    expect_skill: brain-ask
+  - id: ba-004
+    utterance: "what's the core argument of Paul Graham's founder mode essay"
+    expect_skill: brain-ask
+  - id: ba-005
+    utterance: "tell me more about that article"
+    expect_skill: brain-ask
+  - id: ba-006
+    utterance: "explain Nishank's thesis in my context as a founder"
+    expect_skill: brain-ask  # --persona variant
+
+  # NOT these — disambiguate from sibling Layer 3 skills
+  - id: ba-neg-001
+    utterance: "find articles about ambition"
+    expect_skill: brain-search
+  - id: ba-neg-002
+    utterance: "compare Nishank and Paul Graham on ambition"
+    expect_skill: brain-compare
+  - id: ba-neg-003
+    utterance: "what connects to Nishank's article"
+    expect_skill: brain-graph
+  - id: ba-neg-004
+    utterance: "take a note: Nishank's framing applies more at seed"
+    expect_skill: note
