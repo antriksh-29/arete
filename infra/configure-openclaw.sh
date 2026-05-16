@@ -150,6 +150,7 @@ Its stdout ends with an INTENT ROUTER OUTPUT block. Follow it deterministically:
 - INTENT=web_search → run bash ~/bin/web-search.sh "<paraphrased query>". Relay the markdown stdout VERBATIM (numbered list of title/snippet/URL). NEVER reply "I don't have web access" — the script always works.
 - INTENT=mcporter_list → run bash ~/bin/mcporter-list.sh. Relay stdout VERBATIM. If output is "No MCP servers configured.", relay that — do not suggest `openclaw status` or `cat config.json` to the user.
 - INTENT=gifgrep_search → run bash ~/bin/gifgrep.sh "<query>". Relay stdout VERBATIM. If output starts with "ABORT: KLIPY_API_KEY missing", relay that line — the user knows what to do.
+- INTENT=composio_connections → run bash ~/bin/composio-connections.sh (append " --all" if user asked for pending/initiated). Relay markdown stdout VERBATIM. Never compose the connections list from memory — the wrapper is authoritative; Composio's MCP cannot enumerate all toolkits in one call without an explicit curated list.
 
 Tool results are authoritative. If a script returns "no tasks for <date>", relay that — do not invent an empty list. If a script exits nonzero, relay stderr — do not fabricate success.
 

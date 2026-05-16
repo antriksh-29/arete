@@ -381,6 +381,39 @@ EOF
   exit 0
 fi
 
+# ── COMPOSIO CONNECTIONS INTENT ────────────────────────────────
+# Match "what's connected via composio", "list my composio apps",
+# "what apps do I have connected", "show connected composio toolkits".
+# Routes to the authoritative wrapper that queries a curated toolkit
+# list and filters to active status (vs. the agent guessing which
+# toolkits to query, which under-reports apps the agent forgot about
+# and over-reports stale initiated OAuth flows).
+if (echo "$LMSG" | grep -qE '\bcomposio\b' \
+    && echo "$LMSG" | grep -qE '\b(list|show|what|which)\b' \
+    && echo "$LMSG" | grep -qE '\b(connect|app|account|toolkit|integration|connection)') \
+   || echo "$LMSG" | grep -qE "\bwhat apps (do i|do we|am i|are) connect"; then
+  PENDING_FLAG=""
+  if echo "$LMSG" | grep -qE '\b(all|pending|initiated|incomplete|stuck|every)\b'; then
+    PENDING_FLAG=" --all"
+  fi
+  cat <<EOF
+INTENT=composio_connections
+
+EXECUTION_RECIPE:
+1. Run: bash ~/bin/composio-connections.sh${PENDING_FLAG}
+2. Relay the script's stdout VERBATIM. The script returns markdown
+   grouped by toolkit with email + alias per account.
+
+BANNED_RESPONSES:
+- Composing a list from your own memory of what the user has connected.
+  Composio's MCP cannot enumerate all toolkits in one call; the wrapper
+  queries a curated comprehensive list and is authoritative.
+- Reporting "pending/initiated" Slack/GitHub/etc. unless the user
+  explicitly asked for all/pending. Default is active-only.
+EOF
+  exit 0
+fi
+
 # ── GIFGREP SEARCH INTENT ──────────────────────────────────────
 # Match "find a gif of X", "show me gifs", "search Giphy/Tenor for X".
 if echo "$LMSG" | grep -qE '\b(find|search|grab|get)\b.*\bgif(s)?\b' \
