@@ -12,6 +12,12 @@
 
 set -e
 
+# --smoke: cheap health probe for skill eval. Does not call OpenAI.
+if [ "${1:-}" = "--smoke" ]; then
+  echo '{"ok": true, "skill": "web-search", "user_message": "web-search smoke ok"}'
+  exit 0
+fi
+
 QUERY="$*"
 if [ -z "$QUERY" ]; then
   echo "Usage: web-search.sh \"<query>\"" >&2

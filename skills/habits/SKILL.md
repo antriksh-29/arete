@@ -17,11 +17,12 @@ description: |
   NOT WHEN: water mentioned as context not log ("my car has 1.5L engine");
   ambiguous one-letter replies ("k", "ok") — ask once before logging.
 trigger: |
-  - quantity log: "<n>ml", "<n>L", "drank <n>ml", "<n>l water"
-  - water readback: "how much water today", "hydration", "water intake"
-  - reading log: "yes / yeah / yep / read it / done" (after check-in)
-  - reading log: "no / nope / didn't read / skipped"
-  - reading readback: "reading streak", "did I read yesterday"
+  - "what habits am I tracking" / "show me all my habits"
+  - "habit overview" / "how am I doing on my habits"
+  - "add a new habit to track"
+  - (specific water + reading triggers belong to water-log and
+    reading-checkin skills respectively; this skill documents how
+    they interoperate as a system)
 writes_to: [habits]
 brain_dirs_read: [habits]
 mutates_external_state: true   # filesystem logs + brain page rewrites

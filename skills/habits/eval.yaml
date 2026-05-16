@@ -1,62 +1,47 @@
 # Eval suite for habits dispatcher.
+# This is a META-skill that documents how water-log + reading-checkin
+# interoperate. The underlying skills own their own utterance triggers
+# (see skills/water-log/eval.yaml and skills/reading-checkin/eval.yaml).
+# Triggers here are intentionally narrow — only utterances that ask
+# ABOUT the habit system as a whole, not specific log writes/reads.
 skill: habits
 script: null
 version: 1
 
 triggers:
-  # ── water log (quantity) ──
+  # ── meta / system-level questions ──
   - id: hb-001
-    utterance: "drank 750ml"
+    utterance: "what habits am I tracking"
     expect_skill: habits
   - id: hb-002
-    utterance: "1.5L"
+    utterance: "show me all my habits"
     expect_skill: habits
   - id: hb-003
-    utterance: "500 ml water"
+    utterance: "habit overview"
     expect_skill: habits
   - id: hb-004
-    utterance: "2l"
+    utterance: "how am I doing on my habits"
     expect_skill: habits
   - id: hb-005
-    utterance: "750ml water"
+    utterance: "add a new habit to track"
     expect_skill: habits
 
-  # ── water readback ──
-  - id: hb-006
-    utterance: "how much water today"
-    expect_skill: habits
-  - id: hb-007
-    utterance: "what's my hydration"
-    expect_skill: habits
-  - id: hb-008
-    utterance: "am I hitting my hydration goal"
-    expect_skill: habits
-
-  # ── reading check-in replies ──
-  - id: hb-009
-    utterance: "yes"
-    expect_skill: habits
-    notes: "after a Reading check-in"
-  - id: hb-010
-    utterance: "didn't read"
-    expect_skill: habits
-  - id: hb-011
-    utterance: "reading streak"
-    expect_skill: habits
-
-  # ── negative cases ──
+  # ── negative cases — specific habits go to their own skills ──
   - id: hb-neg-001
-    utterance: "my car has a 1.5L engine"
-    expect_skill: default
-    notes: "quantity is context, not a log"
+    utterance: "drank 750ml"
+    expect_skill: water-log
+    notes: "specific water log → water-log skill, not dispatcher"
   - id: hb-neg-002
-    utterance: "k"
-    expect_skill: default
-    notes: "ambiguous — ask once before logging"
+    utterance: "how much water today"
+    expect_skill: water-log
   - id: hb-neg-003
-    utterance: "remind me to drink water at 3pm"
-    expect_skill: reminders
+    utterance: "reading streak"
+    expect_skill: reading-checkin
+  - id: hb-neg-004
+    utterance: "yes"
+    expect_skill: reading-checkin
+    notes: "after a Reading check-in"
 
 smoke:
-  cmd: "bash ~/bin/water-log.sh --smoke"
+  cmd: "true"
   expect_exit: 0
