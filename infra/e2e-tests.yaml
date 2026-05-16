@@ -315,3 +315,19 @@ tests:
     expects:
       reply_regex: ['(?i)mcporter|composio|clawvisor|gbrain|none|configured']
       reply_min_len: 20
+
+  - id: composio-connect-notion
+    skill: composio
+    message: "connect my notion account to composio - give me the OAuth link"
+    timeout: 120
+    expects:
+      reply_regex: ['(?i)https?://[^\s]+|connect|notion|oauth|auth(orize|orization)']
+      reply_min_len: 30
+
+  - id: composio-list-connected
+    skill: composio
+    message: "what apps do I have currently connected through composio"
+    timeout: 60
+    expects:
+      reply_regex: ['(?i)connect|none|active|composio|app']
+      reply_min_len: 20
