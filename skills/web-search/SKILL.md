@@ -13,7 +13,7 @@ description: |
   WHEN: "latest <topic>", "current price of X", "what's happening with X",
   "news on Y", "search the web for Z", "find a source for X".
   NOT WHEN: answerable from brain (use brain-search first); calendar/
-  Gmail data (use clawvisor-live); trivial knowledge the model already
+  Gmail data (use google-composio); trivial knowledge the model already
   has within cutoff; user message lacks a query phrase.
 trigger: |
   - "latest <topic>" / "current <metric>"
@@ -52,4 +52,4 @@ Do NOT re-summarize aggressively — the page already filtered.
   per rule 9 of AGENTS.md)
 - Anything answerable from your own knowledge for the relevant date window
   (model cutoff)
-- Calendar / Gmail data — those go through clawvisor MCP, not web search
+- Calendar / Gmail data — those go through composio MCP, not web search

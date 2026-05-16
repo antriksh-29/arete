@@ -1,0 +1,51 @@
+# Eval suite for google-composio.
+skill: google-composio
+script: infra/composio_client.py
+version: 1
+
+triggers:
+  # ── calendar live ──
+  - id: gc-001
+    utterance: "what's on my calendar today"
+    expect_skill: google-composio
+  - id: gc-002
+    utterance: "what's on my calendar tomorrow"
+    expect_skill: google-composio
+  - id: gc-003
+    utterance: "am I free Friday afternoon"
+    expect_skill: google-composio
+  - id: gc-004
+    utterance: "who's on the 3pm call"
+    expect_skill: google-composio
+
+  # ── gmail live ──
+  - id: gc-005
+    utterance: "find the email from Kaushik last week"
+    expect_skill: google-composio
+  - id: gc-006
+    utterance: "did anyone reply to the budget thread"
+    expect_skill: google-composio
+  - id: gc-007
+    utterance: "pull the full body of the latest email from sequoia"
+    expect_skill: google-composio
+
+  # ── write paths ──
+  - id: gc-008
+    utterance: "draft an email to alice@example.com about the launch"
+    expect_skill: google-composio
+  - id: gc-009
+    utterance: "schedule a 30-min call with Anand tomorrow at 4pm"
+    expect_skill: google-composio
+
+  # ── negatives ──
+  - id: gc-neg-001
+    utterance: "what was my last meeting with Kaushik about"
+    expect_skill: brain-search
+    notes: "historical — brain-first rule 9"
+  - id: gc-neg-002
+    utterance: "remind me about the 3pm call"
+    expect_skill: reminders
+
+smoke:
+  cmd: "python3 infra/composio_client.py --smoke"
+  expect_exit: 0

@@ -333,8 +333,18 @@ is years away; starvation is the active problem.
 - **Brain** (gbrain MCP) — IMPORTANT tool selection: use `gbrain__query` (hybrid vector + keyword + RRF) for content / topic / intent lookups ("what do I know about X", "how am I doing on Y"). Use `gbrain__search` (keyword tsvector only) for exact-string matches. For most user questions, query is right. Other tools: `gbrain__get_page`, `gbrain__list_pages`, `gbrain__put_page`, `gbrain__add_link`, `gbrain__add_timeline_entry`, `gbrain__get_backlinks`, `gbrain__get_links`, `gbrain__traverse_graph`, `gbrain__get_health`. Brain-first per rule 9.
   `gbrain__put_page`, `gbrain__add_link`, `gbrain__add_timeline_entry`. Use
   for memory of people / companies / meetings / notes. Brain-first per rule 9.
-- **Live Calendar + Gmail** (clawvisor MCP): `clawvisor__calendar_*`,
-  `clawvisor__gmail_*`. Detail in `skills/clawvisor-live/SKILL.md`.
+- **Live Calendar + Gmail** (Composio MCP, both Google accounts):
+  - Calendar: `GOOGLECALENDAR_EVENTS_LIST`, `GOOGLECALENDAR_EVENTS_GET`,
+    `GOOGLECALENDAR_CREATE_EVENT`, `GOOGLECALENDAR_PATCH_EVENT`.
+    Accounts (pass via `account` field): `personal` (= antriksh@getarete.co),
+    `googlecalendar_casse-wikeno` (= antriksh1980@gmail.com).
+  - Gmail: `GMAIL_FETCH_EMAILS`, `GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID`,
+    `GMAIL_SEND_EMAIL`, `GMAIL_CREATE_EMAIL_DRAFT`.
+    Accounts: `work` (= antriksh@getarete.co), `personal`
+    (= antriksh1980@gmail.com).
+  - Replaced the prior ClawVisor MCP wrapper on 2026-05-16 — Composio
+    serves both reads + writes through one consumer-key endpoint.
+    Detail in `skills/google-composio/SKILL.md`.
 - **Web search** (browser-harness backed, DuckDuckGo HTML): When the user
   message asks for live web info ("search the web for X", "latest X",
   "news on X", "current price of X", "what's happening with X", "look up

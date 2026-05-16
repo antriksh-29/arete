@@ -50,7 +50,7 @@ python3 ~/bin/ingest-pdf.py <url>
 ```
 
 For a Telegram-attached PDF:
-1. Pull the file via `clawvisor__telegram_get_file` or the bot API
+1. Pull the file via the bot API
    `getFile` → `https://api.telegram.org/file/bot<TOKEN>/<file_path>`,
    save to `/tmp/`.
 2. Run:

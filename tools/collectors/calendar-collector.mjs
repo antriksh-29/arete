@@ -12,12 +12,22 @@
 // Usage: node calendar-collector.mjs [days]
 
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
-const CLAWVISOR_URL = process.env.CLAWVISOR_URL;
-const TOKEN = process.env.CLAWVISOR_AGENT_TOKEN;
-const TASK_ID = process.env.CLAWVISOR_STANDING_TASK_ID;
+const __dirname = dirname(fileURLToPath(import.meta.url));
+// eslint-disable-next-line import/no-unresolved
+const { calendarList } = await import(`${__dirname}/composio_client.mjs`);
+
+// Map email-address style account → Composio calendar connection ID.
+// Note: composio "personal" alias maps to the WORK email (mislabeled
+// during OAuth); the personal-email calendar has no alias so we use
+// its stable account ID.
+const COMPOSIO_CAL_ACCOUNT = {
+  'antriksh@getarete.co':    'personal',
+  'antriksh1980@gmail.com':  'googlecalendar_casse-wikeno',
+};
 
 const ACCOUNTS = ['antriksh1980@gmail.com', 'antriksh@getarete.co'];
 const DAYS = parseInt(process.argv.find(a => /^\d+$/.test(a)) || '60', 10);
@@ -25,23 +35,19 @@ const OUT_DIR = process.env.OUT_DIR || './data/calendar';
 const MAX_PAGES = parseInt(process.env.MAX_PAGES || '20', 10);
 
 async function gatewayCall({ account, action, params, reason, sessionId }) {
-  const r = await fetch(`${CLAWVISOR_URL}/api/gateway/request?wait=true`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      task_id: TASK_ID,
-      session_id: sessionId,
-      service: `google.calendar:${account}`,
-      action,
-      params,
-      reason,
-    }),
-  });
-  const json = await r.json();
-  if (json.status !== 'executed') {
-    throw new Error(`Gateway ${action} failed: ${JSON.stringify(json).slice(0, 400)}`);
+  // Composio-backed replacement for the prior ClawVisor gateway POST.
+  // sessionId + reason are dropped (composio doesn't surface them).
+  const composioAccount = COMPOSIO_CAL_ACCOUNT[account] || account;
+  if (action === 'list_events') {
+    return await calendarList({
+      account: composioAccount,
+      from: params.from,
+      to: params.to,
+      maxResults: params.max_results || 250,
+      pageToken: params.page_token || null,
+    });
   }
-  return json.result;
+  throw new Error(`unsupported calendar action: ${action}`);
 }
 
 function isoDaysAgo(days) {
@@ -162,10 +168,7 @@ function digest(account, events, attendees) {
 }
 
 async function main() {
-  if (!CLAWVISOR_URL || !TOKEN || !TASK_ID) {
-    console.error('Missing env. Need CLAWVISOR_URL, CLAWVISOR_AGENT_TOKEN, CLAWVISOR_STANDING_TASK_ID.');
-    process.exit(1);
-  }
+  // Composio_client checks COMPOSIO_API_KEY itself; nothing to validate here.
   mkdirSync(OUT_DIR, { recursive: true });
   for (const account of ACCOUNTS) {
     console.log(`[calendar-collector] ${account}: collecting last ${DAYS}d through next 7d`);

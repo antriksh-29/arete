@@ -36,11 +36,26 @@ os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
 
 sys.path.insert(0, "/home/botuser/bin")
 import llm  # type: ignore
+import composio_client  # type: ignore
 
 IST = timezone(timedelta(hours=5, minutes=30))
 TODAY_IST = datetime.now(IST).date()
 
-ACCOUNTS = ["antriksh1980@gmail.com", "antriksh@getarete.co"]
+# Composio account routing. The two Gmail accounts have aliases set; the
+# two calendar accounts are split alias=personal (→ work email, ironic
+# naming chosen during OAuth) and no-alias (→ personal email — we use the
+# stable account ID for that one).
+GMAIL_ACCOUNTS = [
+    {"composio": "personal", "email": "antriksh1980@gmail.com"},
+    {"composio": "work",     "email": "antriksh@getarete.co"},
+]
+CALENDAR_ACCOUNTS = [
+    {"composio": "googlecalendar_casse-wikeno", "email": "antriksh1980@gmail.com"},
+    {"composio": "personal",                    "email": "antriksh@getarete.co"},
+]
+# Legacy alias for sections that still reference a flat list of email
+# addresses (logging, filenames, "from N accounts" counts).
+ACCOUNTS = [a["email"] for a in GMAIL_ACCOUNTS]
 MAX_CHARS = 3800
 EMAIL_CAP_DEFAULT = 5
 CAL_CAP_DEFAULT = 6
@@ -69,63 +84,52 @@ def run(cmd, timeout=60):
         return ""
 
 
-# -------------------- ClawVisor gateway --------------------
+# -------------------- 1. Calendar (Composio) --------------------
 
-def gateway_call(account, service_kind, action, params, reason):
-    cv_url = vault_get("CLAWVISOR_URL")
-    cv_token = vault_get("CLAWVISOR_AGENT_TOKEN")
-    cv_task = vault_get("CLAWVISOR_STANDING_TASK_ID")
-    payload = {
-        "task_id": cv_task,
-        "session_id": str(uuid.uuid4()),
-        "service": f"google.{service_kind}:{account}",
-        "action": action,
-        "params": params,
-        "reason": reason,
+def _normalize_calendar_event(ev, account_email):
+    """Map Composio GOOGLECALENDAR_EVENTS_LIST event → flat dict matching
+    the legacy ClawVisor shape consumed by fmt_calendar."""
+    start = ev.get("start") or {}
+    start_str = start.get("dateTime") or start.get("date") or ""
+    end = ev.get("end") or {}
+    end_str = end.get("dateTime") or end.get("date") or ""
+    return {
+        "id": ev.get("id"),
+        "summary": ev.get("summary") or "(untitled)",
+        "start": start_str,
+        "end": end_str,
+        "location": ev.get("location") or "",
+        "attendees": ev.get("attendees") or [],
+        "html_link": ev.get("htmlLink") or "",
+        "description": (ev.get("description") or "")[:500],
+        "_account": account_email,
     }
-    req = urllib.request.Request(
-        f"{cv_url}/api/gateway/request?wait=true",
-        data=json.dumps(payload).encode(),
-        headers={
-            "Authorization": f"Bearer {cv_token}",
-            "Content-Type": "application/json",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=60) as r:
-            d = json.loads(r.read())
-    except Exception as e:
-        log(f"gateway {action} error: {e}")
-        return {}
-    if d.get("status") != "executed":
-        log(f"gateway {action} not executed: {json.dumps(d)[:200]}")
-        return {}
-    return d.get("result", {})
 
-
-# -------------------- 1. Calendar --------------------
 
 def fetch_calendar():
-    """Today + tomorrow events from both accounts. Returns list of dicts."""
-    now_utc = datetime.now(timezone.utc)
-    end_of_tomorrow_ist = datetime(TODAY_IST.year, TODAY_IST.month, TODAY_IST.day, 23, 59, 59, tzinfo=IST) + timedelta(days=1)
+    """Today + tomorrow events from both Composio-connected calendars."""
+    now_ist = datetime.now(IST)
+    end_of_tomorrow_ist = datetime(TODAY_IST.year, TODAY_IST.month, TODAY_IST.day,
+                                   23, 59, 59, tzinfo=IST) + timedelta(days=1)
+    t_min = now_ist.strftime("%Y-%m-%dT%H:%M:%S+05:30")
+    t_max = end_of_tomorrow_ist.strftime("%Y-%m-%dT%H:%M:%S+05:30")
     events = []
-    for account in ACCOUNTS:
-        result = gateway_call(
-            account=account,
-            service_kind="calendar",
-            action="list_events",
-            params={
-                "from": now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "to": end_of_tomorrow_ist.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "max_results": 25,
-                "single_events": True,
-                "order_by": "startTime",
-            },
-            reason="Morning briefing: list calendar events for today and tomorrow to surface upcoming meetings",
-        )
-        for ev in result.get("data", []) or []:
-            events.append({**ev, "_account": account})
+    for acct in CALENDAR_ACCOUNTS:
+        try:
+            items = composio_client.calendar_list_events(
+                account=acct["composio"],
+                time_min=t_min,
+                time_max=t_max,
+                max_results=25,
+                calendar_id="primary",
+                time_zone="Asia/Kolkata",
+            )
+        except Exception as e:
+            log(f"composio calendar fetch {acct['email']}: {e}")
+            continue
+        for ev in items:
+            events.append(_normalize_calendar_event(ev, acct["email"]))
+    events.sort(key=lambda e: e.get("start") or "")
     return events
 
 
@@ -312,38 +316,40 @@ def is_corp_action_noise(from_addr, subject):
 
 
 def fetch_emails():
-    """Pull last 24h from both accounts, triage via LLM, return formatted list."""
+    """Pull last 24h from both Gmail accounts via Composio, triage via LLM,
+    return formatted list."""
     raw_emails = []
-    for account in ACCOUNTS:
-        result = gateway_call(
-            account=account,
-            service_kind="gmail",
-            action="list_messages",
-            params={"max_results": 50, "query": "newer_than:1d"},
-            reason="Morning briefing: read last 24h email subjects + senders + snippets to surface high-importance items including bills, deadlines, and counterparty actions",
-        )
-        msgs = (result.get("data") or {}).get("messages", []) or []
-        if not msgs:
-            d = result.get("data") or []
-            if isinstance(d, list):
-                msgs = d
+    for acct in GMAIL_ACCOUNTS:
+        try:
+            msgs = composio_client.gmail_search(
+                query="newer_than:1d",
+                account=acct["composio"],
+                max_results=50,
+                verbose=False,  # metadata-only is ~75% faster
+            )
+        except Exception as e:
+            log(f"composio gmail fetch {acct['email']}: {e}")
+            continue
         for m in msgs:
-            from_addr = (m.get("from") or "").strip()
+            from_addr = (m.get("sender") or "").strip()
             subject = (m.get("subject") or "").strip()
             if is_txn_noise(from_addr, subject):
                 continue
             if is_corp_action_noise(from_addr, subject):
                 continue
+            preview = m.get("preview") or {}
+            snippet = (preview.get("body") or "").strip()[:280]
+            labels = m.get("labelIds") or []
             raw_emails.append({
-                "account": account,
+                "account": acct["email"],
                 "from": from_addr,
                 "subject": subject,
-                "snippet": (m.get("snippet") or "").strip()[:280],
-                "is_unread": bool(m.get("is_unread")),
+                "snippet": snippet,
+                "is_unread": "UNREAD" in labels,
             })
     if not raw_emails:
         return None
-    log(f"pulled {len(raw_emails)} emails from {len(ACCOUNTS)} accounts (after txn-noise filter)")
+    log(f"pulled {len(raw_emails)} emails from {len(GMAIL_ACCOUNTS)} accounts (after txn-noise filter)")
 
     # Pass everything to LLM for triage. Cap input size.
     user_msg_lines = ["Emails from last 24h:\n"]

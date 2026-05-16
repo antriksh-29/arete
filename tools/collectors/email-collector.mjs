@@ -10,12 +10,20 @@
 // Usage: node email-collector.mjs [days] [--account=<addr>]
 
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
-const CLAWVISOR_URL = process.env.CLAWVISOR_URL;
-const TOKEN = process.env.CLAWVISOR_AGENT_TOKEN;
-const TASK_ID = process.env.CLAWVISOR_STANDING_TASK_ID;
+const __dirname = dirname(fileURLToPath(import.meta.url));
+// eslint-disable-next-line import/no-unresolved
+const { gmailSearch, gmailGet } = await import(`${__dirname}/composio_client.mjs`);
+
+// Map email-address style account → Composio account alias / connection ID.
+// Composio routes by alias ("work", "personal") or stable account ID.
+const COMPOSIO_ALIAS = {
+  'antriksh@getarete.co': 'work',
+  'antriksh1980@gmail.com': 'personal',
+};
 
 const DEFAULT_ACCOUNTS = ['antriksh1980@gmail.com', 'antriksh@getarete.co'];
 const DAYS = parseInt(process.argv.find(a => /^\d+$/.test(a)) || '30', 10);
@@ -31,23 +39,22 @@ const SIGNAL_LABELS = new Set(['CATEGORY_PERSONAL', 'IMPORTANT', 'STARRED']);
 const NOISE_SENDER_RE = /(?:^|<|\s)[\w.+-]*(?:noreply|no-reply|notifications?|donotreply|do-not-reply|calendar-notification|mailer-daemon|postmaster|bounces?|automated|alerts?|statements?|billing|transactions?|account-statement|instaalerts|evoting|e-voting|reportsmailer|reply-via|smart-statement|estatement|cashier|broking)[\w.+-]*@/i;
 
 async function gatewayCall({ account, action, params, reason, sessionId }) {
-  const r = await fetch(`${CLAWVISOR_URL}/api/gateway/request?wait=true`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      task_id: TASK_ID,
-      session_id: sessionId,
-      service: `google.gmail:${account}`,
-      action,
-      params,
-      reason,
-    }),
-  });
-  const json = await r.json();
-  if (json.status !== 'executed') {
-    throw new Error(`Gateway ${action} failed: ${JSON.stringify(json).slice(0, 400)}`);
+  // Composio-backed replacement for the prior ClawVisor gateway POST.
+  // sessionId + reason are ignored (composio doesn't surface them).
+  const composioAccount = COMPOSIO_ALIAS[account] || account;
+  if (action === 'list_messages') {
+    return await gmailSearch({
+      account: composioAccount,
+      query: params.query,
+      maxResults: params.max_results || 100,
+      pageToken: params.page_token || null,
+      verbose: true,
+    });
   }
-  return json.result;
+  if (action === 'get_message') {
+    return await gmailGet({ account: composioAccount, id: params.id || params.message_id });
+  }
+  throw new Error(`unsupported gmail action: ${action}`);
 }
 
 async function collectFolder(account, folder, sessionId) {
@@ -175,10 +182,7 @@ function digest(account, kept, noise) {
 }
 
 async function main() {
-  if (!CLAWVISOR_URL || !TOKEN || !TASK_ID) {
-    console.error('Missing env. Need CLAWVISOR_URL, CLAWVISOR_AGENT_TOKEN, CLAWVISOR_STANDING_TASK_ID.');
-    process.exit(1);
-  }
+  // Composio_client checks COMPOSIO_API_KEY itself; nothing to validate here.
   mkdirSync(OUT_DIR, { recursive: true });
   for (const account of ACCOUNTS) {
     console.log(`[email-collector] ${account}: collecting last ${DAYS}d (max ${MAX_PAGES} pages)`);

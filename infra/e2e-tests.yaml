@@ -224,7 +224,7 @@ tests:
   # not text-shaped reply).
 
   - id: clawvisor-calendar-today
-    skill: clawvisor-live
+    skill: google-composio
     message: "what's on my calendar today"
     timeout: 60
     expects:

@@ -70,7 +70,7 @@ Some integrations were bash-script-first. Each is a candidate to migrate:
 | Surface | Current form | Should it be MCP? |
 |---|---|---|
 | **gbrain** | MCP ✅ | already done |
-| **clawvisor** | MCP ✅ (as of 2026-05-01) | already done |
+| **Google Calendar + Gmail** (via Composio MCP since 2026-05-16) | MCP ✅ | already done — Composio gateway replaced the prior ClawVisor wrapper, brings 500+ apps under one consumer key |
 | **web search** (`~/bin/web-search.sh`) | bash + exec allowlist | **yes, but low priority** — single-call surface, output is already markdown which is the desired return shape. Migrate when we want stricter contracts on cost-tier routing or when adding alternate providers. |
 | **send-telegram** (`~/bin/send-telegram.sh`) | bash + exec | **no** — single-purpose, fire-and-forget, no parsing. Bash is fine. |
 | **schedule-reminder** (`~/bin/schedule-reminder.sh`) | bash + exec | **no** — same reason. systemd-run is the actual primitive; the script is a thin wrapper. |

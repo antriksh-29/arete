@@ -31,7 +31,7 @@ triggers:
     notes: "brain-first"
   - id: ws-neg-002
     utterance: "what's on my calendar today"
-    expect_skill: clawvisor-live
+    expect_skill: google-composio
   - id: ws-neg-003
     utterance: "weather in Bangalore"
     expect_skill: weather

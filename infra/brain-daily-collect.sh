@@ -27,15 +27,15 @@ log "=== brain-daily-collect start ==="
 
 # Load secrets from vault (same pattern as gbrain-mcp-wrapper.sh — avoids
 # sourcing /etc/bot-secrets/gateway.env which corrupts $-bearing passwords).
+# Post-2026-05-16: Composio is the Gmail/Calendar source. ClawVisor env
+# vars retired (collectors no longer read them; composio_client picks up
+# COMPOSIO_API_KEY itself via the vault).
 export PATH="/home/botuser/.bun/bin:$PATH"
 export OPENAI_API_KEY="$(/usr/local/bin/bot-cred get OPENAI_API_KEY 2>/dev/null)"
 export ANTHROPIC_API_KEY="$(/usr/local/bin/bot-cred get ANTHROPIC_API_KEY 2>/dev/null)"
-export CLAWVISOR_URL="$(/usr/local/bin/bot-cred get CLAWVISOR_URL 2>/dev/null)"
-export CLAWVISOR_AGENT_TOKEN="$(/usr/local/bin/bot-cred get CLAWVISOR_AGENT_TOKEN 2>/dev/null)"
-export CLAWVISOR_STANDING_TASK_ID="$(/usr/local/bin/bot-cred get CLAWVISOR_STANDING_TASK_ID 2>/dev/null)"
 
-if [ -z "$CLAWVISOR_AGENT_TOKEN" ] || [ -z "$CLAWVISOR_STANDING_TASK_ID" ]; then
-  log "ABORT: missing ClawVisor credentials in vault"
+if ! /usr/local/bin/bot-cred list 2>/dev/null | grep -q "^COMPOSIO_API_KEY "; then
+  log "ABORT: COMPOSIO_API_KEY missing from vault (composio Gmail/Calendar required since 2026-05-16 migration)"
   exit 1
 fi
 
