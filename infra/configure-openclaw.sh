@@ -102,6 +102,20 @@ DESIRED=(
   # /-commands menu in Telegram is hidden, which we don't use.
   "channels.telegram.commands.native=false"
 
+  # tools.alsoAllow ← ["exec","process"] (set 2026-05-16 after openclaw
+  # 2026.5.12 upgrade). Upstream change #47487 stopped the "messaging"
+  # profile from implicitly widening to include exec/process just
+  # because tools.exec was configured — every Telegram turn started
+  # printing `tools policy: profile "messaging" (agent "main") has
+  # configured tool sections (tools.exec) that no longer implicitly
+  # widen the profile. Add alsoAllow: ["exec","process"] explicitly...`
+  # The agent then silently could not shell-out, so every skill that
+  # relies on `bash ~/bin/...` (web-search, mcporter-list, gifgrep,
+  # daily-tasks, water-log, reading-checkin, etc.) silently soft-declined.
+  # This restores the prior behavior: shell exec available to the main
+  # agent on the Telegram channel.
+  "tools.alsoAllow=[\"exec\",\"process\"]"
+
 )
 
 # messages.messagePrefix — managed as a here-string so multi-line is
@@ -133,6 +147,9 @@ Its stdout ends with an INTENT ROUTER OUTPUT block. Follow it deterministically:
 - INTENT=booking_confirm → run python3 ~/bin/book-reservation.py --submit. Relay verbatim.
 - INTENT=booking_pick_time → run python3 ~/bin/book-reservation.py --pick-time "<time>". Relay verbatim.
 - INTENT=otp_relay → run book-reservation.py --resume "<otp>" or fill-form.py with the OTP. Never refuse.
+- INTENT=web_search → run bash ~/bin/web-search.sh "<paraphrased query>". Relay the markdown stdout VERBATIM (numbered list of title/snippet/URL). NEVER reply "I don't have web access" — the script always works.
+- INTENT=mcporter_list → run bash ~/bin/mcporter-list.sh. Relay stdout VERBATIM. If output is "No MCP servers configured.", relay that — do not suggest `openclaw status` or `cat config.json` to the user.
+- INTENT=gifgrep_search → run bash ~/bin/gifgrep.sh "<query>". Relay stdout VERBATIM. If output starts with "ABORT: KLIPY_API_KEY missing", relay that line — the user knows what to do.
 
 Tool results are authoritative. If a script returns "no tasks for <date>", relay that — do not invent an empty list. If a script exits nonzero, relay stderr — do not fabricate success.
 

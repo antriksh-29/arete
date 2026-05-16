@@ -331,6 +331,88 @@ EOF
   exit 0
 fi
 
+# ── WEB SEARCH INTENT ──────────────────────────────────────────
+# Match live-info queries the model otherwise refuses ("no web access").
+# Narrow patterns so we don't capture chat / brain questions.
+WEB_SEARCH=0
+if echo "$LMSG" | grep -qE '\b(search the web|web[- ]search|search online)\b'; then WEB_SEARCH=1; fi
+if echo "$LMSG" | grep -qE '\bnews (on|about|for|in)\b'; then WEB_SEARCH=1; fi
+if echo "$LMSG" | grep -qE "\bwhat'?s? happening (with|in|to|on|around)\b"; then WEB_SEARCH=1; fi
+if echo "$LMSG" | grep -qE '\b(latest|current)\s+\S+\s+(price|news|release|version|stats?|results?|score|reviews?)\b'; then WEB_SEARCH=1; fi
+if echo "$LMSG" | grep -qE '^look up\b' || echo "$LMSG" | grep -qE '\blook up\b.*\bon the web\b'; then WEB_SEARCH=1; fi
+if echo "$LMSG" | grep -qE '\bfind (me )?(a )?source for\b'; then WEB_SEARCH=1; fi
+if [ "$WEB_SEARCH" -eq 1 ]; then
+  cat <<EOF
+INTENT=web_search
+
+EXECUTION_RECIPE:
+1. Tightly paraphrase the user's query into a short search string (strip
+   filler like "can you", "search the web for", "please", "I want to know").
+2. Run: bash ~/bin/web-search.sh "<paraphrased query>"
+3. Relay the script's stdout VERBATIM (a numbered markdown list with
+   title, snippet, and URL per result). You may add ONE sentence of
+   framing before the list. Do NOT re-summarize or invent results.
+
+BANNED_RESPONSES:
+- "I don't have web access" / "no web search configured" / any
+  apology that you can't search. The script always works — run it.
+- Pasting URLs from your own training memory instead of the script output.
+EOF
+  exit 0
+fi
+
+# ── MCPORTER LIST INTENT ───────────────────────────────────────
+# Narrow: only fires on explicit "list MCP" phrasings.
+if echo "$LMSG" | grep -qE '\b(list|show|what)\b.*\bmcp( servers?| tools?)?\b' \
+   || echo "$LMSG" | grep -qE '\bmcp servers? (configured|installed|active|available)\b' \
+   || echo "$LMSG" | grep -qE '\bmcporter list\b'; then
+  cat <<EOF
+INTENT=mcporter_list
+
+EXECUTION_RECIPE:
+1. Run: bash ~/bin/mcporter-list.sh
+2. Relay the script's stdout VERBATIM. If the output starts with "No MCP
+   servers configured.", relay that — do not invent a list.
+
+BANNED_RESPONSES:
+- Suggesting the user run "openclaw status" or "cat ~/.openclaw/config.json".
+- "I don't have a direct tool" — you do; run the wrapper above.
+EOF
+  exit 0
+fi
+
+# ── GIFGREP SEARCH INTENT ──────────────────────────────────────
+# Match "find a gif of X", "show me gifs", "search Giphy/Tenor for X".
+if echo "$LMSG" | grep -qE '\b(find|search|grab|get)\b.*\bgif(s)?\b' \
+   || echo "$LMSG" | grep -qE '\bgif of\b' \
+   || echo "$LMSG" | grep -qE '\b(show|send) (me )?(a )?gif(s)?\b' \
+   || echo "$LMSG" | grep -qE '\bsearch (giphy|tenor)\b'; then
+  # Best-effort query extraction. Handles "find a gif of X", "find a X gif",
+  # "show me gifs of X", "search Giphy for X". If extraction misfires, the
+  # full message still works as a fallback query.
+  QUERY=$(echo "$MSG" \
+    | sed -E 's/^(please |can you )?//I' \
+    | sed -E 's/^(find|search|grab|get|show|send|fetch) (me )?(a |the |some )?(gif of |gifs of )?//I' \
+    | sed -E 's/^(search )?(giphy|tenor)( for)? //I' \
+    | sed -E 's/\s+(gif|gifs|\.gif)\s*$//I' \
+    | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+  [ -z "$QUERY" ] && QUERY="$MSG"
+  cat <<EOF
+INTENT=gifgrep_search
+QUERY=$QUERY
+
+EXECUTION_RECIPE:
+1. Run: bash ~/bin/gifgrep.sh "$QUERY"
+2. Relay the script's stdout VERBATIM. If output starts with "ABORT:
+   KLIPY_API_KEY missing", relay that line — the user knows what to do.
+
+BANNED_RESPONSES:
+- "I don't have image search capability" — you do; run the wrapper.
+- Suggesting the user check Giphy/Tenor manually.
+EOF
+  exit 0
+fi
+
 # ── DEFAULT: chat ──────────────────────────────────────────────
 echo "INTENT=chat"
 echo "REASON=no_actionable_intent_detected"

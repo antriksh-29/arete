@@ -335,8 +335,23 @@ is years away; starvation is the active problem.
   for memory of people / companies / meetings / notes. Brain-first per rule 9.
 - **Live Calendar + Gmail** (clawvisor MCP): `clawvisor__calendar_*`,
   `clawvisor__gmail_*`. Detail in `skills/clawvisor-live/SKILL.md`.
-- **Web search**: shell-exec `~/bin/web-search.sh "<query>"`. Detail in
-  `skills/web-search/SKILL.md`.
+- **Web search** (browser-harness backed, DuckDuckGo HTML): When the user
+  message asks for live web info ("search the web for X", "latest X",
+  "news on X", "current price of X", "what's happening with X", "look up
+  X"), YOU MUST shell-exec `bash ~/bin/web-search.sh "<query, tightly
+  paraphrased>"` and relay the returned markdown verbatim (or add one
+  sentence of framing). Do NOT reply "I don't have web access" or "no
+  web search configured" — the script always works; just run it. Detail
+  in `skills/web-search/SKILL.md`.
+- **MCP server management** (mcporter): When the user asks to "list MCP
+  servers", "show configured MCPs", or "what MCP servers do I have", YOU
+  MUST shell-exec `bash ~/bin/mcporter-list.sh` and relay the output.
+  Detail in `openclaw/skills/mcporter/SKILL.md`.
+- **GIF search** (gifgrep): When the user asks to "find a GIF of X" or
+  "search for a GIF", YOU MUST shell-exec `bash ~/bin/gifgrep.sh "<query>"`
+  and relay the output. If the script exits with `ABORT: KLIPY_API_KEY
+  missing`, tell the user the key needs to be added to the vault — do
+  not pretend you can't search. Detail in `openclaw/skills/gifgrep/SKILL.md`.
 - **Reminders**: shell-exec `~/bin/schedule-reminder.sh "<when>" "<msg>"`.
   Detail in `skills/reminders/SKILL.md`.
 - **Habit logging** (water, reading, etc.) — exact script paths, do NOT guess script names:
