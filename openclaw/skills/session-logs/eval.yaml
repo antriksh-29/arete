@@ -1,0 +1,44 @@
+# Eval suite for session-logs.
+skill: session-logs
+script: null
+version: 1
+
+triggers:
+  - id: sl-001
+    utterance: "what did we discuss in last Tuesday's session"
+    expect_skill: session-logs
+  - id: sl-002
+    utterance: "search my chat history for mentions of 'deployment'"
+    expect_skill: session-logs
+  - id: sl-003
+    utterance: "find the conversation where I asked about the API refactor"
+    expect_skill: session-logs
+  - id: sl-004
+    utterance: "how much did yesterday's session cost me"
+    expect_skill: session-logs
+  - id: sl-005
+    utterance: "show me all sessions from January 6th"
+    expect_skill: session-logs
+  - id: sl-006
+    utterance: "what tools did I use most in my chats last week"
+    expect_skill: session-logs
+  - id: sl-007
+    utterance: "look through my old conversations for anything about the database migration"
+    expect_skill: session-logs
+
+  - id: sl-neg-001
+    utterance: "what did you just say"
+    expect_skill: default
+    notes: "current session context does not require searching JSONL logs"
+  - id: sl-neg-002
+    utterance: "what's in my brain about the project"
+    expect_skill: default
+    notes: "gbrain/memory queries are separate from session log search"
+  - id: sl-neg-003
+    utterance: "summarize the last email I sent"
+    expect_skill: default
+    notes: "email history is in Gmail, not session logs"
+
+smoke:
+  cmd: "true"
+  expect_exit: 0

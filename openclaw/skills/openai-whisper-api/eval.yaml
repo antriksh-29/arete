@@ -1,0 +1,41 @@
+# Eval suite for openai-whisper-api.
+skill: openai-whisper-api
+script: null
+version: 1
+
+triggers:
+  - id: wa-001
+    utterance: "transcribe this audio file using the OpenAI API"
+    expect_skill: openai-whisper-api
+  - id: wa-002
+    utterance: "use Whisper API to transcribe meeting.m4a with language hint English"
+    expect_skill: openai-whisper-api
+  - id: wa-003
+    utterance: "send this recording to OpenAI for transcription"
+    expect_skill: openai-whisper-api
+  - id: wa-004
+    utterance: "transcribe audio.ogg and save as JSON via the API"
+    expect_skill: openai-whisper-api
+  - id: wa-005
+    utterance: "transcribe with speaker prompt 'speakers are Alice and Bob'"
+    expect_skill: openai-whisper-api
+  - id: wa-006
+    utterance: "use the OpenAI transcription endpoint on this file"
+    expect_skill: openai-whisper-api
+
+  - id: wa-neg-001
+    utterance: "transcribe locally without sending to the cloud"
+    expect_skill: openai-whisper
+    notes: "local/offline transcription uses the openai-whisper CLI skill"
+  - id: wa-neg-002
+    utterance: "read this text aloud using TTS"
+    expect_skill: sherpa-onnx-tts
+    notes: "text-to-speech is a different skill"
+  - id: wa-neg-003
+    utterance: "summarize this transcript"
+    expect_skill: default
+    notes: "summarization after transcription is a general assistant task"
+
+smoke:
+  cmd: "true"
+  expect_exit: 0

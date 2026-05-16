@@ -1,0 +1,47 @@
+# Eval suite for healthcheck.
+skill: healthcheck
+script: null
+version: 1
+
+triggers:
+  - id: hc-001
+    utterance: "audit my server security"
+    expect_skill: healthcheck
+  - id: hc-002
+    utterance: "harden this OpenClaw host"
+    expect_skill: healthcheck
+  - id: hc-003
+    utterance: "check my firewall and which ports are open"
+    expect_skill: healthcheck
+  - id: hc-004
+    utterance: "run openclaw security audit --deep"
+    expect_skill: healthcheck
+  - id: hc-005
+    utterance: "is my server exposed to the internet"
+    expect_skill: healthcheck
+  - id: hc-006
+    utterance: "is FileVault enabled on this machine"
+    expect_skill: healthcheck
+  - id: hc-007
+    utterance: "schedule weekly security audits for this host"
+    expect_skill: healthcheck
+  - id: hc-008
+    utterance: "what is my current security posture"
+    expect_skill: healthcheck
+
+  - id: hc-neg-001
+    utterance: "is the API server responding correctly"
+    expect_skill: default
+    notes: "application-level health checks are not OS security audits"
+  - id: hc-neg-002
+    utterance: "update my openclaw configuration"
+    expect_skill: default
+    notes: "config changes are settings, not security hardening"
+  - id: hc-neg-003
+    utterance: "check if my cron jobs are running"
+    expect_skill: default
+    notes: "cron status is not a security audit"
+
+smoke:
+  cmd: "true"
+  expect_exit: 0

@@ -1,11 +1,32 @@
 ---
 name: web-search
-version: 1.0.0
+version: 1
+script: infra/web-search.sh
+mutating: false
+cron: null
+eval: skills/web-search/eval.yaml
+last_audited: 2026-05-16
 description: |
-  Live web search via OpenAI GPT-5.4-mini. Use when the user asks for news, current events, latest X, current prices, or fresh research that requires sources.
+  Live web search via OpenAI GPT-5.4-mini with native web_search_preview.
+  Use when the user asks for news, current events, "latest X", current
+  prices, or fresh research that requires sources. Brain-first per rule 9.
+  WHEN: "latest <topic>", "current price of X", "what's happening with X",
+  "news on Y", "search the web for Z", "find a source for X".
+  NOT WHEN: answerable from brain (use brain-search first); calendar/
+  Gmail data (use clawvisor-live); trivial knowledge the model already
+  has within cutoff; user message lacks a query phrase.
+trigger: |
+  - "latest <topic>" / "current <metric>"
+  - "news on <topic>" / "what's happening with <topic>"
+  - "search the web for <query>"
+  - "find me a source for <claim>"
+  - "look up <thing>"
+writes_to: []
+brain_dirs_read: []
+mutates_external_state: false
 ---
 
-# web-search — live web via mini
+# /web-search — live web via mini
 
 When the user asks for live information from the internet (news, recent
 events, "latest X", current prices, "what is X" for things not in the brain,
@@ -28,4 +49,3 @@ research that requires fresh sources):
 
 **Cost note:** ~$0.001-0.005 per call. Don't web-search trivial queries you
 already know the answer to.
-

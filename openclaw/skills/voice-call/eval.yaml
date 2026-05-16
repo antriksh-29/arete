@@ -1,0 +1,44 @@
+# Eval suite for voice-call.
+skill: voice-call
+script: null
+version: 1
+
+triggers:
+  - id: vc-001
+    utterance: "call +15555550123 and say 'your appointment is confirmed'"
+    expect_skill: voice-call
+  - id: vc-002
+    utterance: "start a voice call to my mom's number with message 'dinner is ready'"
+    expect_skill: voice-call
+  - id: vc-003
+    utterance: "initiate a phone call to +44..."
+    expect_skill: voice-call
+  - id: vc-004
+    utterance: "check the status of call abc123"
+    expect_skill: voice-call
+  - id: vc-005
+    utterance: "end call xyz789"
+    expect_skill: voice-call
+  - id: vc-006
+    utterance: "speak this alert message to the user via phone"
+    expect_skill: voice-call
+  - id: vc-007
+    utterance: "use openclaw voicecall to notify someone by phone"
+    expect_skill: voice-call
+
+  - id: vc-neg-001
+    utterance: "send a text message to this number"
+    expect_skill: default
+    notes: "SMS is not voice-call; different provider capability"
+  - id: vc-neg-002
+    utterance: "generate a TTS audio file from this text"
+    expect_skill: sherpa-onnx-tts
+    notes: "local TTS file generation without a call uses sherpa-onnx-tts"
+  - id: vc-neg-003
+    utterance: "schedule a Zoom meeting"
+    expect_skill: default
+    notes: "video conferencing is unrelated to the voice-call plugin"
+
+smoke:
+  cmd: "true"
+  expect_exit: 0

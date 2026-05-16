@@ -1,11 +1,33 @@
 ---
 name: habits
-version: 1.0.0
+version: 1
+script: null
+mutating: true
+cron: null
+eval: skills/habits/eval.yaml
+last_audited: 2026-05-16
 description: |
-  Habit-shaped messages (water intake, reading, exercise, etc.). Detect quantities or yes/no replies and route to the relevant log script.
+  Habit-shaped messages dispatcher — detects quantity logs (water intake)
+  and yes/no replies (reading check-in) and routes to the relevant log
+  script. Compiled-view brain pages live under habits/.
+  WHEN: "<n>ml" / "<n>L" patterns ("drank 750ml", "1.5L", "500 ml");
+  reading check-in replies ("yes", "no", "didn't read", "read it");
+  habit readback questions ("how much water today", "hydration so far",
+  "did I read yesterday", "reading streak").
+  NOT WHEN: water mentioned as context not log ("my car has 1.5L engine");
+  ambiguous one-letter replies ("k", "ok") — ask once before logging.
+trigger: |
+  - quantity log: "<n>ml", "<n>L", "drank <n>ml", "<n>l water"
+  - water readback: "how much water today", "hydration", "water intake"
+  - reading log: "yes / yeah / yep / read it / done" (after check-in)
+  - reading log: "no / nope / didn't read / skipped"
+  - reading readback: "reading streak", "did I read yesterday"
+writes_to: [habits]
+brain_dirs_read: [habits]
+mutates_external_state: true   # filesystem logs + brain page rewrites
 ---
 
-# habits — water intake + reading + future habits
+# /habits — water intake + reading + future habits
 
 When the user sends a habit-shaped message, detect the type and log it.
 
@@ -85,4 +107,3 @@ question rather than guessing. Don't auto-log on unclear input.
 Follow the same pattern: brain page (`habits/<name>.md`), helper script
 (`~/bin/<name>-log.sh`), AGENTS.md or this skill updated to recognize the
 trigger pattern. See `skills/full-automation/SKILL.md` for the workflow.
-

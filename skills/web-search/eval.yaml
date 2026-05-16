@@ -1,0 +1,45 @@
+# Eval suite for web-search.
+skill: web-search
+script: infra/web-search.sh
+version: 1
+
+triggers:
+  # ── live news / events ──
+  - id: ws-001
+    utterance: "latest news on OpenAI"
+    expect_skill: web-search
+  - id: ws-002
+    utterance: "what's happening with the Nifty today"
+    expect_skill: web-search
+  - id: ws-003
+    utterance: "current price of bitcoin"
+    expect_skill: web-search
+  - id: ws-004
+    utterance: "search the web for kimi k2.6 benchmarks"
+    expect_skill: web-search
+  - id: ws-005
+    utterance: "find me a source for the GPT-5.4 release date"
+    expect_skill: web-search
+  - id: ws-006
+    utterance: "look up the latest Hetzner CX23 pricing"
+    expect_skill: web-search
+
+  # ── negative cases ──
+  - id: ws-neg-001
+    utterance: "what was my last meeting with Kaushik about"
+    expect_skill: brain-search
+    notes: "brain-first"
+  - id: ws-neg-002
+    utterance: "what's on my calendar today"
+    expect_skill: clawvisor-live
+  - id: ws-neg-003
+    utterance: "weather in Bangalore"
+    expect_skill: weather
+  - id: ws-neg-004
+    utterance: "what's 2+2"
+    expect_skill: default
+    notes: "trivial, no web needed"
+
+smoke:
+  cmd: "bash infra/web-search.sh --smoke"
+  expect_exit: 0

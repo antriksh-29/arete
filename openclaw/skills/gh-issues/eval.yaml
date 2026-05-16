@@ -1,0 +1,44 @@
+# Eval suite for gh-issues.
+skill: gh-issues
+script: null
+version: 1
+
+triggers:
+  - id: ghi-001
+    utterance: "auto-fix all open bug issues in myorg/myrepo"
+    expect_skill: gh-issues
+  - id: ghi-002
+    utterance: "fix GitHub issue #42 in this repo automatically"
+    expect_skill: gh-issues
+  - id: ghi-003
+    utterance: "spawn agents to handle the enhancement label issues"
+    expect_skill: gh-issues
+  - id: ghi-004
+    utterance: "run gh-issues on owner/repo with --dry-run"
+    expect_skill: gh-issues
+  - id: ghi-005
+    utterance: "watch for new GitHub issues and fix them every 5 minutes"
+    expect_skill: gh-issues
+  - id: ghi-006
+    utterance: "address review comments on all open fix/ PRs"
+    expect_skill: gh-issues
+  - id: ghi-007
+    utterance: "process issues from my fork in cron mode"
+    expect_skill: gh-issues
+
+  - id: ghi-neg-001
+    utterance: "list open issues in owner/repo"
+    expect_skill: github
+    notes: "simply listing issues does not need the orchestration skill"
+  - id: ghi-neg-002
+    utterance: "check the CI status of PR #55"
+    expect_skill: github
+    notes: "CI status check belongs to the github skill"
+  - id: ghi-neg-003
+    utterance: "commit my changes and push"
+    expect_skill: default
+    notes: "local git operations are unrelated to gh-issues"
+
+smoke:
+  cmd: "true"
+  expect_exit: 0

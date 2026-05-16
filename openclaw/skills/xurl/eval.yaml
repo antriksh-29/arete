@@ -1,0 +1,47 @@
+# Eval suite for xurl.
+skill: xurl
+script: null
+version: 1
+
+triggers:
+  - id: xu-001
+    utterance: "post a tweet saying 'Just shipped v2.0!'"
+    expect_skill: xurl
+  - id: xu-002
+    utterance: "search X for mentions of 'openclaw' in the last 10 results"
+    expect_skill: xurl
+  - id: xu-003
+    utterance: "send a DM to @johndoe saying 'saw your post, let's connect'"
+    expect_skill: xurl
+  - id: xu-004
+    utterance: "like tweet 1234567890"
+    expect_skill: xurl
+  - id: xu-005
+    utterance: "check my X mentions"
+    expect_skill: xurl
+  - id: xu-006
+    utterance: "upload this image and post it with caption 'new release'"
+    expect_skill: xurl
+  - id: xu-007
+    utterance: "reply to https://x.com/user/status/999 saying 'great point'"
+    expect_skill: xurl
+  - id: xu-008
+    utterance: "follow @XDevelopers on X"
+    expect_skill: xurl
+
+  - id: xu-neg-001
+    utterance: "search the web for news about AI"
+    expect_skill: default
+    notes: "general web search is not the xurl/X API skill"
+  - id: xu-neg-002
+    utterance: "set up my xurl credentials with my API key"
+    expect_skill: default
+    notes: "auth setup with inline secrets must be done manually outside the agent"
+  - id: xu-neg-003
+    utterance: "post to LinkedIn"
+    expect_skill: default
+    notes: "xurl only handles X (Twitter) API, not other social platforms"
+
+smoke:
+  cmd: "true"
+  expect_exit: 0

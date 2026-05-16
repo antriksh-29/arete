@@ -1,0 +1,44 @@
+# Eval suite for trello.
+skill: trello
+script: null
+version: 1
+
+triggers:
+  - id: tr-001
+    utterance: "add a card titled 'Fix login bug' to my Trello In Progress list"
+    expect_skill: trello
+  - id: tr-002
+    utterance: "list all my Trello boards"
+    expect_skill: trello
+  - id: tr-003
+    utterance: "move Trello card abc123 to the Done list"
+    expect_skill: trello
+  - id: tr-004
+    utterance: "add a comment to Trello card xyz saying 'blocked by API issue'"
+    expect_skill: trello
+  - id: tr-005
+    utterance: "archive the Trello card 'old feature request'"
+    expect_skill: trello
+  - id: tr-006
+    utterance: "list all cards in my Trello 'Todo' list"
+    expect_skill: trello
+  - id: tr-007
+    utterance: "find the Trello board named 'Work Projects'"
+    expect_skill: trello
+
+  - id: tr-neg-001
+    utterance: "create a page in Notion"
+    expect_skill: notion
+    notes: "Notion operations belong to the notion skill"
+  - id: tr-neg-002
+    utterance: "add a GitHub issue"
+    expect_skill: github
+    notes: "GitHub issue creation is the github skill"
+  - id: tr-neg-003
+    utterance: "open Trello in my browser"
+    expect_skill: default
+    notes: "opening a browser tab is not a Trello API operation"
+
+smoke:
+  cmd: "true"
+  expect_exit: 0

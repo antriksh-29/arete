@@ -1,0 +1,44 @@
+# Eval suite for gifgrep.
+skill: gifgrep
+script: null
+version: 1
+
+triggers:
+  - id: gg-001
+    utterance: "find a GIF of a cat doing something funny"
+    expect_skill: gifgrep
+  - id: gg-002
+    utterance: "download the top handshake GIF from Tenor"
+    expect_skill: gifgrep
+  - id: gg-003
+    utterance: "search Giphy for a celebration GIF"
+    expect_skill: gifgrep
+  - id: gg-004
+    utterance: "open the TUI to browse GIFs for 'office meeting'"
+    expect_skill: gifgrep
+  - id: gg-005
+    utterance: "extract a still frame from this GIF at 1.5 seconds"
+    expect_skill: gifgrep
+  - id: gg-006
+    utterance: "create a sprite sheet from clip.gif with 9 frames"
+    expect_skill: gifgrep
+  - id: gg-007
+    utterance: "get the URL of the top 5 GIFs for 'success'"
+    expect_skill: gifgrep
+
+  - id: gg-neg-001
+    utterance: "record my screen as a GIF"
+    expect_skill: default
+    notes: "gifgrep searches existing GIFs, it does not record screen"
+  - id: gg-neg-002
+    utterance: "search the web for images of cats"
+    expect_skill: default
+    notes: "static image search is not gifgrep; use web-search"
+  - id: gg-neg-003
+    utterance: "convert this video to a GIF"
+    expect_skill: default
+    notes: "video conversion is not in scope for gifgrep"
+
+smoke:
+  cmd: "true"
+  expect_exit: 0

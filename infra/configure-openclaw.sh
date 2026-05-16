@@ -92,6 +92,16 @@ DESIRED=(
   # regression from bug #1).
   "agents.defaults.bootstrapTotalMaxChars=100000"
 
+  # channels.telegram.commands.native ← false (set 2026-05-16 after
+  # upgrading to openclaw 2026.5.12 + adding 16 upstream skills). Skill
+  # catalog grew past Telegram's hard 100-command limit (116 configured),
+  # which truncated registered /-commands and triggered the "menu text
+  # exceeded the conservative 5700-character payload budget" warning on
+  # every gateway start. Disabling native command registration removes
+  # the cap entirely. Natural-language routing is unaffected — only the
+  # /-commands menu in Telegram is hidden, which we don't use.
+  "channels.telegram.commands.native=false"
+
 )
 
 # messages.messagePrefix — managed as a here-string so multi-line is

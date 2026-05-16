@@ -1,0 +1,45 @@
+# Eval suite for full-automation.
+skill: full-automation
+script: null
+version: 1
+
+triggers:
+  # ── recurring automation requests ──
+  - id: fa-001
+    utterance: "set up a daily X reminder at 8am"
+    expect_skill: full-automation
+  - id: fa-002
+    utterance: "I want a weekly summary every Sunday"
+    expect_skill: full-automation
+  - id: fa-003
+    utterance: "automate the morning briefing with X"
+    expect_skill: full-automation
+  - id: fa-004
+    utterance: "build me a habit tracker for meditation"
+    expect_skill: full-automation
+  - id: fa-005
+    utterance: "schedule a recurring check-in every Friday afternoon"
+    expect_skill: full-automation
+  - id: fa-006
+    utterance: "ping me every morning with my open tasks"
+    expect_skill: full-automation
+  - id: fa-007
+    utterance: "I want X to fire automatically when Y happens"
+    expect_skill: full-automation
+
+  # ── negative cases ──
+  - id: fa-neg-001
+    utterance: "remind me in 30 min about X"
+    expect_skill: reminders
+    notes: "one-shot, not recurring"
+  - id: fa-neg-002
+    utterance: "remind me at 5pm to do X"
+    expect_skill: reminders
+  - id: fa-neg-003
+    utterance: "change my morning briefing to start at 7am"
+    expect_skill: default
+    notes: "editing an existing automation, not creating a new one"
+
+smoke:
+  cmd: "true"
+  expect_exit: 0

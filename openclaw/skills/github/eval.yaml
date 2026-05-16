@@ -1,0 +1,44 @@
+# Eval suite for github.
+skill: github
+script: null
+version: 1
+
+triggers:
+  - id: gi-001
+    utterance: "check the CI status of PR #55 in owner/repo"
+    expect_skill: github
+  - id: gi-002
+    utterance: "create a PR for this branch with title 'feat: add caching'"
+    expect_skill: github
+  - id: gi-003
+    utterance: "list open issues in myorg/myrepo"
+    expect_skill: github
+  - id: gi-004
+    utterance: "merge PR #12 with squash"
+    expect_skill: github
+  - id: gi-005
+    utterance: "view the failed workflow logs for the last run"
+    expect_skill: github
+  - id: gi-006
+    utterance: "how many stars does the repo owner/repo have"
+    expect_skill: github
+  - id: gi-007
+    utterance: "re-run the failed CI jobs on PR #99"
+    expect_skill: github
+
+  - id: gi-neg-001
+    utterance: "commit and push my changes to the main branch"
+    expect_skill: default
+    notes: "local git operations do not need the github skill"
+  - id: gi-neg-002
+    utterance: "clone the repo from GitHub"
+    expect_skill: default
+    notes: "git clone is a direct git operation, not gh CLI"
+  - id: gi-neg-003
+    utterance: "fix GitHub issue #42 automatically"
+    expect_skill: gh-issues
+    notes: "auto-fixing issues with sub-agents belongs to the gh-issues skill"
+
+smoke:
+  cmd: "true"
+  expect_exit: 0

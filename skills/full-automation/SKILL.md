@@ -1,11 +1,33 @@
 ---
 name: full-automation
-version: 1.0.0
+version: 1
+script: null
+mutating: true
+cron: null
+eval: skills/full-automation/eval.yaml
+last_audited: 2026-05-16
 description: |
-  Workflow contract for building any new recurring/scheduled automation end-to-end. Read this when the user describes a daily/weekly/recurring task they want set up.
+  Workflow contract for building a new recurring/scheduled automation
+  end-to-end on the VPS — script, systemd timer, brain page, skill doc,
+  AGENTS.md hint, verification. Read this when the user describes a
+  daily/weekly/recurring task they want set up.
+  WHEN: "set up a daily X", "I want a weekly Y", "schedule a recurring
+  Z", "automate <task> every <interval>", "build me a habit tracker
+  for X", "ping me every morning with Y".
+  NOT WHEN: one-shot reminders (use reminders skill); non-recurring
+  scripts; modifying an EXISTING automation (just go edit it).
+trigger: |
+  - "set up a daily/weekly/hourly <task>"
+  - "automate <task> every <interval>"
+  - "build me a habit tracker for X"
+  - "schedule a recurring <task>"
+  - "I want X to fire automatically when <condition>"
+writes_to: [habits, originals]
+brain_dirs_read: []
+mutates_external_state: true   # creates systemd timers + scripts on VPS
 ---
 
-# full-automation — propose-confirm-execute pattern for new automations
+# /full-automation — propose-confirm-execute pattern for new automations
 
 You have unrestricted shell access (tools.exec.security=full) on the VPS as
 botuser (non-root, scoped to home directory and systemd user units).
@@ -130,4 +152,3 @@ deletes) — those gates remain.
 
 Broad blast radius (deleting many files, force-pushing a repo, modifying a
 credential) — pause and surface even with shell access.
-

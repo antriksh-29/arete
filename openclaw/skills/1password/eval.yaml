@@ -1,0 +1,44 @@
+# Eval suite for 1password.
+skill: 1password
+script: null
+version: 1
+
+triggers:
+  - id: op-001
+    utterance: "get my GitHub PAT from 1password"
+    expect_skill: 1password
+  - id: op-002
+    utterance: "what's the password for my AWS account in 1password"
+    expect_skill: 1password
+  - id: op-003
+    utterance: "sign in to 1password CLI"
+    expect_skill: 1password
+  - id: op-004
+    utterance: "list my 1password vaults"
+    expect_skill: 1password
+  - id: op-005
+    utterance: "inject my database credentials from 1password into this script"
+    expect_skill: 1password
+  - id: op-006
+    utterance: "run op whoami and tell me which account is active"
+    expect_skill: 1password
+  - id: op-007
+    utterance: "read the Stripe API key from 1password item 'Stripe Prod'"
+    expect_skill: 1password
+
+  - id: op-neg-001
+    utterance: "generate a new random password"
+    expect_skill: default
+    notes: "password generation without 1password context is a general task"
+  - id: op-neg-002
+    utterance: "save this password in my browser"
+    expect_skill: default
+    notes: "browser password saving is UI-only, not 1password CLI"
+  - id: op-neg-003
+    utterance: "what secrets are in my .env file"
+    expect_skill: default
+    notes: "reading .env files does not require 1password skill"
+
+smoke:
+  cmd: "true"
+  expect_exit: 0

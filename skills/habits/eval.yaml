@@ -1,0 +1,62 @@
+# Eval suite for habits dispatcher.
+skill: habits
+script: null
+version: 1
+
+triggers:
+  # ── water log (quantity) ──
+  - id: hb-001
+    utterance: "drank 750ml"
+    expect_skill: habits
+  - id: hb-002
+    utterance: "1.5L"
+    expect_skill: habits
+  - id: hb-003
+    utterance: "500 ml water"
+    expect_skill: habits
+  - id: hb-004
+    utterance: "2l"
+    expect_skill: habits
+  - id: hb-005
+    utterance: "750ml water"
+    expect_skill: habits
+
+  # ── water readback ──
+  - id: hb-006
+    utterance: "how much water today"
+    expect_skill: habits
+  - id: hb-007
+    utterance: "what's my hydration"
+    expect_skill: habits
+  - id: hb-008
+    utterance: "am I hitting my hydration goal"
+    expect_skill: habits
+
+  # ── reading check-in replies ──
+  - id: hb-009
+    utterance: "yes"
+    expect_skill: habits
+    notes: "after a Reading check-in"
+  - id: hb-010
+    utterance: "didn't read"
+    expect_skill: habits
+  - id: hb-011
+    utterance: "reading streak"
+    expect_skill: habits
+
+  # ── negative cases ──
+  - id: hb-neg-001
+    utterance: "my car has a 1.5L engine"
+    expect_skill: default
+    notes: "quantity is context, not a log"
+  - id: hb-neg-002
+    utterance: "k"
+    expect_skill: default
+    notes: "ambiguous — ask once before logging"
+  - id: hb-neg-003
+    utterance: "remind me to drink water at 3pm"
+    expect_skill: reminders
+
+smoke:
+  cmd: "bash ~/bin/water-log.sh --smoke"
+  expect_exit: 0

@@ -1,0 +1,44 @@
+# Eval suite for obsidian.
+skill: obsidian
+script: null
+version: 1
+
+triggers:
+  - id: ob-001
+    utterance: "search my Obsidian notes for 'project planning'"
+    expect_skill: obsidian
+  - id: ob-002
+    utterance: "create a new note in Obsidian titled 'Meeting with Alice'"
+    expect_skill: obsidian
+  - id: ob-003
+    utterance: "rename the Obsidian note 'Old title' to 'New title'"
+    expect_skill: obsidian
+  - id: ob-004
+    utterance: "find notes that mention 'quarterly review' in my Obsidian vault"
+    expect_skill: obsidian
+  - id: ob-005
+    utterance: "move the note 'Projects/Idea' to 'Archive/Idea' in Obsidian"
+    expect_skill: obsidian
+  - id: ob-006
+    utterance: "delete the Obsidian note 'Draft/scratch'"
+    expect_skill: obsidian
+  - id: ob-007
+    utterance: "where is my Obsidian vault located"
+    expect_skill: obsidian
+
+  - id: ob-neg-001
+    utterance: "open Obsidian app"
+    expect_skill: default
+    notes: "launching the desktop app is not an obsidian-cli operation"
+  - id: ob-neg-002
+    utterance: "edit a specific markdown file I know the path to"
+    expect_skill: default
+    notes: "known-path file edits can be done directly without obsidian-cli"
+  - id: ob-neg-003
+    utterance: "create a note in Notion"
+    expect_skill: notion
+    notes: "Notion operations belong to the notion skill"
+
+smoke:
+  cmd: "true"
+  expect_exit: 0

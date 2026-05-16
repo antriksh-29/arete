@@ -1,0 +1,47 @@
+# Eval suite for notion.
+skill: notion
+script: null
+version: 1
+
+triggers:
+  - id: nt-001
+    utterance: "create a new Notion page in my Tasks database"
+    expect_skill: notion
+  - id: nt-002
+    utterance: "query my Notion database for all Active items"
+    expect_skill: notion
+  - id: nt-003
+    utterance: "update the Status property to Done on Notion page abc123"
+    expect_skill: notion
+  - id: nt-004
+    utterance: "add a paragraph block to my meeting notes Notion page"
+    expect_skill: notion
+  - id: nt-005
+    utterance: "search Notion for 'Q2 planning'"
+    expect_skill: notion
+  - id: nt-006
+    utterance: "read the content of Notion page xyz789"
+    expect_skill: notion
+  - id: nt-007
+    utterance: "create a new Notion database with Name and Status columns"
+    expect_skill: notion
+  - id: nt-008
+    utterance: "list all Todo items in my Notion project database"
+    expect_skill: notion
+
+  - id: nt-neg-001
+    utterance: "open Notion in my browser"
+    expect_skill: default
+    notes: "opening browser is not a Notion API operation"
+  - id: nt-neg-002
+    utterance: "add a task to my Trello board"
+    expect_skill: trello
+    notes: "Trello operations belong to the trello skill"
+  - id: nt-neg-003
+    utterance: "set a filter on my Notion database view"
+    expect_skill: default
+    notes: "database view filters are UI-only, not available via API"
+
+smoke:
+  cmd: "true"
+  expect_exit: 0

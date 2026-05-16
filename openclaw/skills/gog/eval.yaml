@@ -1,0 +1,47 @@
+# Eval suite for gog.
+skill: gog
+script: null
+version: 1
+
+triggers:
+  - id: go-001
+    utterance: "send an email to alice@example.com with subject 'Meeting notes'"
+    expect_skill: gog
+  - id: go-002
+    utterance: "create a calendar event 'Team standup' tomorrow at 10am"
+    expect_skill: gog
+  - id: go-003
+    utterance: "search my Gmail for emails from ryanair in the last 7 days"
+    expect_skill: gog
+  - id: go-004
+    utterance: "find files about 'Q2 report' in my Google Drive"
+    expect_skill: gog
+  - id: go-005
+    utterance: "read rows A1:D10 from Google Sheet 1abc123"
+    expect_skill: gog
+  - id: go-006
+    utterance: "append a row to the budget spreadsheet"
+    expect_skill: gog
+  - id: go-007
+    utterance: "export Google Doc 1xyz as plain text"
+    expect_skill: gog
+  - id: go-008
+    utterance: "list my Google contacts"
+    expect_skill: gog
+
+  - id: go-neg-001
+    utterance: "what's on my calendar today"
+    expect_skill: default
+    notes: "live calendar read prefers clawvisor-live if it's configured"
+  - id: go-neg-002
+    utterance: "search my email for recent newsletters"
+    expect_skill: default
+    notes: "inbox reads can go through clawvisor-live if available"
+  - id: go-neg-003
+    utterance: "open Google Docs in my browser"
+    expect_skill: default
+    notes: "opening browser tabs is not a gog CLI operation"
+
+smoke:
+  cmd: "true"
+  expect_exit: 0

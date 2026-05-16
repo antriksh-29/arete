@@ -1,0 +1,41 @@
+# Eval suite for openai-whisper.
+skill: openai-whisper
+script: null
+version: 1
+
+triggers:
+  - id: ow-001
+    utterance: "transcribe this audio file locally using whisper"
+    expect_skill: openai-whisper
+  - id: ow-002
+    utterance: "convert recording.mp3 to text with the medium model"
+    expect_skill: openai-whisper
+  - id: ow-003
+    utterance: "generate SRT subtitles for meeting.m4a"
+    expect_skill: openai-whisper
+  - id: ow-004
+    utterance: "translate this Spanish audio recording to English"
+    expect_skill: openai-whisper
+  - id: ow-005
+    utterance: "run whisper on /tmp/interview.wav and save as txt"
+    expect_skill: openai-whisper
+  - id: ow-006
+    utterance: "transcribe without sending audio to the cloud"
+    expect_skill: openai-whisper
+
+  - id: ow-neg-001
+    utterance: "transcribe this audio using the OpenAI API"
+    expect_skill: openai-whisper-api
+    notes: "API-based transcription uses openai-whisper-api skill"
+  - id: ow-neg-002
+    utterance: "read this text aloud"
+    expect_skill: sherpa-onnx-tts
+    notes: "text-to-speech is sherpa-onnx-tts, not whisper"
+  - id: ow-neg-003
+    utterance: "record audio from my microphone"
+    expect_skill: default
+    notes: "whisper transcribes existing files, it does not record"
+
+smoke:
+  cmd: "true"
+  expect_exit: 0

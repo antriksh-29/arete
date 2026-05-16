@@ -1,0 +1,44 @@
+# Eval suite for mcporter.
+skill: mcporter
+script: null
+version: 1
+
+triggers:
+  - id: mp-001
+    utterance: "list all available MCP servers"
+    expect_skill: mcporter
+  - id: mp-002
+    utterance: "call linear.list_issues with team=ENG limit=5"
+    expect_skill: mcporter
+  - id: mp-003
+    utterance: "show the schema for the fetch MCP tool"
+    expect_skill: mcporter
+  - id: mp-004
+    utterance: "authenticate mcporter with the Linear MCP server"
+    expect_skill: mcporter
+  - id: mp-005
+    utterance: "start the mcporter daemon"
+    expect_skill: mcporter
+  - id: mp-006
+    utterance: "generate a CLI wrapper for MCP server 'mymcp'"
+    expect_skill: mcporter
+  - id: mp-007
+    utterance: "call the stdio MCP server with scrape url=https://example.com"
+    expect_skill: mcporter
+
+  - id: mp-neg-001
+    utterance: "create a new Notion page"
+    expect_skill: notion
+    notes: "notion has a dedicated skill; mcporter is a fallback for generic MCP calls"
+  - id: mp-neg-002
+    utterance: "make a raw HTTP GET request to https://api.example.com"
+    expect_skill: default
+    notes: "generic HTTP calls don't require mcporter"
+  - id: mp-neg-003
+    utterance: "add a card to my Trello board"
+    expect_skill: trello
+    notes: "trello has a dedicated skill"
+
+smoke:
+  cmd: "true"
+  expect_exit: 0

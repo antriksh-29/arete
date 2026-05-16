@@ -1,0 +1,41 @@
+# Eval suite for sherpa-onnx-tts.
+skill: sherpa-onnx-tts
+script: null
+version: 1
+
+triggers:
+  - id: st-001
+    utterance: "read this paragraph aloud using offline TTS"
+    expect_skill: sherpa-onnx-tts
+  - id: st-002
+    utterance: "generate a speech audio file from this text"
+    expect_skill: sherpa-onnx-tts
+  - id: st-003
+    utterance: "speak this message: 'Your order has been shipped'"
+    expect_skill: sherpa-onnx-tts
+  - id: st-004
+    utterance: "use sherpa-onnx to synthesize voice for this announcement"
+    expect_skill: sherpa-onnx-tts
+  - id: st-005
+    utterance: "convert this paragraph to a WAV audio file locally"
+    expect_skill: sherpa-onnx-tts
+  - id: st-006
+    utterance: "create a TTS recording without using the cloud"
+    expect_skill: sherpa-onnx-tts
+
+  - id: st-neg-001
+    utterance: "transcribe this audio to text"
+    expect_skill: openai-whisper
+    notes: "speech-to-text is the whisper skill, not TTS"
+  - id: st-neg-002
+    utterance: "use OpenAI TTS API to generate speech"
+    expect_skill: default
+    notes: "cloud TTS is not sherpa-onnx which is offline-only"
+  - id: st-neg-003
+    utterance: "start a voice call"
+    expect_skill: voice-call
+    notes: "initiating phone calls is the voice-call skill"
+
+smoke:
+  cmd: "true"
+  expect_exit: 0
