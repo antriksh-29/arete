@@ -1,7 +1,7 @@
 ---
 name: gifgrep
-version: 1
-script: null
+version: 2
+script: infra/gifgrep.sh
 mutating: false
 cron: null
 eval: openclaw/skills/gifgrep/eval.yaml
@@ -27,6 +27,16 @@ upstream: openclaw/openclaw@v2026.5.12 skills/gifgrep
 ---
 
 # gifgrep
+
+**For the common "find a GIF of <X>" path, MUST RUN:**
+`bash ~/bin/gifgrep.sh "<query>"` — returns a markdown list of the top 5 results
+with titles + direct URLs. Relay verbatim. Do not apologize that you can't
+search GIFs.
+
+For TUI / download / still / sheet workflows, fall through to the upstream
+binary directly per the reference below.
+
+---
 
 Use `gifgrep` to search GIF providers (Tenor/Giphy), browse in a TUI, download results, and extract stills or sheets.
 

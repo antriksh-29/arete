@@ -167,6 +167,44 @@ sync_skills() {
 }
 step "sync skills/" sync_skills
 
+# ── 1c-bis. sync openclaw/skills/ → ~/.openclaw/workspace/skills/<name>/ ─
+# Same logic as sync_skills, but sourced from openclaw/skills/ (skills
+# imported from the upstream OpenClaw catalog at openclaw/openclaw, kept
+# separate from our own skills/ tree to preserve provenance — see the
+# 2026-05-16 openclaw 2026.5.12 integration commit). Our gstack-format
+# SKILL.md files here override the bundled openclaw-npm definitions for
+# any skill name that matches.
+sync_openclaw_skills() {
+  local target="$HOME/.openclaw/workspace/skills"
+  if [ ! -d "$target" ]; then
+    echo "  ${yellow}!${rst} $target missing — skipping openclaw-skills sync"
+    return 0
+  fi
+  if [ ! -d openclaw/skills ]; then
+    echo "  openclaw/skills/ not present in repo — nothing to sync"
+    return 0
+  fi
+  local copied=0
+  for d in openclaw/skills/*/; do
+    [ -f "${d}SKILL.md" ] || continue
+    local name="$(basename "$d")"
+    local skill_target="$target/$name"
+    mkdir -p "$skill_target"
+    for f in SKILL.md eval.yaml; do
+      [ -f "${d}$f" ] || continue
+      local dst="$skill_target/$f"
+      if [ ! -f "$dst" ] || ! cmp -s "${d}$f" "$dst"; then
+        [ -f "$dst" ] && cp "$dst" "$dst.bak.$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+        cp "${d}$f" "$dst"
+        copied=$((copied+1))
+      fi
+    done
+  done
+  echo "  synced $copied openclaw-skill file(s) → $target/"
+  return 0
+}
+step "sync openclaw/skills/" sync_openclaw_skills
+
 # ── 2. sync smoke-tests ─────────────────────────────────────────
 step "sync ~/.gbrain/smoke-tests.d/" bash infra/sync-smoke-tests.sh
 

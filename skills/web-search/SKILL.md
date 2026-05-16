@@ -1,13 +1,13 @@
 ---
 name: web-search
-version: 1
+version: 2
 script: infra/web-search.sh
 mutating: false
 cron: null
 eval: skills/web-search/eval.yaml
 last_audited: 2026-05-16
 description: |
-  Live web search via OpenAI GPT-5.4-mini with native web_search_preview.
+  Live web search via browser-harness against DuckDuckGo HTML.
   Use when the user asks for news, current events, "latest X", current
   prices, or fresh research that requires sources. Brain-first per rule 9.
   WHEN: "latest <topic>", "current price of X", "what's happening with X",
@@ -26,19 +26,26 @@ brain_dirs_read: []
 mutates_external_state: false
 ---
 
-# /web-search — live web via mini
+# /web-search — live web via browser-harness
 
 When the user asks for live information from the internet (news, recent
 events, "latest X", current prices, "what is X" for things not in the brain,
 research that requires fresh sources):
 
-1. Call the bash tool with: `~/bin/web-search.sh "<the user's query, paraphrased tightly>"`
-2. The script returns markdown synthesized by GPT-5.4-mini using OpenAI's
-   web_search tool (cheap-tier per eng plan §14.1). It includes inline source
-   URLs in parentheses — preserve those when relaying to the user.
-3. Pass-through-friendly: the markdown is already concise. You can either
-   forward it verbatim, or add one sentence of your own framing. Do NOT
-   re-summarize aggressively — the synthesis pass already happened.
+**MUST RUN:** `bash ~/bin/web-search.sh "<the user's query, paraphrased tightly>"`
+
+Do not apologize, do not say "I don't have web search" — call the script.
+The script drives the always-on headless Chrome (bh-chrome.service) via
+browser-harness against DuckDuckGo's HTML endpoint and returns a markdown
+list of top 5 results: title, snippet, and direct URL.
+
+Relay the markdown output verbatim, or add one sentence of your own framing.
+Do NOT re-summarize aggressively — the page already filtered.
+
+**Why browser-harness, not the model's built-in web tool:**
+- Keeps web access on infra we own; no model-provider dependency.
+- Works the same across any model swap in our routing chain.
+- Already-running headless Chrome (~zero startup cost per call).
 
 **When NOT to use web-search.sh:**
 - Anything answerable from the brain (use `gbrain__query` first; brain-first
@@ -46,6 +53,3 @@ research that requires fresh sources):
 - Anything answerable from your own knowledge for the relevant date window
   (model cutoff)
 - Calendar / Gmail data — those go through clawvisor MCP, not web search
-
-**Cost note:** ~$0.001-0.005 per call. Don't web-search trivial queries you
-already know the answer to.
