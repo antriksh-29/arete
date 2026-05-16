@@ -212,3 +212,82 @@ tests:
     timeout: 90
     expects:
       reply_min_len: 50
+
+  # ── 2026-05-16: skills transferred openclaw/skills/ → skills/ ────
+  # (clawvisor-live, full-automation, habits, web-search) + 16 upstream
+  # openclaw v2026.5.12 skills added to openclaw/skills/.
+  # Read-only paths only. full-automation skipped — it's a propose-
+  # confirm workflow with no clean read shape. Skipped also where
+  # API keys / OAuth / hardware blocks: 1password, github, gh-issues,
+  # notion, trello, obsidian, xurl, gog, whisper (needs audio
+  # attachment, no text shape), sherpa-onnx-tts (returns wav file,
+  # not text-shaped reply).
+
+  - id: clawvisor-calendar-today
+    skill: clawvisor-live
+    message: "what's on my calendar today"
+    timeout: 60
+    expects:
+      # Either lists events or says nothing scheduled. Reject pure
+      # "I can't access your calendar" failure modes.
+      reply_regex: ['(?i)calendar|event|meeting|scheduled|nothing on|free|no events']
+      reply_min_len: 20
+
+  - id: habits-overview
+    skill: habits
+    message: "what habits am I tracking"
+    timeout: 60
+    expects:
+      reply_regex: ['(?i)water|reading|hydration|habit']
+      reply_min_len: 30
+
+  - id: web-search-live
+    skill: web-search
+    message: "search the web for openclaw 2026.5.12 release notes"
+    timeout: 90
+    expects:
+      # Web-search returns markdown w/ inline source URLs.
+      reply_regex: ['(?i)openclaw|2026\.5|release|http']
+      reply_min_len: 50
+
+  - id: healthcheck-audit
+    skill: healthcheck
+    message: "audit this server's security posture"
+    timeout: 90
+    expects:
+      reply_regex: ['(?i)ssh|firewall|ports|update|encryption|audit|posture|security']
+      reply_min_len: 40
+
+  - id: mcporter-list-servers
+    skill: mcporter
+    message: "list my configured MCP servers"
+    timeout: 60
+    expects:
+      reply_regex: ['(?i)mcp|server|configured|none|list']
+      reply_min_len: 20
+
+  - id: gifgrep-cat
+    skill: gifgrep
+    message: "find me a cat gif"
+    timeout: 60
+    expects:
+      # Should return a Tenor/Giphy URL (demo Tenor key works without auth).
+      reply_regex: ['https?://\S+\.(gif|mp4)|tenor|giphy']
+      reply_min_len: 30
+
+  - id: session-logs-recent
+    skill: session-logs
+    message: "what were my last few conversations about — just a one-line summary each"
+    timeout: 90
+    expects:
+      reply_min_len: 30
+
+  - id: voice-call-mock
+    skill: voice-call
+    message: "make a mock voice call to +15555550123 saying just hello world"
+    timeout: 60
+    expects:
+      # Mock provider replies with a call-id or status. Reject errors
+      # about missing provider config.
+      reply_regex: ['(?i)call|initiated|mock|status|id\b']
+      reply_min_len: 20
