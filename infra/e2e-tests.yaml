@@ -291,3 +291,27 @@ tests:
       # about missing provider config.
       reply_regex: ['(?i)call|initiated|mock|status|id\b']
       reply_min_len: 20
+
+  - id: composio-list-apps
+    skill: composio
+    message: "what apps does composio expose"
+    timeout: 60
+    expects:
+      reply_regex: ['(?i)gmail|calendar|notion|slack|github|composio|app']
+      reply_min_len: 30
+
+  - id: composio-discovery
+    skill: composio
+    message: "use composio to search for available tools matching 'gmail'"
+    timeout: 90
+    expects:
+      reply_regex: ['(?i)gmail|search|tool|composio|connect']
+      reply_min_len: 30
+
+  - id: mcporter-list-after-composio
+    skill: mcporter
+    message: "list my configured MCP servers"
+    timeout: 60
+    expects:
+      reply_regex: ['(?i)mcporter|composio|clawvisor|gbrain|none|configured']
+      reply_min_len: 20
