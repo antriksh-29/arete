@@ -843,13 +843,15 @@ sandbox issues" from earlier — those were openclaw-browser bugs and
 were resolved by switching to browser-harness in PR #28.
 
 **HARD RULE — browser intents MUST shell out to browser-harness via
-heredoc/stdin.** When the user asks anything in the table below, run
-the matching command using the `<<'PY' ... PY` heredoc form (or stdin
-pipe). The binary does NOT support `-c '<code>'`; that flag does not
-exist — calling it just prints a Usage message and exits. DO NOT
-respond with "I can't fetch that" or "browser isn't running" — those
-are stale-memory hallucinations from before the switch. The browser
-works. Run it.
+heredoc/stdin.** (Frozen 2026-05-18 by ADR-001 — `docs/ADR-001-browser-stack.md`.
+browser-harness is primary; Composio Browser is fallback after 3
+consecutive failures. No third browser.) When the user asks anything
+in the table below, run the matching command using the
+`<<'PY' ... PY` heredoc form (or stdin pipe). The binary does NOT
+support `-c '<code>'`; that flag does not exist — calling it just
+prints a Usage message and exits. DO NOT respond with "I can't fetch
+that" or "browser isn't running" — those are stale-memory
+hallucinations from before the switch. The browser works. Run it.
 
 | User intent | Command |
 |---|---|

@@ -1,0 +1,21 @@
+[Unit]
+Description=Conditional Telegram-session reset (auto-cleans bloat before it hurts perf)
+After=openclaw-gateway.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'set -uo pipefail; \
+  SESS_JSON="$HOME/.openclaw/agents/main/sessions/sessions.json"; \
+  KEY="agent:main:telegram:direct:775188536"; \
+  SID=$(python3 -c "import json; d=json.load(open(\"$SESS_JSON\")); e=d.get(\"$KEY\"); print(e.get(\"sessionId\",\"\") if e else \"\")"); \
+  if [ -z "$SID" ]; then echo "no session — nothing to do"; exit 0; fi; \
+  FILE="$HOME/.openclaw/agents/main/sessions/$SID.jsonl"; \
+  SZ=$(stat -c%s "$FILE" 2>/dev/null || echo 0); \
+  THRESH=204800; \
+  if [ "$SZ" -gt "$THRESH" ]; then \
+    echo "session $SID is $SZ bytes > $THRESH; resetting"; \
+    $HOME/bin/reset-tg-session.sh --yes; \
+  else \
+    echo "session $SID is $SZ bytes <= $THRESH; leaving alone"; \
+  fi'
+TimeoutStartSec=120
