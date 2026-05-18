@@ -89,14 +89,28 @@ def load_tests():
             k = k.strip()
             v = strip_inline_comment(v.strip())
             if v.startswith("[") and v.endswith("]"):
+                # Quote-aware list parser. The previous version naively
+                # split on commas, which broke any regex containing
+                # `,` inside a `{n,m}` quantifier, character class,
+                # alternation, etc. — silently rejecting half of our
+                # browser-test regexes as "regex compile error". Walk
+                # the string respecting quote depth instead. Items
+                # are always quoted strings (single or double).
                 inner = v[1:-1].strip()
-                vals = []
+                vals: list[str] = []
                 if inner:
-                    for item in inner.split(","):
-                        item = item.strip()
-                        if (item.startswith("'") and item.endswith("'")) or (item.startswith('"') and item.endswith('"')):
-                            item = item[1:-1]
-                        vals.append(item)
+                    buf, in_str, quote = "", False, ""
+                    for ch in inner:
+                        if not in_str and ch in ("'", '"'):
+                            in_str, quote = True, ch
+                            continue
+                        if in_str and ch == quote:
+                            in_str = False
+                            vals.append(buf)
+                            buf = ""
+                            continue
+                        if in_str:
+                            buf += ch
                 cur["expects"][k] = vals
             elif v == "":
                 cur["expects"][k] = []
