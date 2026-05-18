@@ -331,3 +331,79 @@ tests:
     expects:
       reply_regex: ['(?i)connect|none|active|composio|app']
       reply_min_len: 20
+
+  # ── 2026-05-16 browser bake-off: browser-harness vs Composio Browser ─
+  # Five representative personal-assistant tasks × two browsers = ten
+  # tests. Prefix forces the agent to pick the intended browser. Read-only
+  # only — no state mutation. Composite-score elsewhere; harness just
+  # captures reply + latency.
+
+  - id: bbench-1-hn-bh
+    skill: agent-browser
+    message: "Using browser-harness, fetch https://news.ycombinator.com and give me the top 5 stories — title + score + URL for each."
+    timeout: 120
+    expects:
+      reply_min_len: 100
+
+  - id: bbench-1-hn-composio
+    skill: composio-browser
+    message: "Using composio browser, fetch https://news.ycombinator.com and give me the top 5 stories — title + score + URL for each."
+    timeout: 180
+    expects:
+      reply_min_len: 100
+
+  - id: bbench-2-search-bh
+    skill: agent-browser
+    message: "Using browser-harness, search the web for 'openclaw 2026.5.12 release notes' and give me the top 3 results with title and URL."
+    timeout: 120
+    expects:
+      reply_min_len: 100
+
+  - id: bbench-2-search-composio
+    skill: composio-browser
+    message: "Using composio browser, search the web for 'openclaw 2026.5.12 release notes' and give me the top 3 results with title and URL."
+    timeout: 180
+    expects:
+      reply_min_len: 100
+
+  - id: bbench-3-btc-bh
+    skill: agent-browser
+    message: "Using browser-harness, what's the current bitcoin price on https://coinmarketcap.com/currencies/bitcoin/ ? Just the USD price."
+    timeout: 120
+    expects:
+      reply_min_len: 20
+
+  - id: bbench-3-btc-composio
+    skill: composio-browser
+    message: "Using composio browser, what's the current bitcoin price on https://coinmarketcap.com/currencies/bitcoin/ ? Just the USD price."
+    timeout: 180
+    expects:
+      reply_min_len: 20
+
+  - id: bbench-4-docs-bh
+    skill: agent-browser
+    message: "Using browser-harness, open https://docs.openclaw.ai and tell me what the 'openclaw mcp serve' command does in 2 sentences."
+    timeout: 120
+    expects:
+      reply_min_len: 50
+
+  - id: bbench-4-docs-composio
+    skill: composio-browser
+    message: "Using composio browser, open https://docs.openclaw.ai and tell me what the 'openclaw mcp serve' command does in 2 sentences."
+    timeout: 180
+    expects:
+      reply_min_len: 50
+
+  - id: bbench-5-blog-bh
+    skill: agent-browser
+    message: "Using browser-harness, find the latest blog post on https://openclaw.ai/blog and give me the title plus a 2-sentence summary."
+    timeout: 180
+    expects:
+      reply_min_len: 80
+
+  - id: bbench-5-blog-composio
+    skill: composio-browser
+    message: "Using composio browser, find the latest blog post on https://openclaw.ai/blog and give me the title plus a 2-sentence summary."
+    timeout: 240
+    expects:
+      reply_min_len: 80
