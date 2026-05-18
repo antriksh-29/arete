@@ -51,7 +51,7 @@ done
 # REST API call against /api/v3/connected_accounts (requires a developer
 # ak_* key, not the ck_* consumer key we use for MCP).
 TOOLKITS=(
-  gmail googlecalendar notion googlesheets googledrive youtube linkedin googlemaps
+  gmail googlecalendar notion googlesheets googledrive youtube linkedin googlemaps twitter
 )
 
 # Build the JSON array of toolkit-list requests.
