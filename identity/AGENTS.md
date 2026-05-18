@@ -1249,6 +1249,30 @@ Never use `gbrain query "reading list"`, `gbrain search`, or
 `gbrain get lists/to-read` for the user-facing reply — those return
 inconsistent / stale results. Only `reading-list.py show` is correct.
 
+### X (Twitter) — three distinct paths, route carefully
+
+The three Twitter-related skills cover three different verbs. Pick by
+intent, not by URL:
+
+| User intent | Skill | Why |
+|---|---|---|
+| Show / search / post / delete on **MY** X account (logged-in actions on the user's own profile) | `twitter-composio` (`skills/twitter-composio/SKILL.md`) | Uses Composio's TWITTER_* MCP tools on the connected `twitter` toolkit account. Read = no confirm; write = draft-then-OK gate. |
+| Capture **someone else's** thread into the brain (URL: `x.com/<other-user>/status/<id>`) | `ingest-x-thread` | Composio Twitter API can't always read others' threads under free tier rate-limits; cookie-based scrape gets the full thread + quoted tweets + notable replies reliably. |
+| Draft a tweet for review (composes; doesn't post) | `x-draft` | Uses the voice corpus (@paulg / @naval / @sama / @garrytan / @vkhosla blend). Output is text; user reviews; then `twitter-composio` posts it on approval. |
+
+**Hard rule:** "show me my tweets", "post a tweet", "search Twitter for X",
+"my mentions", "delete tweet ID" → `twitter-composio`. Never reach for
+ingest-x-thread or stored cookies when the user is acting on their own
+account — Composio is connected and that's the path.
+
+**KNOWN BUG (2026-05-18):** Composio's Twitter integration currently
+returns `'latin-1' codec can't encode characters` on EVERY TWITTER_*
+call. Platform-side, not fixable here. When the agent hits this:
+surface the error verbatim, offer the browser-harness fallback (only
+if `bot-cred list | grep SITE_COOKIES__x_com` shows cookies; otherwise
+tell the user to run /site-login first). Do NOT loop retrying. See
+`skills/twitter-composio/SKILL.md` §"KNOWN ISSUE" for the recipe.
+
 ### X (Twitter) drafting
 
 Per `skills/x-draft/SKILL.md`. Tweet drafts blend Antriksh's voice (20%)
@@ -1266,6 +1290,7 @@ handle.
 | After a draft: "approve", "looks good", "let's go with it" | `python3 ~/bin/x-approve.py approve` |
 | After a draft: "edit: <new text>", "change it to: <new>" | `python3 ~/bin/x-approve.py edit "<new>"` |
 | After a draft: "reject", "no, try again", "different angle" | `python3 ~/bin/x-approve.py reject` |
+| After a draft + approve: "post it" / "go ahead and post" | hand off to `twitter-composio` → `TWITTER_CREATION_OF_A_POST` with the approved text |
 
 The draft script writes pending state to a state file. The approve
 script reads from it. Don't try to chain them in a single openclaw

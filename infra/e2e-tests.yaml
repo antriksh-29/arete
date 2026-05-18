@@ -644,3 +644,51 @@ tests:
     timeout: 240
     expects:
       reply_min_len: 50
+
+  # ── 2026-05-18 twitter-composio workflow validation ─────────────
+  - id: tw-tg-01-show-my-recent
+    skill: twitter-composio
+    message: "show me my last 3 tweets that I have posted on X"
+    timeout: 240
+    expects:
+      reply_min_len: 30
+      reply_not_contains:
+        - "import your X/Twitter cookies"
+        - "F12 → Network tab"
+        - "Right-click that line"
+
+  - id: tw-tg-02-search
+    skill: twitter-composio
+    message: "search twitter for tweets about openclaw — top 3, just the text"
+    timeout: 240
+    expects:
+      reply_min_len: 30
+      reply_not_contains:
+        - "import your X/Twitter cookies"
+
+  - id: tw-tg-03-lookup
+    skill: twitter-composio
+    message: "look up the tweet https://x.com/paulg/status/1791833220018245664 — just the text"
+    timeout: 240
+    expects:
+      reply_min_len: 20
+      reply_not_contains:
+        - "import your X/Twitter cookies"
+
+  - id: tw-tg-04-mentions
+    skill: twitter-composio
+    message: "any twitter mentions of me recently? show last 3"
+    timeout: 240
+    expects:
+      reply_min_len: 20
+      reply_not_contains:
+        - "import your X/Twitter cookies"
+
+  - id: tw-tg-05-draft-then-post
+    skill: twitter-composio
+    message: "post a tweet: 'browser-harness + composio twitter is now wired through telegram bot. small private test.' — but DRAFT first and wait for my OK"
+    timeout: 240
+    expects:
+      reply_min_len: 30
+      reply_not_contains:
+        - "import your X/Twitter cookies"

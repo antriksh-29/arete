@@ -1,0 +1,60 @@
+# Eval suite for twitter-composio.
+skill: twitter-composio
+script: null
+version: 1
+
+triggers:
+  # ── read on own account ──
+  - id: tw-001
+    utterance: "show me my last 5 tweets"
+    expect_skill: twitter-composio
+  - id: tw-002
+    utterance: "what did I tweet recently"
+    expect_skill: twitter-composio
+  - id: tw-003
+    utterance: "my mentions today"
+    expect_skill: twitter-composio
+  - id: tw-004
+    utterance: "who mentioned me on Twitter this week"
+    expect_skill: twitter-composio
+
+  # ── search ──
+  - id: tw-005
+    utterance: "search twitter for openclaw release"
+    expect_skill: twitter-composio
+  - id: tw-006
+    utterance: "find tweets about kimi k2.6 benchmarks"
+    expect_skill: twitter-composio
+  - id: tw-007
+    utterance: "how many tweets about composio MCP this week"
+    expect_skill: twitter-composio
+
+  # ── write (gated on user OK) ──
+  - id: tw-008
+    utterance: "post a tweet: shipped browser-harness write-as-you-learn today"
+    expect_skill: twitter-composio
+  - id: tw-009
+    utterance: "delete tweet 1234567890"
+    expect_skill: twitter-composio
+
+  # ── lookup ──
+  - id: tw-010
+    utterance: "look up tweet https://x.com/paulg/status/1234567890"
+    expect_skill: twitter-composio
+
+  # ── negative cases ──
+  - id: tw-neg-001
+    utterance: "ingest https://x.com/paulg/status/1234567890"
+    expect_skill: ingest-x-thread
+    notes: "ingest verb routes to thread capture, not composio"
+  - id: tw-neg-002
+    utterance: "draft a tweet about thin harness fat skills"
+    expect_skill: x-draft
+    notes: "drafting uses voice corpus, not API"
+  - id: tw-neg-003
+    utterance: "save this thread for later https://x.com/garrytan/status/1234567890"
+    expect_skill: reading-list
+
+smoke:
+  cmd: "true"
+  expect_exit: 0
