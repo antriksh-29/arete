@@ -103,36 +103,98 @@ that survives CSS-module renames, the framework quirk you're about to
 hit (React combobox commit semantics, Vue scroll containers,
 ProseMirror newline handling).
 
-## The self-healing loop — when a primitive is missing
+## The self-healing loop — MANDATORY write-as-you-learn
+
+This is the compounding part. Every quirk we solve once must become
+durable knowledge so the next agent run (or the next user) doesn't
+re-solve it. The two wrapper scripts below make this idempotent and
+git-tracked on a dedicated `local-additions` branch of the harness
+clone, so our edits survive `browser-harness --update` and we have
+an audit trail.
+
+### When a primitive is missing → write a helper
 
 ```
-Task fails on a UI mechanic
-→ rg -l "<keyword>" ~/.browser-harness/repo/interaction-skills/
-→ Read the matching file end-to-end
-→ Apply the pattern
-→ If the pattern needed extension, write the extension into
-  ~/.browser-harness/repo/agent-workspace/agent_helpers.py using
-  raw cdp(...) calls
-→ Use the new helper to complete the task
-→ Commit the change to the harness clone with:
-    git -C ~/.browser-harness/repo add -A
-    git -C ~/.browser-harness/repo commit -m "agent_helpers: add <name> for <reason>"
+1. Read ~/.browser-harness/repo/helpers.py (built-in primitives)
+2. Read ~/.browser-harness/repo/agent-workspace/agent_helpers.py
+   (helpers we've already added; do not duplicate)
+3. Read the relevant ~/.browser-harness/repo/interaction-skills/<topic>.md
+4. Compose the helper (full def with docstring, using cdp(...) calls)
+5. Run: bash ~/bin/bh-add-helper.sh <name> "<full-def-block>"
+   (or pass a /tmp/<name>.py file path)
+6. Use the new helper in the current turn to complete the task
 ```
 
-Don't work around. Extend.
+### When a site quirk is durable → write a domain-skill playbook
 
-## When a site quirk is durable, capture it as a domain-skill
-
-After successfully completing a non-trivial task on a site that didn't
-have a skill, write a domain-skill capturing the durable knowledge:
+After completing a non-trivial task on a site that didn't have a skill:
 
 ```
-~/.browser-harness/repo/domain-skills/<site>/<workflow>.md
+1. Compose the playbook in the shape below (map, not diary)
+2. Run: bash ~/bin/bh-add-playbook.sh <site> <workflow> "<body>"
+   (or pass a /tmp/<workflow>.md file path)
 ```
 
-Sections to include (map, not diary): URL patterns, private APIs,
-stable selectors, framework quirks, waits the auto-wait misses, traps.
-Never raw pixel coords, never secrets, never run narration.
+**Playbook shape** (drop sections that don't apply, never invent):
+
+```markdown
+## URL patterns
+Direct routes, required query params, deep-link shortcuts.
+
+## Private APIs
+The XHR/fetch endpoints the page itself calls. Request + response
+shape. 10× faster than DOM scraping.
+
+## Stable selectors
+data-*, aria-*, role, semantic classes. Which ones survive A/B tests;
+which obfuscated CSS-module classes to avoid.
+
+## Site structure
+Containers, items per page, framework (React/Vue/Lit/vanilla), where
+state lives (Redux store, URL params, localStorage).
+
+## Framework / interaction quirks
+"Dropdown is a React combobox that only commits on Escape."
+"Vue list only renders rows inside its own scroll container."
+
+## Waits
+Late-XHR delays the auto-wait misses. The reason, the duration.
+
+## Traps
+Stale drafts, legacy IDs returning null, unicode quirks,
+beforeunload dialogs, captcha surfaces, deceptive selectors.
+```
+
+**What NOT to write** (the wrappers will reject these):
+- Raw pixel coords like `click_at_xy(420, 340)` (break on viewport changes)
+- Run narration ("first I clicked here, then I typed…")
+- Secrets, cookies, session tokens, user-specific state — these
+  files get committed and the agent reads them across users.
+
+### Trigger criteria (when MUST you write?)
+
+Write a helper OR a playbook (whichever fits) if ANY of these is true:
+- You spent >2 minutes figuring out a site-specific quirk
+- You composed three or more `cdp(...)` calls inline that another
+  task would obviously want as a single helper
+- The interaction-skills/<topic>.md headline was right but the
+  detail wasn't there
+- A user re-asked the same browser task you've solved before — that
+  means the prior solution didn't persist
+
+If a turn meets a criterion above, the write step happens BEFORE you
+reply to the user. Don't ship the answer and forget to capture.
+
+### Audit trail
+
+The harness clone's git log is the accreted-knowledge ledger:
+
+```
+git -C ~/.browser-harness/repo log local-additions --oneline -20
+```
+
+A week with zero new entries means we're either not hitting hard
+sites or (more likely) not capturing what we learn.
 
 ## The 16 interaction-skills — keep this index in your head
 
