@@ -470,6 +470,29 @@ fi
 # values get picked up.
 step "configure openclaw.json" bash infra/configure-openclaw.sh
 
+# ── 4c. systemd drop-in: BH_DOMAIN_SKILLS=1 for the gateway ─────
+# browser-harness has a search-first learning surface: domain-skills/
+# (per-site playbooks) and interaction-skills/ (UI-mechanic docs).
+# Without BH_DOMAIN_SKILLS=1 in the agent's environment, domain
+# skills are dead weight — the harness loads them only when this var
+# is set AND the agent navigates to a matching host. The drop-in is
+# small + idempotent; create it on every deploy.
+install_bh_dropin() {
+  local dir="$HOME/.config/systemd/user/openclaw-gateway.service.d"
+  local file="$dir/browser-harness.conf"
+  mkdir -p "$dir"
+  cat > "$file" <<EOF
+[Service]
+# Surface browser-harness domain-skills automatically when the agent
+# navigates to a matching site. Repo lives at ~/.browser-harness/repo/
+# Documented in skills/agent-browser/SKILL.md.
+Environment=BH_DOMAIN_SKILLS=1
+EOF
+  systemctl --user daemon-reload
+  echo "  wrote $file"
+}
+step "browser-harness systemd drop-in" install_bh_dropin
+
 # ── 5. restart openclaw-gateway so AGENTS.md / SKILL.md changes take effect ─
 restart_gateway() {
   if ! systemctl --user is-active openclaw-gateway.service >/dev/null 2>&1; then

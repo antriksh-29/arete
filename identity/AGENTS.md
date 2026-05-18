@@ -842,29 +842,45 @@ old openclaw-browser path is gone — do not reference it, do not say
 sandbox issues" from earlier — those were openclaw-browser bugs and
 were resolved by switching to browser-harness in PR #28.
 
-**HARD RULE — browser intents MUST shell out to browser-harness.**
-When the user asks anything in the table below, run the matching
-`browser-harness -c '...'` command. DO NOT respond with "I can't
-fetch that" or "browser isn't running" — those are stale-memory
-hallucinations from before the switch. The browser works. Run it.
+**HARD RULE — browser intents MUST shell out to browser-harness via
+heredoc/stdin.** When the user asks anything in the table below, run
+the matching command using the `<<'PY' ... PY` heredoc form (or stdin
+pipe). The binary does NOT support `-c '<code>'`; that flag does not
+exist — calling it just prints a Usage message and exits. DO NOT
+respond with "I can't fetch that" or "browser isn't running" — those
+are stale-memory hallucinations from before the switch. The browser
+works. Run it.
 
 | User intent | Command |
 |---|---|
-| "what's on <url>" / "open <url> and tell me <X>" / "fetch this page" | `browser-harness -c 'new_tab("<url>"); wait_for_load(); print(page_info())'` then relay the readable extract |
+| "what's on <url>" / "open <url> and tell me <X>" / "fetch this page" | `browser-harness <<'PY'\ngoto_url("<url>"); wait_for_load(); print(page_info())\nPY` then relay the readable extract |
 | "browse to <url>" / "render this page" | Same as above |
-| "screenshot <url>" / "take a screenshot of <url>" | `browser-harness -c 'new_tab("<url>"); wait_for_load(); capture_screenshot("/tmp/shot.png")'` THEN `~/bin/send-telegram-photo.sh /tmp/shot.png` to deliver inline |
-| "can you access <url>" / "is <url> reachable" | `browser-harness -c 'new_tab("<url>"); wait_for_load(); info = page_info(); print(info)'` and report what loaded (title, first 400 chars) |
+| "screenshot <url>" / "take a screenshot of <url>" | `browser-harness <<'PY'\ngoto_url("<url>"); wait_for_load(); capture_screenshot("/tmp/shot.png")\nPY` THEN `~/bin/send-telegram-photo.sh /tmp/shot.png` to deliver inline |
+| "can you access <url>" / "is <url> reachable" | `browser-harness <<'PY'\ngoto_url("<url>"); wait_for_load(); print(page_info())\nPY` and report what loaded (title, first 400 chars) |
 | "fill the form on <url> with <values>" | navigate → snapshot/screenshot → identify fields → `click_at_xy` / `type_text` / submit → screenshot again to verify |
 | "log into <site>" (cookies already imported via /site-login) | `python3 ~/bin/browser-login.py inject <domain>` then proceed |
 
-The browser-harness CLI takes the Python script via `-c` and prints
-stdout. Pipe the output back to the user in plain text. Don't include
-the raw `browser-harness` command line in the reply — just the result.
+Search the harness's own learning surface BEFORE inventing:
+`ls ~/.browser-harness/repo/domain-skills/` (per-site playbooks),
+`rg "^def " ~/.browser-harness/repo/agent-workspace/agent_helpers.py`
+(custom helpers), `ls ~/.browser-harness/repo/interaction-skills/`
+(16 mechanic docs: dropdowns, iframes, network-requests, scrolling,
+shadow-dom, …). Read matching files end-to-end before the first tab.
+Full reference: `skills/agent-browser/SKILL.md`.
 
-If a `browser-harness -c` call genuinely fails (non-zero exit), the
-real diagnostic is `~/.browser-harness/chrome.log` plus
-`systemctl --user status bh-chrome.service`. Only then surface the
-problem to the user; don't pre-emptively claim the browser is down.
+The browser-harness binary reads Python from stdin and prints stdout.
+Pipe the output back to the user in plain text. Don't include the raw
+`browser-harness` command line in the reply — just the result.
+
+If a browser-harness call genuinely fails (non-zero exit) after three
+attempts and the recipes in `skills/agent-browser/SKILL.md` don't
+resolve it, fall back to Composio Browser via the composio MCP tools
+(`BROWSER_TOOL_CREATE_TASK` + `BROWSER_TOOL_WATCH_TASK` +
+`BROWSER_TOOL_GET_OUTPUT_FILE`). Composio is cloud-hosted, async,
+slower to start but has a different rendering pool. Never use Composio
+first — local browser-harness is faster, cheaper, and gives us the
+learning loop. The real diagnostic is `~/.browser-harness/chrome.log`
+plus `systemctl --user status bh-chrome.service`.
 
 ### Restaurant / movie / theatre / event / generic-URL bookings → /book-anything
 

@@ -407,3 +407,129 @@ tests:
     timeout: 240
     expects:
       reply_min_len: 80
+
+  # ── 2026-05-18 agent-browser revamp — 15 comprehensive tests ────────
+  # browser-harness primary (heredoc form, post-bug-fix), Composio
+  # fallback. Tests cover: static read, search, JS-heavy SPA, docs
+  # site, multi-step nav, screenshot delivery, redirect handling,
+  # encyclopedia extract, pricing extract, repo extract, headers,
+  # error pages, plain text, large body, learning-surface awareness.
+
+  - id: brv-01-hn-text
+    skill: agent-browser
+    message: "browse to https://news.ycombinator.com and give me the top 3 story titles"
+    timeout: 90
+    expects:
+      reply_regex: ['(?i)points?|votes?|hours? ago|\b[A-Z][a-z]+']
+      reply_min_len: 60
+
+  - id: brv-02-wikipedia
+    skill: agent-browser
+    message: "open https://en.wikipedia.org/wiki/Headless_browser and give me the first paragraph"
+    timeout: 90
+    expects:
+      reply_regex: ['(?i)headless|browser|graphical|GUI']
+      reply_min_len: 100
+
+  - id: brv-03-example-com
+    skill: agent-browser
+    message: "what's on https://example.com — title and full body text"
+    timeout: 60
+    expects:
+      reply_regex: ['(?i)example domain|illustrative']
+      reply_min_len: 50
+
+  - id: brv-04-status-page
+    skill: agent-browser
+    message: "fetch https://httpbin.org/status/200 and tell me the page status"
+    timeout: 60
+    expects:
+      reply_regex: ['(?i)200|ok|empty|no content|success']
+      reply_min_len: 20
+
+  - id: brv-05-json-endpoint
+    skill: agent-browser
+    message: "use browser-harness http_get to fetch https://httpbin.org/json and give me the field names"
+    timeout: 60
+    expects:
+      reply_regex: ['(?i)slideshow|title|date|author|slide']
+      reply_min_len: 30
+
+  - id: brv-06-headers
+    skill: agent-browser
+    message: "fetch https://httpbin.org/headers and tell me which user-agent header is being sent"
+    timeout: 60
+    expects:
+      reply_regex: ['(?i)user-agent|mozilla|chrome|headless']
+      reply_min_len: 30
+
+  - id: brv-07-redirect
+    skill: agent-browser
+    message: "open https://httpbin.org/redirect-to?url=https%3A%2F%2Fexample.com and tell me what page you ended up on"
+    timeout: 90
+    expects:
+      reply_regex: ['(?i)example|illustrative|domain']
+      reply_min_len: 30
+
+  - id: brv-08-404
+    skill: agent-browser
+    message: "is https://httpbin.org/status/404 a working page? report the status"
+    timeout: 60
+    expects:
+      reply_regex: ['(?i)404|not found|missing|error']
+      reply_min_len: 15
+
+  - id: brv-09-docs-openclaw
+    skill: agent-browser
+    message: "open https://docs.openclaw.ai and tell me the page title plus 1 section heading you can see"
+    timeout: 120
+    expects:
+      reply_regex: ['(?i)openclaw|docs|install|start|guide|introduction']
+      reply_min_len: 50
+
+  - id: brv-10-coinmarketcap
+    skill: agent-browser
+    message: "go to https://coinmarketcap.com/currencies/bitcoin/ and tell me the current USD price"
+    timeout: 120
+    expects:
+      reply_regex: ['\$[\d,]+|USD|[\d]{5,7}']
+      reply_min_len: 20
+
+  - id: brv-11-openclaw-blog
+    skill: agent-browser
+    message: "find the most recent blog post title on https://openclaw.ai/blog"
+    timeout: 120
+    expects:
+      reply_min_len: 30
+
+  - id: brv-12-github-repo
+    skill: agent-browser
+    message: "open https://github.com/browser-use/browser-harness and tell me how many stars the repo has"
+    timeout: 120
+    expects:
+      reply_regex: ['(?i)\d+(\.\d+)?\s*[kK]?\s*stars?|\d{3,}']
+      reply_min_len: 20
+
+  - id: brv-13-screenshot
+    skill: agent-browser
+    message: "take a screenshot of https://example.com and send it to me"
+    timeout: 90
+    expects:
+      reply_regex: ['(?i)screenshot|sent|delivered|attached|example']
+      reply_min_len: 15
+
+  - id: brv-14-interaction-skills-awareness
+    skill: agent-browser
+    message: "list the browser-harness interaction-skill files we have on disk — just the file names"
+    timeout: 90
+    expects:
+      reply_regex: ['(?i)dropdown|iframe|scroll|cookie|screenshot|shadow.dom|network']
+      reply_min_len: 80
+
+  - id: brv-15-domain-skills-awareness
+    skill: agent-browser
+    message: "list the browser-harness domain-skills directories we have available"
+    timeout: 60
+    expects:
+      reply_regex: ['(?i)amazon|domain|skill|directory|folder']
+      reply_min_len: 15
