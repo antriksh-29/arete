@@ -18,6 +18,88 @@ jobs:
     steps:
       - name: Checkout repo (for the SSH config / sanity)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # need history for the diff in the gate step below
+
+      # ── Server-side skill-author gate re-run (T8) ─────────────
+      # Defense in depth: any user-skills/<slug>/ that landed on this
+      # commit must pass the same safety + file-allowlist checks that
+      # ran locally before the commit was pushed. Catches a compromised
+      # local machine that pushed a malicious user-skill.
+      #
+      # The LLM-backed reviewer is skipped server-side (it would need
+      # the Anthropic key in CI secrets — security tradeoff we don't
+      # need; local gate already covers it). The regex IOC pass + file
+      # allowlist runs here and is enough to block the obvious
+      # SkillJect / curl-pipe-sh / hardcoded-credential attacks.
+      - name: Skill-author server-side gate
+        run: |
+          set -eo pipefail
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.sha }}"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            CHANGED_SLUGS=$(ls user-skills 2>/dev/null | grep -v '^\.' || true)
+          else
+            CHANGED_SLUGS=$(git diff --name-only "$BEFORE" "$AFTER" -- user-skills/ \
+              | awk -F/ 'NF>=2 {print $2}' | sort -u || true)
+          fi
+          if [ -z "$CHANGED_SLUGS" ]; then
+            echo "no user-skills/ changes — skipping skill-author gate"
+            exit 0
+          fi
+          echo "changed user-skills slugs: $CHANGED_SLUGS"
+
+          ALLOWED='SKILL\.md|eval\.yaml|\.usage\.json'
+          for slug in $CHANGED_SLUGS; do
+            d="user-skills/$slug"
+            [ -d "$d" ] || continue
+            STRAY=$(find "$d" -mindepth 1 -maxdepth 1 -type f \
+              | grep -vE "/($ALLOWED)\$" || true)
+            if [ -n "$STRAY" ]; then
+              echo "::error::user-skills/$slug/ has disallowed files:"
+              echo "$STRAY"
+              exit 1
+            fi
+            NESTED=$(find "$d" -mindepth 1 -maxdepth 1 -type d || true)
+            if [ -n "$NESTED" ]; then
+              echo "::error::user-skills/$slug/ has disallowed subdirectories:"
+              echo "$NESTED"
+              exit 1
+            fi
+          done
+          echo "file allowlist: OK"
+
+          # Install bun (cached on subsequent runs by GH Actions cache layer).
+          if ! command -v bun >/dev/null 2>&1; then
+            curl -fsSL https://bun.sh/install | bash
+            export PATH="$HOME/.bun/bin:$PATH"
+          fi
+
+          for slug in $CHANGED_SLUGS; do
+            d="user-skills/$slug"
+            [ -d "$d" ] || continue
+            SKILL_MD=$(cat "$d/SKILL.md" 2>/dev/null || echo "")
+            EVAL_YAML=$(cat "$d/eval.yaml" 2>/dev/null || echo "")
+            if [ -z "$SKILL_MD" ]; then
+              echo "::warning::user-skills/$slug/ has no SKILL.md after diff — likely deleted, skipping"
+              continue
+            fi
+            BUNDLE=$(jq -n \
+              --arg slug "$slug" \
+              --arg skill "$SKILL_MD" \
+              --arg eval "$EVAL_YAML" \
+              '{slug:$slug, mode:"create", forked_from:null,
+                frontmatter:{}, skill_md_body:$skill,
+                eval_yaml_text:$eval, elicit_qa:[]}')
+            echo "$BUNDLE" | bun run meta/skill-author/scripts/safety-scan.ts --regex-only > /tmp/scan-$slug.json
+            VERDICT=$(jq -r '.verdict' /tmp/scan-$slug.json)
+            if [ "$VERDICT" != "pass" ]; then
+              echo "::error::user-skills/$slug/ failed server-side safety scan: $VERDICT"
+              jq '.' /tmp/scan-$slug.json
+              exit 1
+            fi
+            echo "user-skills/$slug/: server-side safety OK"
+          done
 
       - name: Set up SSH
         env:

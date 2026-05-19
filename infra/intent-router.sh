@@ -107,6 +107,138 @@ EOF
   exit 0
 fi
 
+# ── SKILL AUTHORING (T14 — implicit + explicit) ──────────────
+# Two routes:
+#   1. Explicit /teach or /refine <name> slash command.
+#   2. Implicit — natural language that signals "I want to create or
+#      modify a skill" (e.g. "I wish you would always...", "save this
+#      as a skill", "the X skill should also...").
+#
+# D7 firewall: this script is invoked by spawn-signal-detector.sh,
+# which is invoked by AGENTS.md Rule 0 — ONLY on direct Telegram user
+# turns. Ingested-content pipelines never reach this code path, so the
+# natural-language patterns below cannot be triggered by malicious
+# emails / calendar invites / web pages (see AGENTS.md §15).
+
+# --- Explicit /teach ---
+if echo "$LMSG" | grep -qE '^[[:space:]]*/teach\b'; then
+  cat <<EOF
+INTENT=skill_create
+TARGET=
+CONFIDENCE=100
+TRIGGER_SOURCE=explicit_slash_command
+
+REQUIRED_ACTION=Start the elicit flow. Your next tool call MUST be:
+  bun run meta/skill-author/scripts/elicit.ts --mode=create --message="\$(remainder of the user message after /teach, if any)" --message-stdin
+
+The script returns a JSON envelope; relay the user_message field verbatim.
+EOF
+  exit 0
+fi
+
+# --- Explicit /refine <name> ---
+REFINE_TARGET=$(echo "$MSG" | grep -oiE '^[[:space:]]*/refine[[:space:]]+([a-z0-9_-]+)' | head -1 | awk '{print $NF}')
+if [ -n "$REFINE_TARGET" ]; then
+  cat <<EOF
+INTENT=skill_refine
+TARGET=${REFINE_TARGET}
+CONFIDENCE=100
+TRIGGER_SOURCE=explicit_slash_command
+
+REQUIRED_ACTION=Start the refine elicit. Your next tool call MUST be:
+  bun run meta/skill-author/scripts/elicit.ts --mode=refine --target=${REFINE_TARGET}
+
+The script returns a JSON envelope; relay the user_message field verbatim.
+EOF
+  exit 0
+fi
+
+# --- Implicit create signals (natural language) ---
+# "I wish you would..." / "I wish you could..."
+# "make a skill for ..." / "let's make a skill ..."
+# "save this as a skill" / "save that as a skill"
+# "remember to ... from now on" / "from now on, ..."
+# "always reply with ..." / "always include ..."
+# "next time I ask for ..., do ..."
+IMPLICIT_CREATE=0
+if echo "$LMSG" | grep -qE '\b(i wish you (would|could) (always|just|please)?)\b'; then IMPLICIT_CREATE=1; fi
+if echo "$LMSG" | grep -qE "\b(save (this|that) as a skill|make (this|that) (into )?a skill|let'?s make a skill|let'?s turn (this|that) into a skill|codify (this|that))\b"; then IMPLICIT_CREATE=1; fi
+if echo "$LMSG" | grep -qE '\b(from now on|next time)\b.{0,80}\b(do|reply|send|always|include|make sure)\b'; then IMPLICIT_CREATE=1; fi
+if echo "$LMSG" | grep -qE '\balways (reply|respond|include|send|do)\b'; then IMPLICIT_CREATE=1; fi
+if echo "$LMSG" | grep -qE '\bremember to .{3,80}\b(every (day|morning|evening|week|hour)|when|whenever|always|next time)\b'; then IMPLICIT_CREATE=1; fi
+
+# --- Implicit refine signals (target a specific existing skill) ---
+# "the X skill should also ..." / "modify the X skill ..."
+# "this output isn't quite right, fix it so next time ..."
+# "you should always do X when I ask for Y" (a refine of how Alfred handles Y)
+IMPLICIT_REFINE_TARGET=""
+# "the <name> skill should also ..."
+T=$(echo "$LMSG" | grep -oE '\bthe[[:space:]]+([a-z0-9_-]+)[[:space:]]+skill\b' | head -1 | awk '{print $2}')
+if [ -n "$T" ] && echo "$LMSG" | grep -qE '\b(should|needs to|ought to|must)\b.*\b(also|change|update|fix|tweak|stop|start|include|instead)\b'; then
+  IMPLICIT_REFINE_TARGET="$T"
+fi
+# "modify the <name> skill" / "tweak <name>" / "update the <name> skill"
+T2=$(echo "$LMSG" | grep -oE '\b(modify|tweak|update|change|edit|refine|fix)[[:space:]]+(the[[:space:]]+)?([a-z0-9_-]+)[[:space:]]*(skill)?\b' | head -1 | awk '{print $NF}' | sed 's/^the$//')
+if [ -z "$IMPLICIT_REFINE_TARGET" ] && [ -n "$T2" ] && [ "$T2" != "skill" ]; then
+  IMPLICIT_REFINE_TARGET="$T2"
+fi
+
+# Verify the implicit refine target actually exists as a skill — if not,
+# treat as create (the user may be referring to a skill they want to
+# bring into existence).
+if [ -n "$IMPLICIT_REFINE_TARGET" ]; then
+  TARGET_EXISTS=0
+  for tier in skills openclaw/skills user-skills; do
+    if [ -f "$tier/$IMPLICIT_REFINE_TARGET/SKILL.md" ]; then
+      TARGET_EXISTS=1
+      break
+    fi
+  done
+  if [ "$TARGET_EXISTS" -eq 0 ]; then
+    IMPLICIT_REFINE_TARGET=""
+    # Re-classify as implicit create (the user is describing something new)
+    IMPLICIT_CREATE=1
+  fi
+fi
+
+if [ -n "$IMPLICIT_REFINE_TARGET" ]; then
+  cat <<EOF
+INTENT=skill_refine
+TARGET=${IMPLICIT_REFINE_TARGET}
+CONFIDENCE=75
+TRIGGER_SOURCE=implicit_natural_language
+
+REQUIRED_ACTION=Offer the user to refine \`${IMPLICIT_REFINE_TARGET}\`. Your next tool call MUST be:
+  bun run meta/skill-author/scripts/elicit.ts --mode=refine --target=${IMPLICIT_REFINE_TARGET}
+
+Before the elicit's first question, prepend ONE sentence asking the user to confirm they want to modify that skill (e.g. "Sounds like you want to tweak \`${IMPLICIT_REFINE_TARGET}\` — want me to walk through a quick refine?"). If the user says no, abort and compose a normal reply.
+
+BANNED_RESPONSES:
+- Silently starting the refine without surfacing the inference.
+- Refining a different skill than ${IMPLICIT_REFINE_TARGET} without re-running this router.
+EOF
+  exit 0
+fi
+
+if [ "$IMPLICIT_CREATE" -eq 1 ]; then
+  cat <<EOF
+INTENT=skill_create
+TARGET=
+CONFIDENCE=70
+TRIGGER_SOURCE=implicit_natural_language
+
+REQUIRED_ACTION=Offer the user to create a new skill. Your next tool call MUST be:
+  bun run meta/skill-author/scripts/elicit.ts --mode=create --message="\$(user message verbatim)" --message-stdin
+
+Before the elicit's first question, prepend ONE sentence acknowledging the inference (e.g. "Sounds like you'd want this saved as a skill so I'd do it automatically next time — want me to set that up? Takes about a minute, 4 quick questions."). If the user says no, abort the elicit and just handle the immediate request normally.
+
+BANNED_RESPONSES:
+- Silently starting the elicit without offering an opt-out.
+- Composing a normal reply WITHOUT first asking whether to save as a skill (we lose compounding value if we skip this step).
+EOF
+  exit 0
+fi
+
 # ── BOOKING CONFIRM ────────────────────────────────────────────
 # After state=confirm_ready, the user replies "confirm" / "yes book" /
 # "go ahead" / "please book" — route to book-reservation.py --submit

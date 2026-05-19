@@ -205,6 +205,103 @@ sync_openclaw_skills() {
 }
 step "sync openclaw/skills/" sync_openclaw_skills
 
+# ── 1d. sync user-skills/ → ~/.openclaw/workspace/skills/<name>/ ─
+# user-skills/ is the Telegram-authored skill overlay. It wins on every
+# name conflict against skills/ and openclaw/skills/ — see
+# identity/AGENTS.md → ## User-skills overlay. To enforce this on disk,
+# sync_user_skills() runs LAST (last-sync-wins). Also handles zombie
+# deletion: any directory under workspace/skills/ whose name was
+# previously synced by us but no longer exists in user-skills/ at HEAD
+# gets moved aside.
+sync_user_skills() {
+  local target="$HOME/.openclaw/workspace/skills"
+  local tracker="$HOME/.openclaw/.user-skills-managed.list"
+  if [ ! -d "$target" ]; then
+    echo "  ${yellow}!${rst} $target missing — skipping user-skills sync"
+    return 0
+  fi
+  if [ ! -d user-skills ]; then
+    echo "  user-skills/ not present in repo — nothing to sync"
+    user_skills_zombie_delete "$target" "$tracker" ""
+    return 0
+  fi
+  local copied=0
+  local current_names=""
+  for d in user-skills/*/; do
+    [ -f "${d}SKILL.md" ] || continue
+    local name="$(basename "$d")"
+    current_names="$current_names $name"
+    local skill_target="$target/$name"
+    mkdir -p "$skill_target"
+    # File allowlist mirrors safety-scan.ts: SKILL.md, eval.yaml, .usage.json only.
+    for f in SKILL.md eval.yaml .usage.json; do
+      [ -f "${d}$f" ] || continue
+      local dst="$skill_target/$f"
+      if [ ! -f "$dst" ] || ! cmp -s "${d}$f" "$dst"; then
+        [ -f "$dst" ] && cp "$dst" "$dst.bak.$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+        cp "${d}$f" "$dst"
+        copied=$((copied+1))
+      fi
+    done
+    # Reject any other file types in the source — keeps the workspace
+    # honest even if someone hand-edits user-skills/ outside the
+    # safety-scan path.
+    local stray
+    stray=$(find "$d" -mindepth 1 -maxdepth 1 -type f ! \( -name SKILL.md -o -name eval.yaml -o -name .usage.json \) 2>/dev/null | head -3)
+    if [ -n "$stray" ]; then
+      echo "  ${yellow}!${rst} user-skills/$name/ has disallowed file types — not syncing those:"
+      echo "$stray" | sed 's/^/    /'
+    fi
+  done
+  echo "  synced $copied user-skill file(s) → $target/"
+  user_skills_zombie_delete "$target" "$tracker" "$current_names"
+  printf '%s\n' $current_names > "$tracker"
+  return 0
+}
+
+user_skills_zombie_delete() {
+  local target="$1"
+  local tracker="$2"
+  local current_names="$3"
+  [ -f "$tracker" ] || return 0
+  local prev_names removed=0
+  prev_names=$(cat "$tracker" 2>/dev/null | tr '\n' ' ')
+  for n in $prev_names; do
+    [ -z "$n" ] && continue
+    if ! echo " $current_names " | grep -q " $n "; then
+      if [ -d "$target/$n" ]; then
+        local backup="$target/$n.zombie.$(date +%Y%m%d-%H%M%S)"
+        mv "$target/$n" "$backup" 2>/dev/null && {
+          echo "  ${yellow}-${rst} removed zombie user-skill $n (backup: $backup)"
+          removed=$((removed+1))
+        }
+      fi
+    fi
+  done
+  [ "$removed" -gt 0 ] && echo "  removed $removed zombie user-skill(s)"
+  return 0
+}
+step "sync user-skills/" sync_user_skills
+
+# ── 1e. pre-flight: verify openclaw-gateway supports graceful reload ─
+# If the unit has no ExecReload, deploys full-restart and kill in-flight
+# Telegram turns — surface that fact loudly so we know.
+check_gateway_reload() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "  ${yellow}!${rst} systemctl not available — skipping reload-capability check"
+    return 0
+  fi
+  local exec_reload
+  exec_reload=$(systemctl --user show openclaw-gateway --property=ExecReload 2>/dev/null | cut -d= -f2-)
+  if [ -z "$exec_reload" ]; then
+    echo "  ${yellow}!${rst} openclaw-gateway has no ExecReload — deploys will full-restart (kills in-flight Telegram turns)"
+  else
+    echo "  ${green}✓${rst} openclaw-gateway supports graceful reload"
+  fi
+  return 0
+}
+step "check gateway reload capability" check_gateway_reload
+
 # ── 2. sync smoke-tests ─────────────────────────────────────────
 step "sync ~/.gbrain/smoke-tests.d/" bash infra/sync-smoke-tests.sh
 
@@ -492,6 +589,30 @@ EOF
   echo "  wrote $file"
 }
 step "browser-harness systemd drop-in" install_bh_dropin
+
+# ── 4a. install skill-author kill-switch drop-in (T9) ─────────────
+# Wires infra/skill-authoring-killswitch.sh into openclaw-gateway's
+# ExecStartPre so a panic env var (SKILL_AUTHORING_PANIC=1) quarantines
+# user-skills/ on next restart without needing a manual mv. See script
+# header for usage.
+install_killswitch_dropin() {
+  local dir="$HOME/.config/systemd/user/openclaw-gateway.service.d"
+  local file="$dir/skill-authoring-killswitch.conf"
+  local script="$HOME/personal-assistant/infra/skill-authoring-killswitch.sh"
+  mkdir -p "$dir"
+  cat > "$file" <<EOF
+[Service]
+# Panic kill-switch: if SKILL_AUTHORING_PANIC=1, the script moves
+# user-skills/ aside before the daemon starts. Otherwise it's a no-op.
+# Documented in infra/skill-authoring-killswitch.sh header.
+ExecStartPre=$script
+# Also pass through the panic env var so the script can read it.
+PassEnvironment=SKILL_AUTHORING_PANIC
+EOF
+  systemctl --user daemon-reload
+  echo "  wrote $file"
+}
+step "skill-author kill-switch systemd drop-in" install_killswitch_dropin
 
 # ── 5. restart openclaw-gateway so AGENTS.md / SKILL.md changes take effect ─
 restart_gateway() {

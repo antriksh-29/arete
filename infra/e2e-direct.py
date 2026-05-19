@@ -174,11 +174,82 @@ def run_one(t: dict, default_timeout: int = 240) -> dict:
                 "failures": [f"timeout after {elapsed:.1f}s"], "reply_text": ""}
 
 
+ROUTE_ONLY_SYSTEM_PROMPT = (
+    "ROUTING-ONLY MODE: do NOT execute any skill. Do NOT compose a normal reply. "
+    "Do NOT call any tool other than this single response. "
+    "Inspect the user's message and respond with exactly one line: "
+    "`ROUTED_SKILL=<name>` where <name> is the SKILL.md folder name you "
+    "would invoke (e.g. `ingest-pdf`, `brain-ask`, `skill-author`), or "
+    "`ROUTED_SKILL=default` if no skill would route and you would compose "
+    "a freeform chat reply. Output ONLY that single line and nothing else."
+)
+
+
+def route_only(message: str, timeout: int = 30) -> tuple[str, float, str]:
+    """Ask the agent which skill it WOULD route to, without executing it.
+
+    Returns (skill_name, elapsed_seconds, raw_reply). skill_name is `"error"`
+    if the call failed or the reply didn't contain a ROUTED_SKILL line.
+    """
+    sid = f"route-only-{int(time.time() * 1000)}"
+    t0 = time.time()
+    try:
+        proc = subprocess.run(
+            ["openclaw", "agent",
+             "--system", ROUTE_ONLY_SYSTEM_PROMPT,
+             "--message", message,
+             "--session-id", sid,
+             "--json"],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        elapsed = time.time() - t0
+        if proc.returncode != 0:
+            return ("error", elapsed, f"exit {proc.returncode}: {proc.stderr.strip()[:200]}")
+        try:
+            d = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            return ("error", elapsed, f"non-JSON output: {proc.stdout[:200]}")
+        reply = extract_reply(d)
+        m = re.search(r"ROUTED_SKILL=([a-zA-Z0-9_./-]+)", reply)
+        if m:
+            return (m.group(1).strip(), elapsed, reply)
+        return ("error", elapsed, f"no ROUTED_SKILL in reply: {reply[:200]}")
+    except subprocess.TimeoutExpired:
+        elapsed = time.time() - t0
+        return ("error", elapsed, f"timeout after {elapsed:.1f}s")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", required=True, help="comma-separated test IDs or glob (brv-*)")
+    ap.add_argument("--only", help="comma-separated test IDs or glob (brv-*) — full e2e mode")
     ap.add_argument("--json", help="write full results JSON to this path")
+    # NEW: routing-eval support (used by meta/skill-author/scripts/routing-eval.ts).
+    # When --route-only is set, --only is ignored; --message is the utterance
+    # to classify. Output is a single JSON line: {"skill": "...", "elapsed_s": ..., "ok": true|false}
+    ap.add_argument("--route-only", action="store_true",
+                    help="ask the agent which skill it would route to, without executing")
+    ap.add_argument("--message", help="utterance to route (with --route-only)")
+    ap.add_argument("--timeout", type=int, default=30, help="seconds (route-only mode)")
     args = ap.parse_args()
+
+    # ── Route-only mode (single call) ─────────────────────────────
+    if args.route_only:
+        if not args.message:
+            print(json.dumps({"ok": False, "error": "--message required with --route-only"}))
+            return 2
+        skill, elapsed, raw = route_only(args.message, timeout=args.timeout)
+        ok = skill != "error"
+        print(json.dumps({
+            "ok": ok,
+            "skill": skill,
+            "elapsed_s": round(elapsed, 2),
+            "message": args.message,
+            "raw_excerpt": raw[:200] if not ok else None,
+        }))
+        return 0 if ok else 1
+
+    if not args.only:
+        ap.error("either --only (full mode) or --route-only + --message is required")
 
     tests = load_tests()
     by_id = {t["id"]: t for t in tests}

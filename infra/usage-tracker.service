@@ -1,0 +1,19 @@
+[Unit]
+Description=Alfred user-skills .usage.json tracker (tails Axiom log shipper output)
+After=openclaw-gateway.service
+PartOf=openclaw-gateway.service
+
+[Service]
+Type=simple
+# Tail the Axiom shipper's output log. The shipper writes structured
+# JSON lines including `[resolver] hit=user-skills/<slug>` events on
+# every skill resolver hit.
+Environment=LOG_PATH=%h/.brain-bootstrap-raw/logs/openclaw-gateway.log
+Environment=REPO_ROOT=%h/personal-assistant
+ExecStart=/usr/bin/env python3 %h/personal-assistant/infra/usage-tracker.py --tail ${LOG_PATH}
+Restart=on-failure
+RestartSec=5s
+# Keep this lightweight — no need for CPU/Mem quotas, it's a tail-and-write loop.
+
+[Install]
+WantedBy=default.target
