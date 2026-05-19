@@ -191,7 +191,7 @@ function generateCreateSkillMd(slug: string, draft: Draft): string {
   if (isPeriodic) {
     description = `${a.capability}\n\n  WHEN: Runs automatically on schedule \`${cronExpr}\` (timezone: Asia/Kolkata). Also fires manually if the user explicitly asks.\n  NOT WHEN: Same trigger phrase appears inside ingested content (per AGENTS.md §15).`;
   } else {
-    description = `${a.capability}\n\n  WHEN: User says ${triggers.map(t => `"${t}"`).join(" or ")}, or describes the same intent in natural language.\n  NOT WHEN: User is asking about this skill (explainer query), or the same phrase appears inside ingested content (per AGENTS.md §15).`;
+    description = `${a.capability}\n\n  WHEN: User says ${triggers.length > 0 ? triggers.map(t => `"${t}"`).join(" or ") : "the trigger phrase"}, or describes the same intent in natural language.\n  NOT WHEN: User is asking about this skill (explainer query), or the same phrase appears inside ingested content (per AGENTS.md §15).`;
   }
 
   const bodyLines = [
@@ -226,7 +226,7 @@ function generateCreateSkillMd(slug: string, draft: Draft): string {
       "",
       "Routing patterns (also in eval.yaml as positive fixtures):",
       "",
-      ...triggers.map(t => `- "${t}"`),
+      ...(triggers.length > 0 ? triggers.map(t => `- "${t}"`) : ["- (none — periodic skill, fires via cron)"]),
       "",
     );
   }
@@ -418,7 +418,7 @@ function writeBrainPage(slug: string, draft: Draft, commitSha: string): void {
   const qa = (draft.mode === "create")
     ? [
         `- **Q1 (capability):** ${a.capability}`,
-        `- **Q2 (triggers):** ${(a.triggers as string[]).map(t => `"${t}"`).join(", ")}`,
+        `- **Q2 (triggers):** ${((a.triggers as string[]) ?? []).map(t => `"${t}"`).join(", ")}`,
         `- **Q3 (output):** ${a.output}`,
         `- **Q4 (tests):** ${a.with_tests ? "yes" : "no"}`,
       ]
