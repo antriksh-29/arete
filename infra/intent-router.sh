@@ -244,6 +244,19 @@ if echo "$LMSG" | grep -qE "\b(save (this|that) as a skill|make (this|that) (int
 if echo "$LMSG" | grep -qE '\b(from now on|next time)\b.{0,80}\b(do|reply|send|always|include|make sure)\b'; then IMPLICIT_CREATE=1; fi
 if echo "$LMSG" | grep -qE '\balways (reply|respond|include|send|do)\b'; then IMPLICIT_CREATE=1; fi
 if echo "$LMSG" | grep -qE '\bremember to .{3,80}\b(every (day|morning|evening|week|hour)|when|whenever|always|next time)\b'; then IMPLICIT_CREATE=1; fi
+# Recurring-on-schedule: "send/give me X every morning|day|week"
+if echo "$LMSG" | grep -qE '\b(send|give|share|show|tell|remind|notify|email|message|text) me .{3,120}\b(every|daily|weekly|hourly|each)\s+(morning|evening|afternoon|night|day|week|month|hour|minute|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b'; then IMPLICIT_CREATE=1; fi
+# Front-loaded: "every <period>, send/give me X"
+if echo "$LMSG" | grep -qE '\bevery\s+(morning|evening|day|week|month|hour|monday|tuesday|wednesday|thursday|friday|saturday|sunday|night)\b.{0,80}(send|give|share|show|tell|remind|notify|email|message)\s+me\b'; then IMPLICIT_CREATE=1; fi
+# Time-anchored: "at <time>, send/give me X"
+if echo "$LMSG" | grep -qE '\bat\s+[0-9]{1,2}(:[0-9]{2})?\s*(am|pm)?\b.{0,80}(send|give|share|tell|remind|notify|email)\s+me\b'; then IMPLICIT_CREATE=1; fi
+# On-demand recurring (no time period): "give me X whenever/when I ask/say/want"
+# Catches "give me a cat fact whenever I ask" — the cat-fact / pg-mood pattern.
+if echo "$LMSG" | grep -qE '\b(give|send|share|show|tell|fetch|find|get|grab|pick) me .{3,120}\b(whenever|when|each time|any time|every time)\s+i\s+(ask|say|want|request|need|feel|type|message)'; then IMPLICIT_CREATE=1; fi
+# Trigger-action pairing: "when I say X, do Y"
+if echo "$LMSG" | grep -qE '\bwhen\s+i\s+(say|type|ask|tell|message)\b.{0,80}(reply|respond|send|give|share|tell|do|fetch|return)\b'; then IMPLICIT_CREATE=1; fi
+# Capability desire: "I want (you|a way|alfred) to ..."
+if echo "$LMSG" | grep -qE '\bi\s+want\s+(you to|a way to|something to|to be able|the bot to|alfred to|you|alfred)\b'; then IMPLICIT_CREATE=1; fi
 
 # --- Implicit refine signals (target a specific existing skill) ---
 # "the X skill should also ..." / "modify the X skill ..."
@@ -309,18 +322,21 @@ TARGET=
 CONFIDENCE=70
 TRIGGER_SOURCE=implicit_natural_language
 
-REQUIRED_ACTION=The user's natural-language message looks like a recurring/automatable request. Surface the inference and ask for confirmation in ONE short Telegram reply. Do NOT start the elicit yet — wait for the user's yes/no on the next turn.
+REQUIRED_ACTION=The user's natural-language message looks like a recurring/automatable request. Start the elicit IMMEDIATELY — no opt-in step. The user gets to confirm at the end via the draft-summary "Sound right?" prompt; if they say no there, the draft is discarded and no skill is created. This is simpler and less prone to "yes" being misclassified as something else.
 
 EXECUTION_RECIPE:
-1. Reply with EXACTLY this text (no other tool calls, no other text):
-   "Sounds like you'd want this saved as a skill so I'd do it automatically next time. Want me to set that up? (yes / no)"
-2. STOP. If the user replies "yes" on the next turn, send back \`/teach\` semantics — the next router pass will route their "yes" as no-active-draft + non-slash, which falls through; then YOU should ALSO immediately invoke elicit.ts --mode=create on the SAME turn the user said yes. (Implementation hint: if you see the user reply "yes" and your prior turn was this implicit-create opt-in, treat it as if they typed /teach.)
+1. Run EXACTLY this Bash command (no other tool calls, no preamble text):
+   ~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=create
+2. The script returns a single-line JSON envelope on stdout. Parse it.
+3. Take the envelope's \`user_message\` field VERBATIM. Send it as your Telegram reply.
+4. STOP. Q2..Q5 come on FUTURE turns once the user answers Q1.
 
 BANNED_RESPONSES:
-- Running elicit.ts directly without the confirmation step.
-- Composing a normal reply WITHOUT first asking whether to save as a skill (we lose compounding value).
-- Pre-filling answers from the user's original natural-language phrasing.
-- Reading source code instead of asking.
+- Composing an opt-in question — the elicit is the opt-in (user can say "cancel" at draft-summary).
+- Calling elicit.ts more than ONCE per turn.
+- Reading source code or "explaining" the pipeline.
+- Pre-filling answers from the user's natural-language phrasing — even though their message contains useful context, pass it through elicit which will ask the structured Q1 first.
+- Asking multiple questions in one reply.
 EOF
   exit 0
 fi
@@ -329,7 +345,7 @@ fi
 # After state=confirm_ready, the user replies "confirm" / "yes book" /
 # "go ahead" / "please book" — route to book-reservation.py --submit
 # so the script actually clicks the platform's final Continue/Submit.
-if echo "$LMSG" | grep -qE '^[[:space:]]*(confirm|yes\b|go ahead|book it|please book|submit it|do it)( - please book| please book| and book)?[[:space:]]*\.?\??!?[[:space:]]*$'; then
+if echo "$LMSG" | grep -qE '^[[:space:]]*(confirm( booking| it)?|yes book it|yes,? book it|book it|please book|submit it|submit booking|go ahead and book|do book it)[[:space:]]*\.?\??!?[[:space:]]*$'; then
   cat <<EOF
 INTENT=booking_confirm
 
