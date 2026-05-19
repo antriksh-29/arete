@@ -107,20 +107,78 @@ EOF
   exit 0
 fi
 
-# ── SKILL AUTHORING (T14 — implicit + explicit) ──────────────
-# Two routes:
-#   1. Explicit /teach or /refine <name> slash command.
-#   2. Implicit — natural language that signals "I want to create or
-#      modify a skill" (e.g. "I wish you would always...", "save this
-#      as a skill", "the X skill should also...").
+# ── SKILL AUTHORING (T14 — implicit + explicit + CONTINUE) ──────
+#
+# Three routes (in priority order):
+#   0. CONTINUE — there's an active draft from a previous turn with
+#      unanswered questions. The user's current message is the next
+#      answer. Route to elicit.ts --mode=ingest-answer.
+#   1. Explicit /teach or /refine <name> slash command — start fresh.
+#   2. Implicit — natural language signals (e.g. "I wish you would
+#      always...", "the X skill should also...").
 #
 # D7 firewall: this script is invoked by spawn-signal-detector.sh,
 # which is invoked by AGENTS.md Rule 0 — ONLY on direct Telegram user
-# turns. Ingested-content pipelines never reach this code path, so the
-# natural-language patterns below cannot be triggered by malicious
-# emails / calendar invites / web pages (see AGENTS.md §15).
+# turns. Ingested-content paths never reach this code path (per §15).
 
-# --- Explicit /teach ---
+# --- ROUTE 0: CONTINUE an active draft ---
+# An active draft is a JSON file under .context/skill-author-drafts/
+# with completed_questions count below the required threshold for
+# its mode (create: 5 questions, refine: 3 questions). The "latest"
+# active draft is the one with the most-recent updated_at timestamp.
+ACTIVE_DRAFT=""
+ACTIVE_DRAFT_MODE=""
+DRAFTS_DIR="$HOME/personal-assistant/.context/skill-author-drafts"
+if [ -d "$DRAFTS_DIR" ]; then
+  # Find any draft files modified in the last 30 minutes that aren't done.
+  while IFS= read -r f; do
+    [ -z "$f" ] || [ ! -f "$f" ] && continue
+    completed=$(jq -r '.completed_questions | length' "$f" 2>/dev/null || echo 0)
+    mode=$(jq -r '.mode' "$f" 2>/dev/null || echo "")
+    required=5
+    [ "$mode" = "refine" ] && required=3
+    if [ "$completed" -lt "$required" ] 2>/dev/null; then
+      ACTIVE_DRAFT="$(basename "$f" .json)"
+      ACTIVE_DRAFT_MODE="$mode"
+      break
+    fi
+  done < <(find "$DRAFTS_DIR" -name '*.json' -mmin -30 -printf '%T@ %p\n' 2>/dev/null \
+           | sort -rn | awk '{print $2}')
+fi
+
+# If we found an active draft, ANY non-slash-command message from the
+# user is the next answer. Slash commands (/teach, /refine, /cancel)
+# still take precedence below.
+if [ -n "$ACTIVE_DRAFT" ] && ! echo "$LMSG" | grep -qE '^[[:space:]]*/(teach|refine|cancel|abort|stop)\b'; then
+  # Escape double-quotes in the message for shell safety in the recipe.
+  ESCAPED_MSG=$(printf '%s' "$MSG" | sed 's/"/\\"/g')
+  cat <<EOF
+INTENT=skill_authoring_continue
+DRAFT_SLUG=${ACTIVE_DRAFT}
+DRAFT_MODE=${ACTIVE_DRAFT_MODE}
+CONFIDENCE=100
+TRIGGER_SOURCE=active_draft_continue
+
+REQUIRED_ACTION=The user has an active skill-authoring draft. Their current message is the next answer. Your ONLY action this turn is to run elicit.ts in ingest-answer mode. Do NOT compose any text reply. Do NOT pre-fill any other answers. Do NOT analyze source code. Do NOT interpret the message — pass it through as-is.
+
+EXECUTION_RECIPE:
+1. Run EXACTLY this Bash command (no other tool calls):
+   ~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=ingest-answer --slug=${ACTIVE_DRAFT} --message="${ESCAPED_MSG}"
+2. The script returns a single-line JSON envelope on stdout. Parse it.
+3. Take the envelope's \`user_message\` field VERBATIM. Send it as your Telegram reply.
+4. STOP. Do not append explanations, summaries, or interpretations.
+
+BANNED_RESPONSES:
+- ANY reply that doesn't include the elicit.ts tool call above.
+- Inventing your own next question, summary, or interpretation of the user's answer.
+- Pre-filling other fields you "infer" from context (e.g. assuming "daily 8am" implies a specific output format).
+- Reading or analyzing the source code of elicit.ts / commit-and-deploy.ts / safety-scan.ts — the user is mid-conversation and is waiting for you to PROCESS their answer, not REVIEW your codebase.
+- Skipping ahead — even if the user gave a verbose answer that "contains" answers to later questions, pass it to elicit ONCE and let the state machine decide what to ask next.
+EOF
+  exit 0
+fi
+
+# --- ROUTE 1a: Explicit /teach ---
 if echo "$LMSG" | grep -qE '^[[:space:]]*/teach\b'; then
   cat <<EOF
 INTENT=skill_create
@@ -128,15 +186,26 @@ TARGET=
 CONFIDENCE=100
 TRIGGER_SOURCE=explicit_slash_command
 
-REQUIRED_ACTION=Start the elicit flow. Your next tool call MUST be:
-  ~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=create
+REQUIRED_ACTION=Start a brand-new skill-create elicit. Your ONLY action this turn is to run elicit.ts ONCE. Do NOT compose any text reply yourself. Do NOT pre-fill any answers. Do NOT analyze source code. The user clicked /teach so they want to start fresh — start the elicit, get Q1 back, relay it.
 
-The script returns a JSON envelope; relay the user_message field verbatim.
+EXECUTION_RECIPE:
+1. Run EXACTLY this Bash command (no other tool calls):
+   ~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=create
+2. The script returns a single-line JSON envelope on stdout. Parse it.
+3. Take the envelope's \`user_message\` field VERBATIM. Send it as your Telegram reply.
+4. STOP. The remaining questions (Q2, Q3, …) come on FUTURE turns once the user answers Q1.
+
+BANNED_RESPONSES:
+- Composing your own version of Q1 instead of running elicit.ts.
+- Calling elicit.ts more than ONCE per turn.
+- Reading the elicit.ts source code or "explaining" the pipeline to the user.
+- Pre-filling answers based on prior turns or session memory — /teach means start fresh.
+- Asking multiple questions in one reply.
 EOF
   exit 0
 fi
 
-# --- Explicit /refine <name> ---
+# --- ROUTE 1b: Explicit /refine <name> ---
 REFINE_TARGET=$(echo "$MSG" | grep -oiE '^[[:space:]]*/refine[[:space:]]+([a-z0-9_-]+)' | head -1 | awk '{print $NF}')
 if [ -n "$REFINE_TARGET" ]; then
   cat <<EOF
@@ -145,10 +214,19 @@ TARGET=${REFINE_TARGET}
 CONFIDENCE=100
 TRIGGER_SOURCE=explicit_slash_command
 
-REQUIRED_ACTION=Start the refine elicit. Your next tool call MUST be:
-  ~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=refine --target=${REFINE_TARGET}
+REQUIRED_ACTION=Start the refine elicit for skill ${REFINE_TARGET}. Your ONLY action this turn is to run elicit.ts ONCE.
 
-The script returns a JSON envelope; relay the user_message field verbatim.
+EXECUTION_RECIPE:
+1. Run EXACTLY this Bash command (no other tool calls):
+   ~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=refine --target=${REFINE_TARGET}
+2. The script returns a single-line JSON envelope on stdout. Parse it.
+3. Take the envelope's \`user_message\` field VERBATIM. Send it as your Telegram reply.
+4. STOP. R2, R3 come on future turns once the user answers R1.
+
+BANNED_RESPONSES:
+- Composing your own version of R1.
+- Reading the source SKILL.md and "summarizing" it instead of running elicit.
+- Pre-filling answers from session memory.
 EOF
   exit 0
 fi
@@ -208,14 +286,18 @@ TARGET=${IMPLICIT_REFINE_TARGET}
 CONFIDENCE=75
 TRIGGER_SOURCE=implicit_natural_language
 
-REQUIRED_ACTION=Offer the user to refine \`${IMPLICIT_REFINE_TARGET}\`. Your next tool call MUST be:
-  ~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=refine --target=${IMPLICIT_REFINE_TARGET}
+REQUIRED_ACTION=The user's natural-language message looks like they want to refine \`${IMPLICIT_REFINE_TARGET}\`. Surface the inference and ask for confirmation in ONE short Telegram reply. Do NOT start the elicit yet — wait for the user's yes/no on the next turn.
 
-Before the elicit's first question, prepend ONE sentence asking the user to confirm they want to modify that skill (e.g. "Sounds like you want to tweak \`${IMPLICIT_REFINE_TARGET}\` — want me to walk through a quick refine?"). If the user says no, abort and compose a normal reply.
+EXECUTION_RECIPE:
+1. Reply with EXACTLY this text (no other tool calls, no other text):
+   "Sounds like you want to tweak \`${IMPLICIT_REFINE_TARGET}\` — want me to walk through a quick refine? (yes / no)"
+2. STOP. If the user replies "yes" on the next turn, they should type \`/refine ${IMPLICIT_REFINE_TARGET}\` OR the router will catch their next message as an active-draft continuation if any draft happens to exist.
 
 BANNED_RESPONSES:
-- Silently starting the refine without surfacing the inference.
-- Refining a different skill than ${IMPLICIT_REFINE_TARGET} without re-running this router.
+- Running elicit.ts directly without the confirmation step.
+- Refining a different skill than ${IMPLICIT_REFINE_TARGET}.
+- Pre-filling the user's intended diff from their original phrasing.
+- Reading source code instead of asking.
 EOF
   exit 0
 fi
@@ -227,14 +309,18 @@ TARGET=
 CONFIDENCE=70
 TRIGGER_SOURCE=implicit_natural_language
 
-REQUIRED_ACTION=Offer the user to create a new skill. Your next tool call MUST be:
-  ~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=create
+REQUIRED_ACTION=The user's natural-language message looks like a recurring/automatable request. Surface the inference and ask for confirmation in ONE short Telegram reply. Do NOT start the elicit yet — wait for the user's yes/no on the next turn.
 
-Before the elicit's first question, prepend ONE sentence acknowledging the inference (e.g. "Sounds like you'd want this saved as a skill so I'd do it automatically next time — want me to set that up? Takes about a minute, 4 quick questions."). If the user says no, abort the elicit and just handle the immediate request normally.
+EXECUTION_RECIPE:
+1. Reply with EXACTLY this text (no other tool calls, no other text):
+   "Sounds like you'd want this saved as a skill so I'd do it automatically next time. Want me to set that up? (yes / no)"
+2. STOP. If the user replies "yes" on the next turn, send back \`/teach\` semantics — the next router pass will route their "yes" as no-active-draft + non-slash, which falls through; then YOU should ALSO immediately invoke elicit.ts --mode=create on the SAME turn the user said yes. (Implementation hint: if you see the user reply "yes" and your prior turn was this implicit-create opt-in, treat it as if they typed /teach.)
 
 BANNED_RESPONSES:
-- Silently starting the elicit without offering an opt-out.
-- Composing a normal reply WITHOUT first asking whether to save as a skill (we lose compounding value if we skip this step).
+- Running elicit.ts directly without the confirmation step.
+- Composing a normal reply WITHOUT first asking whether to save as a skill (we lose compounding value).
+- Pre-filling answers from the user's original natural-language phrasing.
+- Reading source code instead of asking.
 EOF
   exit 0
 fi

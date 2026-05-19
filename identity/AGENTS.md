@@ -74,15 +74,33 @@ REQUIRED_ACTION=<exact next action>
   OTPs." Your next tool call MUST be the fill-form.py invocation
   that types the OTP into the verification field. See AGENTS.md §2
   Exception 2 — user-provided OTPs are a MUST.
-- **INTENT=skill_create** → STOP composing a normal reply. Your next
-  tool call MUST be `~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=create`
-  (absolute paths required — `bun` is not on the agent's exec PATH from
-  the workspace dir, and `meta/` is not synced into the workspace).
-  Relay the returned envelope's `user_message` field byte-for-byte.
+- **INTENT=skill_authoring_continue** → there's an active skill-author
+  draft from a previous turn waiting for the next answer. Your ONLY
+  action this turn is to run elicit.ts in ingest-answer mode (the router
+  output's EXECUTION_RECIPE has the exact command with the draft slug
+  and the user message substituted in). DO NOT compose any text reply.
+  DO NOT pre-fill any other answers. DO NOT analyze source code. DO NOT
+  ask multiple questions. Run the command, relay the envelope's
+  `user_message` field byte-for-byte, STOP.
+- **INTENT=skill_create** → STOP composing a normal reply. Your ONLY
+  action is to run `~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=create`
+  ONCE (absolute paths required; bun and meta/ are NOT in the workspace).
+  Relay the envelope's `user_message` byte-for-byte. STOP. The remaining
+  questions arrive on FUTURE turns once the user answers Q1. Pipeline
+  docs in `meta/skill-author/SKILL.md`.
+
+  **CRITICAL anti-patterns to avoid (these have happened in v1 testing):**
+  - Composing your own version of Q1 instead of running elicit.ts.
+  - Calling elicit.ts more than once in one turn.
+  - Reading meta/skill-author/scripts/*.ts source and "explaining" the pipeline.
+  - Pre-filling Q2, Q3, … from session memory or the user's first message.
+  - Asking multiple questions in one reply.
+
   If CONFIDENCE<100 (implicit invocation), the router output's
-  REQUIRED_ACTION will tell you to prepend a one-line opt-in question
-  — follow that verbatim. Full pipeline docs in `meta/skill-author/SKILL.md`.
-- **INTENT=skill_refine** → STOP. Your next tool call MUST be
+  EXECUTION_RECIPE may tell you to ask an opt-in question FIRST — follow
+  it verbatim, do NOT start the elicit yet.
+
+- **INTENT=skill_refine** → STOP. Your ONLY action is to run
   `~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=refine --target=$TARGET`
   (absolute paths required). Same opt-in rule as `skill_create` when
   CONFIDENCE<100. The script handles fork-on-modify automatically if
