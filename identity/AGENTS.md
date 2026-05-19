@@ -75,17 +75,16 @@ REQUIRED_ACTION=<exact next action>
   that types the OTP into the verification field. See AGENTS.md §2
   Exception 2 — user-provided OTPs are a MUST.
 - **INTENT=skill_create** → STOP composing a normal reply. Your next
-  tool call MUST be `bun run meta/skill-author/scripts/elicit.ts
-  --mode=create --message-stdin` (the user's verbatim message is piped
-  via stdin). Relay the returned envelope's `user_message` field
-  byte-for-byte. If CONFIDENCE<100 (i.e. implicit invocation), the
-  router output's REQUIRED_ACTION will tell you to prepend a one-line
-  opt-in question — follow that verbatim. The full skill-author
-  pipeline (elicit → safety → routing → commit → deploy) is documented
-  in `meta/skill-author/SKILL.md`.
-- **INTENT=skill_refine** → STOP. Your next tool call MUST be `bun run
-  meta/skill-author/scripts/elicit.ts --mode=refine
-  --target=$TARGET`. Same opt-in rule as `skill_create` when
+  tool call MUST be `~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=create`
+  (absolute paths required — `bun` is not on the agent's exec PATH from
+  the workspace dir, and `meta/` is not synced into the workspace).
+  Relay the returned envelope's `user_message` field byte-for-byte.
+  If CONFIDENCE<100 (implicit invocation), the router output's
+  REQUIRED_ACTION will tell you to prepend a one-line opt-in question
+  — follow that verbatim. Full pipeline docs in `meta/skill-author/SKILL.md`.
+- **INTENT=skill_refine** → STOP. Your next tool call MUST be
+  `~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=refine --target=$TARGET`
+  (absolute paths required). Same opt-in rule as `skill_create` when
   CONFIDENCE<100. The script handles fork-on-modify automatically if
   `$TARGET` is in `skills/` or `openclaw/skills/` rather than
   `user-skills/` — you do not need to know which tier the source lives

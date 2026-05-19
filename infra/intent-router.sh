@@ -129,7 +129,7 @@ CONFIDENCE=100
 TRIGGER_SOURCE=explicit_slash_command
 
 REQUIRED_ACTION=Start the elicit flow. Your next tool call MUST be:
-  bun run meta/skill-author/scripts/elicit.ts --mode=create --message="\$(remainder of the user message after /teach, if any)" --message-stdin
+  ~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=create
 
 The script returns a JSON envelope; relay the user_message field verbatim.
 EOF
@@ -146,7 +146,7 @@ CONFIDENCE=100
 TRIGGER_SOURCE=explicit_slash_command
 
 REQUIRED_ACTION=Start the refine elicit. Your next tool call MUST be:
-  bun run meta/skill-author/scripts/elicit.ts --mode=refine --target=${REFINE_TARGET}
+  ~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=refine --target=${REFINE_TARGET}
 
 The script returns a JSON envelope; relay the user_message field verbatim.
 EOF
@@ -209,7 +209,7 @@ CONFIDENCE=75
 TRIGGER_SOURCE=implicit_natural_language
 
 REQUIRED_ACTION=Offer the user to refine \`${IMPLICIT_REFINE_TARGET}\`. Your next tool call MUST be:
-  bun run meta/skill-author/scripts/elicit.ts --mode=refine --target=${IMPLICIT_REFINE_TARGET}
+  ~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=refine --target=${IMPLICIT_REFINE_TARGET}
 
 Before the elicit's first question, prepend ONE sentence asking the user to confirm they want to modify that skill (e.g. "Sounds like you want to tweak \`${IMPLICIT_REFINE_TARGET}\` — want me to walk through a quick refine?"). If the user says no, abort and compose a normal reply.
 
@@ -228,7 +228,7 @@ CONFIDENCE=70
 TRIGGER_SOURCE=implicit_natural_language
 
 REQUIRED_ACTION=Offer the user to create a new skill. Your next tool call MUST be:
-  bun run meta/skill-author/scripts/elicit.ts --mode=create --message="\$(user message verbatim)" --message-stdin
+  ~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=create
 
 Before the elicit's first question, prepend ONE sentence acknowledging the inference (e.g. "Sounds like you'd want this saved as a skill so I'd do it automatically next time — want me to set that up? Takes about a minute, 4 quick questions."). If the user says no, abort the elicit and just handle the immediate request normally.
 
