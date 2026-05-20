@@ -256,6 +256,15 @@ sync_user_skills() {
   echo "  synced $copied user-skill file(s) → $target/"
   user_skills_zombie_delete "$target" "$tracker" "$current_names"
   printf '%s\n' $current_names > "$tracker"
+
+  # Regenerate the skill roster so the audit daemon knows the new
+  # expected sha256 hashes for each user-skill file. The daemon
+  # picks this up on its next pass (within seconds).
+  if [ -x "$HOME/personal-assistant/infra/skill-roster.py" ]; then
+    REPO="$HOME/personal-assistant" python3 "$HOME/personal-assistant/infra/skill-roster.py" >/dev/null 2>&1 \
+      && echo "  refreshed skill-roster.json" \
+      || echo "  ${yellow}!${rst} skill-roster.py failed — audit may flag false drifts until next regen"
+  fi
   return 0
 }
 

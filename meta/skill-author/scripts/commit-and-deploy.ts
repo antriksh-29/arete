@@ -616,6 +616,23 @@ async function main() {
     });
   }
 
+  // Refresh the skill-roster snapshot. The new SKILL.md/eval.yaml will
+  // arrive in workspace on the next sync_user_skills() run (triggered
+  // by the GH Actions deploy). Until then, the workspace still has the
+  // OLD content and the audit daemon must not flag that as drift —
+  // refreshing the roster after the commit (but before the workspace
+  // sync) gives a one-iteration window where workspace lags roster.
+  // That's safe because the audit reverts to the REPO file content,
+  // which now matches the roster, so the workspace gets the new
+  // content slightly early. Either way, no false-positive Telegram
+  // warning fires.
+  try {
+    const rosterScript = join(REPO_ROOT, "infra", "skill-roster.py");
+    Bun.spawnSync({ cmd: ["python3", rosterScript], env: { ...process.env, REPO: REPO_ROOT } });
+  } catch {
+    // best-effort — roster will be regenerated at next deploy anyway
+  }
+
   // 5. Deploy is async (GH Actions takes over). The user-facing message
   // is intentionally minimal — "Creating this new skill for you. Please
   // wait for 1–2 min." was already shown by safety-scan.ts. The user
