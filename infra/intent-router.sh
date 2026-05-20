@@ -261,6 +261,25 @@ if echo "$LMSG" | grep -qE '\bat\s+[0-9]{1,2}(:[0-9]{2})?\s*(am|pm)?\b.{0,80}(se
 # On-demand recurring (no time period): "give me X whenever/when I ask/say/want"
 # Catches "give me a cat fact whenever I ask" — the cat-fact / pg-mood pattern.
 if echo "$LMSG" | grep -qE '\b(give|send|share|show|tell|fetch|find|get|grab|pick) me .{3,120}\b(whenever|when|each time|any time|every time)\s+i\s+(ask|say|want|request|need|feel|type|message)'; then IMPLICIT_CREATE=1; fi
+
+# "I'd like / I want / I need / I would love" + periodic time hint anywhere
+# in the message — covers verb-less recurring-content asks like
+# "I'd like a daily Steve Jobs random fact in the morning".
+if echo "$LMSG" | grep -qE "\bi('d| would)?[[:space:]]+(like|want|need|love)\b.{3,120}\b(daily|weekly|hourly|every[[:space:]]+(morning|evening|day|week|hour|night|afternoon|monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b"; then IMPLICIT_CREATE=1; fi
+
+# "N times a day/week/hour" / "X times daily" — explicit frequency = recurring.
+if echo "$LMSG" | grep -qE "\b[0-9]+[[:space:]]*(times?|x)[[:space:]]+(a|per|each)[[:space:]]+(day|week|hour|morning|evening)\b"; then IMPLICIT_CREATE=1; fi
+
+# Periodic time hint paired with a content-type noun anywhere in the
+# message (fact, quote, insight, tip, summary, briefing, reminder,
+# update, joke, lesson, idea, nugget, wisdom, essay, story, prompt,
+# challenge, advice, thought, takeaway). Catches both orderings:
+#   "a daily Paul Graham insight"
+#   "Paul Graham insight every morning"
+NOUN_RE='(fact|quote|insight|insights|tip|tips|summary|briefing|reminder|update|joke|lesson|idea|ideas|nugget|wisdom|essay|story|prompt|challenge|advice|thought|takeaway|takeaways|saying|maxim|aphorism)'
+TIME_RE='(daily|weekly|hourly|every[[:space:]]+(morning|evening|day|week|hour|night|afternoon|monday|tuesday|wednesday|thursday|friday|saturday|sunday))'
+if echo "$LMSG" | grep -qE "\b${TIME_RE}\b.{0,80}\b${NOUN_RE}\b"; then IMPLICIT_CREATE=1; fi
+if echo "$LMSG" | grep -qE "\b${NOUN_RE}\b.{0,40}\b${TIME_RE}\b"; then IMPLICIT_CREATE=1; fi
 # Trigger-action pairing: "when I say X, do Y"
 if echo "$LMSG" | grep -qE '\bwhen\s+i\s+(say|type|ask|tell|message)\b.{0,80}(reply|respond|send|give|share|tell|do|fetch|return)\b'; then IMPLICIT_CREATE=1; fi
 # Capability desire: "I want (you|a way|alfred) to ..."
@@ -339,12 +358,18 @@ EXECUTION_RECIPE:
 3. Take the envelope's \`user_message\` field VERBATIM. Send it as your Telegram reply.
 4. STOP. Q2..Q5 come on FUTURE turns once the user answers Q1.
 
-BANNED_RESPONSES:
+If the envelope says "You have an unfinished draft from … Continue where we left off, or start fresh?" — that is the elicit script's normal resume prompt. RELAY IT VERBATIM and STOP. Do NOT decide "the pipeline is stuck" and write user-skills/ files yourself. The pipeline is NOT stuck — it is waiting for the user to choose "continue" or "start fresh". Your only job is to relay and wait.
+
+BANNED_RESPONSES (these failure modes have been observed in production — do not repeat them):
 - Composing an opt-in question — the elicit is the opt-in (user can say "cancel" at draft-summary).
 - Calling elicit.ts more than ONCE per turn.
 - Reading source code or "explaining" the pipeline.
 - Pre-filling answers from the user's natural-language phrasing — even though their message contains useful context, pass it through elicit which will ask the structured Q1 first.
 - Asking multiple questions in one reply.
+- **Writing SKILL.md, eval.yaml, or anything under \`user-skills/\` / \`~/.openclaw/workspace/user-skills/\` via raw \`exec\` commands.** The ONLY component allowed to write user-skills files is \`meta/skill-author/scripts/commit-and-deploy.ts\`, which runs after safety-scan + routing-eval + brain-page + git-commit + push + GitHub Actions. Direct exec writes bypass every gate, leave no commit, never trigger the deploy callback, and the file gets clobbered on the next deploy. If you find yourself reaching for \`cat > user-skills/<x>/SKILL.md\`, STOP and run the elicit instead.
+- **Saying "Done. Skill created at …" or "🎉 Live" before \`commit-and-deploy.ts\` has actually pushed to GitHub and the deploy callback has fired.** Only the deploy-callback hook is allowed to send those phrases.
+- **Declaring "the pipeline is stuck" / "the elicit is stuck in a draft resume loop" / "let me create this directly".** None of these are valid escape hatches. If the envelope returns a phase you don't recognize, relay its user_message verbatim and let the next user message drive the next step.
+- **Composing a fake schedule table** (e.g. a "| Time | What |" cron lineup) without actually running the cron-list / skill-list tools. If the user asks "what's my schedule", run the appropriate tool; don't hallucinate the rows.
 EOF
   exit 0
 fi
