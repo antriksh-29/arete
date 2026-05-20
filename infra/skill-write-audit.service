@@ -1,0 +1,19 @@
+[Unit]
+Description=Skill-write audit daemon (reverts rogue writes to skills/* not tracked by git)
+After=openclaw-gateway.service
+PartOf=openclaw-gateway.service
+
+[Service]
+Type=simple
+ExecStart=%h/personal-assistant/infra/skill-write-audit.sh --watch
+Restart=on-failure
+RestartSec=3s
+StartLimitIntervalSec=60
+StartLimitBurst=5
+StandardOutput=journal
+StandardError=journal
+Environment=REPO=%h/personal-assistant
+Environment=WORKSPACE=%h/.openclaw/workspace
+
+[Install]
+WantedBy=default.target

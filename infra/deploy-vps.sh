@@ -629,6 +629,53 @@ point_moonshot_to_proxy() {
 }
 step "point Moonshot baseUrl at proxy" point_moonshot_to_proxy
 
+# ── 4c. install skill-write-audit daemon ───────────────────────
+# Structural enforcement for the skill-author pipeline. Watches the
+# skill directories (repo + workspace) and reverts any SKILL.md /
+# eval.yaml file that isn't tracked by git. This is the defense
+# against the recurring "Kimi runs `cat > skills/X/SKILL.md` via
+# raw exec and fabricates a 'Done. Created…' reply" failure mode
+# documented in PR #108, #109. Prompt-level BANNED_RESPONSES kept
+# being routed around by the model; this is the structural fix.
+# Idempotent: only restarts when the script or unit changed.
+install_skill_write_audit() {
+  local script_src="$HOME/personal-assistant/infra/skill-write-audit.sh"
+  local unit_src="$HOME/personal-assistant/infra/skill-write-audit.service"
+  local unit_dst="$HOME/.config/systemd/user/skill-write-audit.service"
+  if [ ! -f "$script_src" ] || [ ! -f "$unit_src" ]; then
+    echo "  ${yellow}!${rst} skill-write-audit files not in repo — skipping"
+    return 0
+  fi
+  # inotifywait is needed for the watch mode; install if missing.
+  if ! command -v inotifywait >/dev/null 2>&1; then
+    echo "  installing inotify-tools (needed for skill-write-audit)"
+    sudo apt-get install -y inotify-tools >/dev/null 2>&1 || \
+      echo "  ${yellow}!${rst} couldn't install inotify-tools — audit will poll every 5s instead"
+  fi
+  mkdir -p "$(dirname "$unit_dst")"
+  local changed=0
+  if [ ! -f "$unit_dst" ] || ! cmp -s "$unit_src" "$unit_dst"; then
+    cp "$unit_src" "$unit_dst"
+    systemctl --user daemon-reload
+    echo "  installed/updated skill-write-audit.service"
+    changed=1
+  fi
+  if ! systemctl --user is-enabled skill-write-audit.service >/dev/null 2>&1; then
+    systemctl --user enable skill-write-audit.service
+    changed=1
+  fi
+  if [ "$changed" = "1" ] || ! systemctl --user is-active skill-write-audit.service >/dev/null 2>&1; then
+    systemctl --user restart skill-write-audit.service 2>/dev/null || true
+    sleep 1
+  fi
+  if systemctl --user is-active skill-write-audit.service >/dev/null 2>&1; then
+    echo "  ${green}✓${rst} skill-write-audit watching skill dirs (rogue writes revert within seconds)"
+  else
+    echo "  ${yellow}!${rst} skill-write-audit not active — check journalctl --user -u skill-write-audit"
+  fi
+}
+step "install skill-write-audit daemon" install_skill_write_audit
+
 install_bh_dropin() {
   local dir="$HOME/.config/systemd/user/openclaw-gateway.service.d"
   local file="$dir/browser-harness.conf"
