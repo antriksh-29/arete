@@ -116,6 +116,14 @@ DESIRED=(
   # agent on the Telegram channel.
   "tools.alsoAllow=[\"exec\",\"process\"]"
 
+  # tools.deny ← ["composio__COMPOSIO_REMOTE_WORKBENCH"] (set 2026-05-20 as
+  # part of Thin-Harness-Fat-Skills cost reduction). WORKBENCH ships a
+  # ~10.5KB JSON schema on every model turn (largest single tool in the
+  # tools array) and we never call it — the other Composio tools cover
+  # our workflows. Denying it shaves ~21% off the per-turn tools payload
+  # without touching the rest of the Composio surface.
+  "tools.deny=[\"composio__COMPOSIO_REMOTE_WORKBENCH\"]"
+
 )
 
 # messages.messagePrefix — managed as a here-string so multi-line is

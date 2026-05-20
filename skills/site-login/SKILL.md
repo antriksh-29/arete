@@ -51,6 +51,13 @@ the target site's own session management page at any time.
 - ToS-friendlier — most sites' anti-credential-sharing clauses don't
   apply to your own session cookies.
 
+**Password-paste login is NOT supported.** If the user asks to "login
+with my password", point them at the cookie path and explain this
+threat model. **Don't recommend browser extensions** ("Get cookies.txt
+LOCALLY", "Cookie-Editor", "EditThisCookie") as the primary path —
+the F12 Network tab path is extension-free and is what we want users
+to use.
+
 ## Interactive flow on Telegram
 
 ```

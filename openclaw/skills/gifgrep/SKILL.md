@@ -33,6 +33,9 @@ upstream: openclaw/openclaw@v2026.5.12 skills/gifgrep
 with titles + direct URLs. Relay verbatim. Do not apologize that you can't
 search GIFs.
 
+If the script exits with `ABORT: KLIPY_API_KEY missing`, tell the user the
+key needs to be added to the vault — don't pretend you can't search.
+
 For TUI / download / still / sheet workflows, fall through to the upstream
 binary directly per the reference below.
 

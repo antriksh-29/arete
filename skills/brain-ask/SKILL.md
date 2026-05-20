@@ -62,3 +62,43 @@ prompt is unchanged — don't add it for plain Q&A.
 JSON envelope on stdout with `user_message`. Relay verbatim. The
 trailing `📎 source: <slug>` line is part of `user_message` — do
 NOT strip it (RULE 0.7 byte-for-byte).
+
+## Disambiguation — search vs ask vs ask-persona
+
+brain-search, brain-ask, and brain-ask --persona look superficially
+similar (all touch brain content + return prose) but answer different
+question shapes. A 2026-05-14 probe caught the agent running
+`brain-ask --persona` for "find articles about ambition in my brain" —
+that should have been brain-search. Hard distinction:
+
+| User wants… | Means → | Route to |
+|---|---|---|
+| **A list of brain pages** about a topic ("find articles", "what's in my brain about X", "search for Y", "show me everything on Z") — answer is plural, multi-source | discovery | `brain-search.py` |
+| **Quotes / takeaways / summary from ONE named source** ("what does Nishank say", "quote the takeaways", "summarize Tobi's thread") — answer is singular, source-anchored | single-page Q&A | `brain-ask.py` (no --persona) |
+| **Calibrated explanation of ONE named source to the user's context** ("explain X in my context", "given my background, what should I take from X") — singular + reader-frame | persona-Q&A | `brain-ask.py --persona` |
+
+**Banned first action:** routing a search intent (plural, multi-source)
+to `brain-ask`. Even if the user says "find articles about Nishank's
+view on ambition", the answer shape is "here are the matching brain
+pages", not "here's a calibrated explanation of one of them". When in
+doubt, brain-search; the result list lets the user follow up with
+"tell me more about #2" which IS a brain-ask intent.
+
+**Banned phrase patterns for `--persona`** when phrasing is plural:
+
+- *"find articles about X in my brain"* → never persona-ask, always brain-search.
+- *"what's in my brain about X"* → never persona-ask.
+- *"what was I reading about X last week"* → `brain-search.py "X" --since YYYY-MM-DD`.
+
+`--persona` is a single-source modifier. If you don't have a single
+source in mind, you don't have a persona-ask.
+
+## brain-ask works for ALL bookmark kinds
+
+X tweets, YouTube videos, PDFs, HTML articles — they all have brain
+pages and (when browser-harness ran successfully at ingest) raw
+sidecars at `~/.brain/_raw/<slug>.raw.txt`. Don't refuse with "I don't
+have the article text" or "paste the thread text or a screenshot" —
+brain-ask.py reads the raw sidecar; run it. Only if it returns
+`ok: false` with `reason: not_found` may you ask the user for the
+source.
