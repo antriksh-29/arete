@@ -49,6 +49,14 @@ persistent headless Chrome lives in the `bh-chrome.service` systemd user
 unit (CDP on 127.0.0.1:9222, persistent user-data dir at
 `~/.browser-harness/chrome-data` so cookies survive restarts).
 
+**HARD RULE — frozen by `docs/ADR-001-browser-stack.md` (2026-05-18).**
+browser-harness is primary; Composio Browser is fallback ONLY after 3
+consecutive failures on the same site. No third browser. The browser is
+INSTALLED and the Chrome service is RUNNING — never reply "the browser
+isn't running", "I can't fetch that", or "system permission / sandbox
+issues". Those are stale-memory hallucinations from the old
+openclaw-browser path (removed in PR #28). The browser works. Run it.
+
 The browser-harness git clone lives at `~/.browser-harness/repo/` and is
 installed editable — any edits to `agent-workspace/agent_helpers.py` or
 `domain-skills/<site>/*.md` survive across invocations and compound over

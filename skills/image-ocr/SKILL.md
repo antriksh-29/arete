@@ -43,6 +43,11 @@ about its content, the agent should:
 
 1. Get the image onto disk (Telegram getFile API → file_path → download
    to /tmp/), OR pass the URL directly if the message contains one.
+   If the user message contains the `[media attached: <path> (image/…)]`
+   tag (the gateway inserts this for inline image attachments), extract
+   the path between `[media attached: ` and ` (image/` — that's the
+   disk path; use it directly. Append the user's full text as a second
+   arg when they asked a question alongside the image.
 2. Run:
    ```bash
    python3 ~/bin/image-ocr.py <path-or-url> [optional user question]

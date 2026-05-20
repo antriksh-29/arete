@@ -43,6 +43,38 @@ go through `~/bin/reading-list.py` — never edit the page directly, never
 improvise. The script handles brain page rebuild + git commit so data
 lands in disk + git + R2 backup.
 
+## HARD ROUTING RULE — save/bookmark intent NEVER triggers /site-login
+
+When the user pairs ANY URL with a save / bookmark / read-later /
+"go through this article" / "summarize and store" / "add to reading
+list" / "store it in brain" intent — the ONLY correct first action is
+`python3 ~/bin/reading-list.py add <url>`. Even if the URL is on a
+known auth-walled domain (x.com, linkedin.com, paid substack), even if
+prior turns involved /site-login, the agent does NOT offer cookie
+import as the response to a save intent. The ingestor decides if/when
+cookies are needed: for X URLs it routes through browser-harness with
+stored cookies if present, and writes a stub brain page documenting
+the cookie-import next step if not.
+
+Specifically banned first-response patterns when the user sends
+`<URL> + save/bookmark/summarize`:
+
+- *"🔒 Cookie import for <domain> — no extension required..."* — that
+  is the /site-login flow, only triggered by an explicit "login to X"
+  intent, never as a reaction to a save intent.
+- *"I can add it to your reading list. Paste the tweet text or a
+  screenshot, and I'll do the summary + brain note from that."* — no.
+  Run the script. It handles thin tweets via browser-harness or by
+  writing a stub brain page.
+- *"This requires authentication, so..."* — irrelevant. Run the
+  script. It writes a brain page either way.
+- Asking the user to paste the tweet content — the script fetches the
+  content. The user already sent a URL; that's the input.
+
+If reading-list.py's envelope itself returns `reason: cookies_required`
+in `user_message`, relay THAT verbatim. The script decides when
+cookies are needed; the agent never decides on its own.
+
 ## Async ingest with follow-up message
 
 `add <url>` is **ack-and-spawn**. The script:
