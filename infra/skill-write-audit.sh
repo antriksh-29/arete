@@ -91,29 +91,33 @@ audit_repo() {
 }
 
 # ──────────────────────────────────────────────────────────────────
-# Pass 2 — workspace-side: any slug dir in workspace/{skills,user-skills,openclaw/skills}/
-# that has no corresponding directory in the repo gets deleted.
+# Pass 2 — workspace user-skills/ only.
+#
+# IMPORTANT: We only audit `workspace/user-skills/`. The other two
+# workspace tiers (`workspace/skills/`, `workspace/openclaw/skills/`)
+# are MIXED — they contain both repo-synced skills AND plugin-installed
+# runtime skills (e.g. `1password`, `brain-ops`, `enrich`, `xurl`,
+# `trello` are installed by gbrain/openclaw plugins from bun cache,
+# NOT from the repo). Reverting them would break native functionality.
+#
+# `workspace/user-skills/` is exclusively repo-mirrored — anything
+# there that's not in `$REPO/user-skills/` is rogue.
 # ──────────────────────────────────────────────────────────────────
 
 audit_workspace() {
   [ -d "$WORKSPACE" ] || return
-  for tier in skills user-skills openclaw/skills; do
-    local ws_dir="$WORKSPACE/$tier"
-    [ -d "$ws_dir" ] || continue
-    for slug_dir in "$ws_dir"/*/; do
-      [ -d "$slug_dir" ] || continue
-      local slug
-      slug=$(basename "$slug_dir")
-      # Skip the v0 motivational-quote that lives in workspace but not yet
-      # in the repo (.zombie tombstones from prior cleanups). They're
-      # named with a `.zombie.<ts>` suffix.
-      case "$slug" in *.zombie.*) continue ;; esac
-      # A slug is legitimate if `$REPO/$tier/$slug/SKILL.md` exists.
-      if [ ! -f "$REPO/$tier/$slug/SKILL.md" ]; then
-        log "REVERT workspace: $tier/$slug (no corresponding $REPO/$tier/$slug/SKILL.md)"
-        rm -rf "$slug_dir"
-      fi
-    done
+  local ws_dir="$WORKSPACE/user-skills"
+  [ -d "$ws_dir" ] || return
+  for slug_dir in "$ws_dir"/*/; do
+    [ -d "$slug_dir" ] || continue
+    local slug
+    slug=$(basename "$slug_dir")
+    # Skip zombie tombstones from prior cleanups.
+    case "$slug" in *.zombie.*) continue ;; esac
+    if [ ! -f "$REPO/user-skills/$slug/SKILL.md" ]; then
+      log "REVERT workspace: user-skills/$slug (no corresponding $REPO/user-skills/$slug/SKILL.md)"
+      rm -rf "$slug_dir"
+    fi
   done
 }
 
@@ -181,9 +185,11 @@ watch_mode() {
     "$REPO/skills"
     "$REPO/user-skills"
     "$REPO/openclaw/skills"
-    "$WORKSPACE/skills"
     "$WORKSPACE/user-skills"
-    "$WORKSPACE/openclaw/skills"
+    # Intentionally NOT watching $WORKSPACE/skills/ or
+    # $WORKSPACE/openclaw/skills/ — those are mixed-tier (repo + plugin
+    # runtime) and we can't safely distinguish rogue writes from
+    # plugin-installed skills without a roster.
   )
   # Filter to ones that actually exist.
   local existing=()
