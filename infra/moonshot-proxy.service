@@ -8,18 +8,16 @@ PartOf=openclaw-gateway.service
 
 [Service]
 Type=simple
-# Read API keys from the bot-cred vault at startup. The keys are written
-# into a temp env file via systemd's EnvironmentFile, which requires the
-# file to exist — wrapper script populates it from the vault on each
-# start. Hard-codes the standard ports so we don't need a config file.
-ExecStartPre=/usr/bin/env bash -c 'mkdir -p %h/.openclaw && \
-  MOONSHOT_API_KEY="$(bot-cred get MOONSHOT_API_KEY 2>/dev/null | head -1)"; \
-  OPENAI_API_KEY="$(bot-cred get OPENAI_API_KEY 2>/dev/null | head -1)"; \
-  printf "MOONSHOT_API_KEY=%%s\nOPENAI_API_KEY=%%s\nPROXY_PORT=18790\nFALLBACK_MODEL=gpt-5.4-mini\n" "$MOONSHOT_API_KEY" "$OPENAI_API_KEY" > %h/.openclaw/.moonshot-proxy.env; chmod 600 %h/.openclaw/.moonshot-proxy.env'
-EnvironmentFile=%h/.openclaw/.moonshot-proxy.env
-ExecStart=/usr/bin/env node %h/personal-assistant/infra/moonshot-proxy.mjs
+# The launch wrapper reads MOONSHOT_API_KEY + OPENAI_API_KEY from the
+# bot-cred vault, then execs node. Wrapping avoids systemd's
+# EnvironmentFile-on-first-boot race AND PATH issues (bot-cred + node
+# are often only on PATH via shell init that systemd doesn't run).
+ExecStart=%h/personal-assistant/infra/moonshot-proxy-launch.sh
 Restart=on-failure
 RestartSec=5s
+# Limit restart frequency so a misconfigured proxy doesn't pin a CPU
+StartLimitIntervalSec=60
+StartLimitBurst=5
 # Keep the log volume low — proxy logs are diagnostic, not transactional
 StandardOutput=journal
 StandardError=journal
