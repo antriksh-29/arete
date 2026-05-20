@@ -574,6 +574,61 @@ step "configure openclaw.json" bash infra/configure-openclaw.sh
 # skills are dead weight — the harness loads them only when this var
 # is set AND the agent navigates to a matching host. The drop-in is
 # small + idempotent; create it on every deploy.
+# ── 4a. install moonshot-proxy systemd unit ────────────────────
+# Front-loads Moonshot's API with circuit-breaker + OpenAI failover.
+# Solves the bug where OpenClaw's built-in failover doesn't trigger on
+# Moonshot's "engine_overloaded_error" — see infra/moonshot-proxy.mjs.
+install_moonshot_proxy() {
+  local unit_src="$HOME/personal-assistant/infra/moonshot-proxy.service"
+  local unit_dst="$HOME/.config/systemd/user/moonshot-proxy.service"
+  if [ ! -f "$unit_src" ]; then
+    echo "  ${yellow}!${rst} moonshot-proxy.service not in repo — skipping"
+    return 0
+  fi
+  mkdir -p "$(dirname "$unit_dst")"
+  if [ ! -f "$unit_dst" ] || ! cmp -s "$unit_src" "$unit_dst"; then
+    cp "$unit_src" "$unit_dst"
+    systemctl --user daemon-reload
+    echo "  installed/updated moonshot-proxy.service"
+  fi
+  if ! systemctl --user is-enabled moonshot-proxy.service >/dev/null 2>&1; then
+    systemctl --user enable moonshot-proxy.service
+  fi
+  # Restart to pick up any code changes
+  systemctl --user restart moonshot-proxy.service 2>/dev/null || true
+  sleep 2
+  if systemctl --user is-active moonshot-proxy.service >/dev/null 2>&1; then
+    echo "  ${green}✓${rst} moonshot-proxy active on 127.0.0.1:18790"
+  else
+    echo "  ${yellow}!${rst} moonshot-proxy not active — check journalctl --user -u moonshot-proxy"
+    return 0  # don't fail deploy on this
+  fi
+}
+step "install moonshot-proxy systemd unit" install_moonshot_proxy
+
+# ── 4b. point Moonshot baseUrl at the proxy ─────────────────────
+# OpenClaw reaches Moonshot via models.providers.moonshot.baseUrl.
+# Swap it to the local proxy so all Kimi calls route through the
+# failover layer. Idempotent — checks current value first.
+point_moonshot_to_proxy() {
+  local cfg="$HOME/.openclaw/openclaw.json"
+  if [ ! -f "$cfg" ]; then
+    echo "  ${yellow}!${rst} openclaw.json missing — skipping proxy wiring"
+    return 0
+  fi
+  local current
+  current=$(jq -r '.models.providers.moonshot.baseUrl // ""' "$cfg" 2>/dev/null)
+  local target="http://127.0.0.1:18790/v1"
+  if [ "$current" = "$target" ]; then
+    echo "  Moonshot baseUrl already → $target"
+    return 0
+  fi
+  echo "  rewriting Moonshot baseUrl: $current → $target"
+  jq ".models.providers.moonshot.baseUrl = \"$target\"" "$cfg" > "$cfg.new" && \
+    mv "$cfg.new" "$cfg"
+}
+step "point Moonshot baseUrl at proxy" point_moonshot_to_proxy
+
 install_bh_dropin() {
   local dir="$HOME/.config/systemd/user/openclaw-gateway.service.d"
   local file="$dir/browser-harness.conf"

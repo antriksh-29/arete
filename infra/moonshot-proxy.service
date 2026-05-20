@@ -1,0 +1,28 @@
+[Unit]
+Description=Moonshot API proxy with circuit breaker + OpenAI failover
+# Start before openclaw-gateway so the proxy is always available when
+# the gateway tries to reach Moonshot. Gateway will retry if proxy is
+# briefly unavailable but better to avoid the race.
+Before=openclaw-gateway.service
+PartOf=openclaw-gateway.service
+
+[Service]
+Type=simple
+# Read API keys from the bot-cred vault at startup. The keys are written
+# into a temp env file via systemd's EnvironmentFile, which requires the
+# file to exist — wrapper script populates it from the vault on each
+# start. Hard-codes the standard ports so we don't need a config file.
+ExecStartPre=/usr/bin/env bash -c 'mkdir -p %h/.openclaw && \
+  MOONSHOT_API_KEY="$(bot-cred get MOONSHOT_API_KEY 2>/dev/null | head -1)"; \
+  OPENAI_API_KEY="$(bot-cred get OPENAI_API_KEY 2>/dev/null | head -1)"; \
+  printf "MOONSHOT_API_KEY=%%s\nOPENAI_API_KEY=%%s\nPROXY_PORT=18790\nFALLBACK_MODEL=gpt-5.4-mini\n" "$MOONSHOT_API_KEY" "$OPENAI_API_KEY" > %h/.openclaw/.moonshot-proxy.env; chmod 600 %h/.openclaw/.moonshot-proxy.env'
+EnvironmentFile=%h/.openclaw/.moonshot-proxy.env
+ExecStart=/usr/bin/env node %h/personal-assistant/infra/moonshot-proxy.mjs
+Restart=on-failure
+RestartSec=5s
+# Keep the log volume low — proxy logs are diagnostic, not transactional
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
