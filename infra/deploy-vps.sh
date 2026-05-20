@@ -632,6 +632,89 @@ restart_gateway() {
 }
 step "restart openclaw-gateway" restart_gateway
 
+# ── 5a. Telegram deploy-callback for newly-authored user-skills ─
+# When a /teach or /refine commit lands and the deploy succeeds, send
+# a "🎉 Live" message to the user's Telegram chat so they know their
+# skill is ready. Without this, the UX dies at the most important
+# moment: user confirms the draft, sees "Creating this new skill...",
+# then silence forever (since the actual deploy is async via CI).
+#
+# Implementation: read TELEGRAM_BOT_TOKEN + TELEGRAM_USER_ID from the
+# vault, detect newly-Added or Modified user-skills/<slug>/SKILL.md
+# in the just-pulled commit, send one message per affected slug.
+#
+# Skips silently if:
+# - HEAD has no parent (initial commit; nothing to diff against)
+# - No user-skills/<slug>/SKILL.md changed in the commit
+# - Either vault key is missing
+notify_user_skill_deploys() {
+  # Need a parent commit to diff against
+  if ! git -C "$HOME/personal-assistant" rev-parse HEAD~1 >/dev/null 2>&1; then
+    echo "  (no parent commit; skipping telegram callback)"
+    return 0
+  fi
+  # Affected slugs: newly-added (A) or modified (M) user-skills/<slug>/SKILL.md
+  local affected
+  affected=$(git -C "$HOME/personal-assistant" diff --name-status HEAD~1..HEAD \
+    | grep -E '^[AM][[:space:]]+user-skills/[^/]+/SKILL\.md$' \
+    | awk -F/ '{print $2}' | sort -u | head -5)
+  if [ -z "$affected" ]; then
+    echo "  no user-skills/ changes in this deploy — skipping telegram callback"
+    return 0
+  fi
+  local bot_token chat_id
+  bot_token=$(bot-cred get TELEGRAM_BOT_TOKEN 2>/dev/null | head -1)
+  chat_id=$(bot-cred get TELEGRAM_USER_ID 2>/dev/null | head -1)
+  if [ -z "$bot_token" ] || [ -z "$chat_id" ]; then
+    echo "  ${yellow}!${rst} telegram vault keys missing — skipping callback (skill IS deployed)"
+    return 0
+  fi
+  local slug status msg triggers cron_line is_periodic
+  while IFS= read -r slug; do
+    [ -z "$slug" ] && continue
+    # Determine if this was a create (A) or refine (M).
+    status=$(git -C "$HOME/personal-assistant" diff --name-status HEAD~1..HEAD \
+      -- "user-skills/$slug/SKILL.md" | awk '{print $1}')
+    # Periodic vs manual: peek at the cron field.
+    cron_line=$(grep -E '^cron:' "$HOME/personal-assistant/user-skills/$slug/SKILL.md" 2>/dev/null | head -1)
+    is_periodic=$(echo "$cron_line" | grep -qE '^cron:[[:space:]]*[^n]' && echo "yes" || echo "no")
+    # Pull up to 2 trigger phrases from eval.yaml for the message body.
+    triggers=$(grep -oE '^\s+utterance:[[:space:]]*"[^"]+"' "$HOME/personal-assistant/user-skills/$slug/eval.yaml" 2>/dev/null \
+      | head -2 \
+      | sed -E 's/.*utterance:[[:space:]]*"([^"]+)".*/"\1"/' \
+      | paste -sd ', ' -)
+    if [ "$status" = "A" ]; then
+      if [ "$is_periodic" = "yes" ]; then
+        msg="🎉 Your new skill \`${slug}\` is live. It'll run automatically on its schedule. Say \`/refine ${slug}\` if you want to tweak it later."
+      elif [ -n "$triggers" ]; then
+        msg="🎉 Your new skill \`${slug}\` is live. Try saying ${triggers} — I'll know what to do now."
+      else
+        msg="🎉 Your new skill \`${slug}\` is live."
+      fi
+    elif [ "$status" = "M" ]; then
+      msg="🔧 Refinement to \`${slug}\` is live. Existing triggers still work."
+    else
+      continue
+    fi
+    # Send via Telegram Bot API (HTTPS, no extra deps)
+    local resp http_code
+    resp=$(curl -s -o /tmp/tg-callback-$$.body -w "%{http_code}" \
+      -X POST "https://api.telegram.org/bot${bot_token}/sendMessage" \
+      --data-urlencode "chat_id=${chat_id}" \
+      --data-urlencode "text=${msg}" \
+      --data-urlencode "parse_mode=Markdown" 2>/dev/null)
+    if [ "$resp" = "200" ]; then
+      echo "  ${green}✓${rst} telegram callback sent for ${slug} (${status})"
+    else
+      echo "  ${yellow}!${rst} telegram callback for ${slug} returned HTTP ${resp}"
+      head -200 /tmp/tg-callback-$$.body 2>/dev/null | head -3
+    fi
+    rm -f /tmp/tg-callback-$$.body
+  done <<< "$affected"
+  return 0
+}
+step "telegram deploy-callback" notify_user_skill_deploys
+
 # ── 5b. one-shot reading-list v2 migration ──────────────────────
 # Hydrates pre-v2 rows on lists/to-read with brain pages + posted_by
 # + one_liner so the new 4-line render contract has data to render.
