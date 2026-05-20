@@ -135,9 +135,17 @@ if [ -d "$DRAFTS_DIR" ]; then
     [ -z "$f" ] || [ ! -f "$f" ] && continue
     completed=$(jq -r '.completed_questions | length' "$f" 2>/dev/null || echo 0)
     mode=$(jq -r '.mode' "$f" 2>/dev/null || echo "")
+    awaiting=$(jq -r '.awaiting_confirmation // false' "$f" 2>/dev/null)
     required=5
     [ "$mode" = "refine" ] && required=3
-    if [ "$completed" -lt "$required" ] 2>/dev/null; then
+    # A draft is "still active" if either:
+    #   (a) it's waiting for the user's yes/no/cancel after the summary, OR
+    #   (b) it still has unanswered questions.
+    # Note for manual-mode create: completed_questions = [1,2,3,5] (4 items)
+    # but the script considers Q4 skipped, so the draft IS complete and
+    # awaiting_confirmation is set. The router needs this flag, not just
+    # the count, to route the user's confirmation message correctly.
+    if [ "$awaiting" = "true" ] || [ "$completed" -lt "$required" ] 2>/dev/null; then
       ACTIVE_DRAFT="$(basename "$f" .json)"
       ACTIVE_DRAFT_MODE="$mode"
       break

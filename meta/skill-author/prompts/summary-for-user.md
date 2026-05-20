@@ -36,9 +36,23 @@ See `prompts/elicit.md` → "Confirmation template" section. Branch on
 `invocation_mode`:
 
 - **manual:** "When you say things like X, Y, or Z, I'll <capability>,
-  and reply with <output>. Sound right?"
-- **periodic:** "<schedule>, I'll <capability>, and reply with <output>.
-  Sound right?"
+  and reply with <output>."
+- **periodic:** "<schedule>, I'll <capability>, and reply with <output>."
+
+**Every summary ends with this literal footer** (the user reads it and
+types one of these words; there are no inline buttons in v1):
+
+```
+Reply **yes** to save it, **no** to start over, or **cancel** to throw it away.
+```
+
+The next user message is parsed by `elicit.ts → parseConfirmation()`:
+- yes-shape ({yes, y, sure, ok, sounds good, awesome, …, 👍}) → run
+  the commit pipeline (safety + routing + commit-and-deploy + brain page)
+- no-shape ({no, nope, tweak, change, fix, …}) → delete draft, ask
+  user to `/teach` again with their changes
+- cancel-shape ({cancel, abort, stop, discard, …}) → delete draft,
+  exit cleanly
 
 ## Phase: safety — pass (the only allowed post-confirm transitional message)
 

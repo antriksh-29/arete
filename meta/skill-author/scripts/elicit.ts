@@ -62,8 +62,12 @@ interface Draft {
   mode: "create" | "refine";
   created_at: string;
   updated_at: string;
-  completed_questions: number[];   // [1,2,3,4] when fully elicited
+  completed_questions: number[];   // [1,2,3,5] for fully-elicited manual create
   answers: CreateAnswers | RefineAnswers;
+  // True once all questions have been answered and the draft summary
+  // was shown. The next user message is expected to be a confirmation
+  // (yes/no/cancel). See ingestAnswer for handling.
+  awaiting_confirmation?: boolean;
   // populated only for refine:
   source_tier?: "skills" | "openclaw/skills" | "user-skills";
   source_sha?: string;             // captured at /refine time
@@ -306,11 +310,16 @@ function nextRefineQuestion(draft: Draft): number | null {
 }
 
 function buildDraftSummary(draft: Draft): string {
+  // Suffix added to every summary — tells the user what to type next.
+  // No inline buttons exist in this Telegram flow, so we name the literal
+  // words: "yes" / "no" / "cancel". This is the text the user sees right
+  // before they type their confirmation message.
+  const confirmFooter = "\n\nReply **yes** to save it, **no** to start over, or **cancel** to throw it away.";
   if (draft.mode === "create") {
     const a = draft.answers as CreateAnswers;
     if (a.invocation_mode === "manual") {
       const triggers = (a.triggers ?? []).map(t => `**${t}**`).join(", ");
-      return `OK, here's what I've got:\n\nWhen you say things like ${triggers}, I'll ${a.capability}, and reply with ${a.output}.\n\nSound right?`;
+      return `OK, here's what I've got:\n\nWhen you say things like ${triggers}, I'll ${a.capability}, and reply with ${a.output}.${confirmFooter}`;
     } else {
       // periodic
       const sched = a.schedule!;
@@ -320,7 +329,7 @@ function buildDraftSummary(draft: Draft): string {
       else if (sched.frequency === "monthly") when = `on the ${sched.day_of_month}${ordinalSuffix(sched.day_of_month!)} of every month at ${sched.time_of_day} IST`;
       else if (sched.frequency === "hourly") when = `every hour at ${sched.time_of_day}`;
       else if (sched.frequency === "custom") when = `on schedule \`${sched.custom_cron}\``;
-      return `OK, here's what I've got:\n\n**${when}**, I'll ${a.capability}, and reply with ${a.output}.\n\nSound right?`;
+      return `OK, here's what I've got:\n\n**${when}**, I'll ${a.capability}, and reply with ${a.output}.${confirmFooter}`;
     }
   } else {
     const a = draft.answers as RefineAnswers;
@@ -331,7 +340,7 @@ function buildDraftSummary(draft: Draft): string {
     const newTriggersLine = (a.additional_triggers && a.additional_triggers.length > 0)
       ? `\n\nNew triggers added: ${a.additional_triggers.map(t => `"${t}"`).join(", ")}`
       : "";
-    return `OK, here's the diff:\n\n**Before:** ${a.change_statement}\n\n**After:** ${a.desired_behavior}${newTriggersLine}${forkLine}\n\nSound right?`;
+    return `OK, here's the diff:\n\n**Before:** ${a.change_statement}\n\n**After:** ${a.desired_behavior}${newTriggersLine}${forkLine}${confirmFooter}`;
   }
 }
 
@@ -442,13 +451,17 @@ async function main() {
 function promptNextQuestion(draft: Draft): never {
   const next = draft.mode === "create" ? nextCreateQuestion(draft) : nextRefineQuestion(draft);
   if (next === null) {
-    // All questions answered — emit draft summary for user confirmation.
+    // All questions answered — flag the draft as awaiting user confirmation.
+    // The next ingestAnswer call will interpret the message as yes/no/cancel
+    // instead of as Q-N's answer. Persist so subsequent turns see the state.
+    draft.awaiting_confirmation = true;
+    saveDraft(draft);
     envelope({
       ok: true,
       phase: "elicit",
       user_message: buildDraftSummary(draft),
       draft_slug: draft.slug,
-      detail: { sub_phase: "draft_summary", ready_for_safety: true },
+      detail: { sub_phase: "draft_summary", awaiting_confirmation: true },
     });
   }
   let text: string;
@@ -480,13 +493,140 @@ function promptNextQuestion(draft: Draft): never {
   });
 }
 
+// ──────────────────────────────────────────────────────────────────
+// Confirmation phase (yes/no/cancel after the draft summary)
+// ──────────────────────────────────────────────────────────────────
+
+type ConfirmAnswer = "yes" | "no" | "cancel" | "ambiguous";
+
+function parseConfirmation(text: string): ConfirmAnswer {
+  const t = text.trim().toLowerCase();
+  // Generous yes-matching — user might type any positive phrase.
+  if (/^(yes|y|yep|yeah|ya|sure|ok|okay|save it|save|ship it|do it|go|go ahead|sounds good|sounds great|sounds right|looks good|looks right|perfect|that works|awesome|nice|right|correct|👍|✅)\b/.test(t)) return "yes";
+  if (/^(no|n|nope|nah|not quite|wrong|not right|incorrect|tweak|edit|change|fix)\b/.test(t)) return "no";
+  if (/^(cancel|abort|stop|nevermind|never mind|forget it|discard|throw it away|drop it)\b/.test(t)) return "cancel";
+  return "ambiguous";
+}
+
+function handleConfirmation(draft: Draft, message: string): never {
+  const c = parseConfirmation(message);
+  if (c === "ambiguous") {
+    envelope({
+      ok: true,
+      phase: "elicit",
+      user_message: `Just to be clear — should I save this skill?\n\nReply **yes** to save it, **no** to start over, or **cancel** to throw it away.`,
+      draft_slug: draft.slug,
+      detail: { sub_phase: "confirmation_retry" },
+    });
+  }
+  if (c === "cancel") {
+    // Delete the draft so the next /teach starts fresh.
+    try {
+      const p = draftPath(draft.slug);
+      if (existsSync(p)) require("fs").unlinkSync(p);
+    } catch { /* best-effort */ }
+    envelope({
+      ok: true,
+      phase: "done",
+      user_message: "OK, threw the draft away. Say `/teach` whenever you want to make a new skill.",
+      draft_slug: draft.slug,
+      detail: { sub_phase: "cancelled" },
+    });
+  }
+  if (c === "no") {
+    // v1: don't loop back to specific questions. Delete the draft and let
+    // the user restart with /teach. Cheaper than building a Q-picker UI.
+    try {
+      const p = draftPath(draft.slug);
+      if (existsSync(p)) require("fs").unlinkSync(p);
+    } catch { /* best-effort */ }
+    envelope({
+      ok: true,
+      phase: "done",
+      user_message: "Got it — I threw that draft away. Say `/teach` to start over with the changes you want.",
+      draft_slug: draft.slug,
+      detail: { sub_phase: "rejected_restart" },
+    });
+  }
+  // c === "yes" — chain to commit-and-deploy synchronously.
+  return runCommitChain(draft);
+}
+
+function runCommitChain(draft: Draft): never {
+  // Spawn commit-and-deploy.ts as a subprocess. It does materialize +
+  // git commit + push (which triggers GH Actions server-side safety
+  // scan + deploy). Returns its envelope verbatim — that's what the
+  // user sees ("Creating this new skill for you. Please wait 1–2 min.").
+  //
+  // Why synchronous (no parallel safety-scan/routing-eval in elicit):
+  // (1) commit-and-deploy.ts materializes the SKILL.md + eval.yaml; we'd
+  //     need those files on disk before safety-scan can scan them.
+  // (2) GH Actions runs the server-side regex safety check + file
+  //     allowlist on every push (deploy.yml T8 gate). That's defense
+  //     in depth.
+  // (3) Routing-eval needs the materialized eval.yaml too. Same chain.
+  // For v1.1 we ship the minimum that unblocks the user; v1.2 can
+  // refactor to run safety+routing pre-commit if false positives bite.
+  const draftFile = draftPath(draft.slug);
+  const scriptPath = join(REPO_ROOT, "meta", "skill-author", "scripts", "commit-and-deploy.ts");
+  try {
+    const proc = Bun.spawnSync({
+      cmd: ["bun", "run", scriptPath, `--draft-file=${draftFile}`],
+      env: { ...process.env, REPO_ROOT },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stdout = proc.stdout.toString().trim();
+    const stderr = proc.stderr.toString().trim();
+    if (!stdout) {
+      envelope({
+        ok: false,
+        phase: "error",
+        user_message: "Something went wrong on the commit step — I couldn't finish creating the skill. Try `/teach` again in a minute.",
+        draft_slug: draft.slug,
+        detail: { commit_stderr: stderr.slice(0, 500), commit_exit: proc.exitCode },
+      });
+    }
+    // Pass through the commit-and-deploy envelope. Its user_message is
+    // typically "📦 Committed <slug> @ <sha> and pushed. Server-side
+    // gates + deploy are running now…" which is exactly the UX we want.
+    const passthrough = JSON.parse(stdout);
+    // Delete the draft once committed — its job is done.
+    if (passthrough.ok && passthrough.verdict === "deploy_ok") {
+      try { require("fs").unlinkSync(draftFile); } catch { /* best-effort */ }
+    }
+    console.log(stdout);
+    process.exit(passthrough.ok ? 0 : 1);
+  } catch (err) {
+    envelope({
+      ok: false,
+      phase: "error",
+      user_message: "Hit a snag spawning the commit step. Try `/teach` again in a minute.",
+      draft_slug: draft.slug,
+      detail: { error: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
+
 function ingestAnswer(draft: Draft, message: string): never {
   if (!message) {
     envelope({ ok: false, phase: "error", user_message: "I didn't catch that — could you re-send your answer?", draft_slug: draft.slug });
   }
+  // ── CONFIRMATION PHASE (added 2026-05-19) ─────────────────────────
+  // If the draft was already flagged as awaiting confirmation (every
+  // question answered + summary shown), the current message is a
+  // yes/no/cancel reply, NOT an answer to a question. Route accordingly.
+  if (draft.awaiting_confirmation) {
+    return handleConfirmation(draft, message);
+  }
   const next = draft.mode === "create" ? nextCreateQuestion(draft) : nextRefineQuestion(draft);
   if (next === null) {
-    envelope({ ok: false, phase: "error", user_message: "All questions already answered — confirm or cancel the draft.", draft_slug: draft.slug });
+    // Defensive: nextCreateQuestion returned null but awaiting_confirmation
+    // was not set. Treat as if the user just got the summary — set the
+    // flag and re-route. Should only happen on drafts created pre-fix.
+    draft.awaiting_confirmation = true;
+    saveDraft(draft);
+    return handleConfirmation(draft, message);
   }
 
   if (draft.mode === "create") {
