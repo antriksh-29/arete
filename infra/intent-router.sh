@@ -390,13 +390,43 @@ if echo "$LMSG" | grep -qE '\b(add|include|make|extend|also|should|modify|tweak|
   CHANGE_VERB=1
 fi
 
+# --- Implicit refine fallback: "this skill" / "the skill" / "this skill.md" ---
+# When the user says a refine verb + "this skill"/"the skill" but doesn't
+# name a specific slug, target the most-recently-modified user-skill (mtime
+# of its SKILL.md, < 60 minutes old). Solves Issue #3 from /plan-eng-review:
+# "please check this skill.md - it says 6:15pm - please update to 6:30pm"
+# routed to skill_create because no kebab-slug match. Now this falls back
+# to the user-skill the user was last working on.
+if [ -z "$MATCHED_SLUG" ] && [ "$CHANGE_VERB" -eq 1 ]; then
+  if echo "$LMSG" | grep -qE '\b(this|the|that)[[:space:]]+skill(\.md)?\b'; then
+    # Find the freshest user-skill SKILL.md (mtime within 60 min)
+    RECENT_SLUG=$(find user-skills -maxdepth 2 -name SKILL.md -mmin -60 -printf '%T@ %p\n' 2>/dev/null \
+                  | sort -rn | head -1 | awk '{print $2}' | sed 's|user-skills/||; s|/SKILL.md||')
+    if [ -n "$RECENT_SLUG" ]; then
+      MATCHED_SLUG="$RECENT_SLUG"
+      RECENT_FALLBACK=1
+    fi
+  fi
+fi
+
 if [ -n "$MATCHED_SLUG" ] && [ "$CHANGE_VERB" -eq 1 ]; then
   ESCAPED_MSG=$(printf '%s' "$MSG" | sed 's/"/\\"/g')
+  # Confidence + footer depend on whether this is a slug match or a
+  # "this skill" fallback. The fallback gets 65 (lower) so the user
+  # sees an explicit confirmation step.
+  CONF=85
+  FALLBACK_FOOTER=""
+  TRIGGER_SRC="fuzzy_slug_match"
+  if [ -n "${RECENT_FALLBACK:-}" ]; then
+    CONF=65
+    TRIGGER_SRC="recent_user_skill_fallback"
+    FALLBACK_FOOTER=$'\n\nIf refine-diff.ts asks for confirmation, relay it. The user may need to disambiguate which skill they meant if multiple have been edited recently.'
+  fi
   cat <<EOF
 INTENT=skill_refine
 TARGET=${MATCHED_SLUG}
-CONFIDENCE=85
-TRIGGER_SOURCE=fuzzy_slug_match
+CONFIDENCE=${CONF}
+TRIGGER_SOURCE=${TRIGGER_SRC}
 ONE_SHOT=true
 
 REQUIRED_ACTION=Run the one-shot refine-diff for skill \`${MATCHED_SLUG}\`. The user's natural-language message IS the change spec. Do NOT ask R1/R2/R3 yourself. Do NOT ask for confirmation before running the script — the script's envelope is the confirmation prompt.

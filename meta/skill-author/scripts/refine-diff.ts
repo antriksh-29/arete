@@ -395,7 +395,15 @@ HARD RULES (violating any one of these makes your output rejected and the user h
 
 9. Output raw JSON — no markdown fences, no explanation, no preamble. Just \`{\`...\`}\`. If you wrap the JSON in \`\`\`json fences the parser will still extract it, but plain JSON is preferred.
 
-10. Your FIRST character of output MUST be \`{\`. Your LAST character of output MUST be \`}\`. Anything before \`{\` or after \`}\` (including newlines, prose, fences) is wasted tokens that risk truncating the actual JSON before it finishes.`;
+10. Your FIRST character of output MUST be \`{\`. Your LAST character of output MUST be \`}\`. Anything before \`{\` or after \`}\` (including newlines, prose, fences) is wasted tokens that risk truncating the actual JSON before it finishes.
+
+11. **CASCADE RULE — inconsistency between frontmatter and body is a BUG**: when you change a value that appears in BOTH the frontmatter and the human-readable body, propagate the change everywhere.
+   • If you change \`cron:\` in frontmatter, scan the entire SKILL.md for human-readable mentions of the OLD schedule (e.g. "6:15pm", "6:15 PM IST", "18:15", "every morning at 6:15", "fires at 6:15", "delivered at 18:15") and update each occurrence to match the NEW schedule. The description body, the "## When to fire" section, the "## Capability" section, the "## Output format" section — every place the old time is mentioned must match the new cron.
+   • If you change \`trigger:\` in frontmatter, scan the body for any list of trigger phrases and update them too.
+   • If you change the description field, propagate any keyword changes into the "## Capability" body section so they don't contradict.
+   • If you change cron from 18:15 to 18:30, do NOT leave any text in the body saying "6:15pm". Reader-facing inconsistency between frontmatter and body is unacceptable — the body is part of the contract, not just commentary.
+
+Example: refine request "change time from 6:15pm to 6:30pm" — proposed SKILL.md must have cron \`30 18 * * *\` AND every body mention of "6:15"/"18:15" rewritten to "6:30"/"18:30".`;
 }
 
 interface LlmCallResult {
