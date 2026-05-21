@@ -82,6 +82,21 @@ REQUIRED_ACTION=<exact next action>
   DO NOT pre-fill any other answers. DO NOT analyze source code. DO NOT
   ask multiple questions. Run the command, relay the envelope's
   `user_message` field byte-for-byte, STOP.
+- **INTENT=skill_create_oneshot** → STOP. The user just said something
+  like "yes implement this" / "let's build it" / "ship it" after a chat
+  that established what they want. Your ONLY action is to run
+  `~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/intake-from-context.ts --mode=create-oneshot --message="..."`
+  (the router's EXECUTION_RECIPE has the exact command with `--session-file=`
+  pre-resolved). The script reads the recent session, extracts capability/
+  mode/triggers/schedule/output via Moonshot, saves a pre-filled draft,
+  and hands off to elicit's resume mode — so the user sees either the
+  bullet summary (if everything was inferrable) or only the missing
+  slot questions, never Q1 from scratch.
+
+  Do NOT call elicit.ts --mode=create directly. Do NOT ask "do you want
+  me to set this up?" — the user's message IS that confirmation. Do
+  NOT compose a summary yourself; relay the script's envelope verbatim.
+
 - **INTENT=skill_create** → STOP composing a normal reply. Your ONLY
   action is to run `~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=create`
   ONCE (absolute paths required; bun and meta/ are NOT in the workspace).

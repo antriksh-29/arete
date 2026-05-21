@@ -186,6 +186,80 @@ EOF
   exit 0
 fi
 
+# --- ROUTE 0b: "yes implement this" / "let's build it" / "ship it" ---
+# Catches the case where the user and Alfred had a free-form conversation
+# about a capability (criteria, format, schedule, sample output), and then
+# the user says some shape of "yes, do it". Today the bot kicks elicit.ts
+# Q1-Q5 from scratch, forcing the user to re-state everything that was
+# already established. Instead, route to intake-from-context which reads
+# the recent session and pre-fills the answers via Moonshot extraction.
+#
+# Only fires when:
+#   • There is NO active draft (route 0 above would have caught that)
+#   • The message contains an "implement/build/ship/create this" shape
+#   • The lowercased message does NOT already start with a slash command
+#
+# The script gracefully falls back to a fresh elicit if the session lacks
+# enough context — so a false positive (e.g. user types "ship it" with no
+# prior chat about a feature) degrades to today's UX, not worse.
+IMPLEMENT_VERB=0
+# Pattern A: "yes implement/build/ship/create this/it"
+if echo "$LMSG" | grep -qE "\b(yes|sure|ok|okay|let'?s|please|go|do|ship|create|build|implement)\b.{0,40}\b(implement|build|create|set\s*up|setup|ship|do\s*it|make\s*it|make\s*this|go\s*for\s*it|proceed|go\s*ahead|let'?s\s*go|ship\s*it)\b.{0,40}\b(this|that|it)?\b"; then
+  IMPLEMENT_VERB=1
+fi
+# Pattern B: short imperative — "implement this", "build this", "create the skill", "make it live"
+if echo "$LMSG" | grep -qE "^[[:space:]]*(let'?s|please|now)?[[:space:]]*\b(implement|build|create|set\s*up|setup|ship|make|deploy)\s+(this|that|it|the\s+skill|this\s+skill)\b"; then
+  IMPLEMENT_VERB=1
+fi
+# Pattern C: "yes <verb> <object>" — "yes please create this skill", "yes implement it"
+if echo "$LMSG" | grep -qE "\byes\b.{0,30}\b(implement|build|create|set\s*up|ship|make|deploy|do)\b"; then
+  IMPLEMENT_VERB=1
+fi
+# Pattern D: "let's implement/build/ship/make/create" leading shape
+if echo "$LMSG" | grep -qE "\blet'?s\b.{0,30}\b(implement|build|ship|make|create|do|set\s*up|deploy|kick\s*off|get\s*started)\b"; then
+  IMPLEMENT_VERB=1
+fi
+
+# Exclude slash commands and obvious non-skill chat ("yes" alone is too
+# short — route 0's active-draft check already handled that case)
+if [ "$IMPLEMENT_VERB" -eq 1 ] && ! echo "$LMSG" | grep -qE "^[[:space:]]*/(teach|refine|cancel|abort|stop)\b"; then
+  # Auto-detect the freshest session file the agent is talking on. This
+  # is robust for single-tenant (Antriksh) — multi-tenant would need an
+  # explicit chat-id-to-session mapping.
+  SESSION_FILE=$(find "$HOME/.openclaw/agents/main/sessions/" -maxdepth 1 -name '*.jsonl' \
+                   ! -name '*.trajectory.*' ! -name '*.reset.*' ! -name '*.checkpoint.*' \
+                   -mmin -60 -printf '%T@ %p\n' 2>/dev/null \
+                 | sort -rn | awk 'NR==1{print $2}')
+  ESCAPED_MSG=$(printf '%s' "$MSG" | sed 's/"/\\"/g')
+  cat <<EOF
+INTENT=skill_create_oneshot
+CONFIDENCE=80
+TRIGGER_SOURCE=implement_this_pattern
+SESSION_FILE=${SESSION_FILE:-NONE}
+
+REQUIRED_ACTION=The user just said something like "yes implement this" / "let's build it" — they want to ship a new skill based on what you discussed earlier in this chat. Do NOT run elicit.ts directly. Do NOT ask Q1 from scratch. Run intake-from-context.ts which reads the recent session, extracts capability/triggers/schedule/output from chat history via Moonshot, saves a pre-filled draft, and hands off to elicit's resume mode so the user sees either the final summary (if everything was inferrable) or only the missing slot questions.
+
+EXECUTION_RECIPE:
+1. Run EXACTLY this Bash command (no other tool calls):
+   ~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/intake-from-context.ts --mode=create-oneshot --message="${ESCAPED_MSG}"${SESSION_FILE:+ --session-file=${SESSION_FILE}}
+2. The script returns a single-line JSON envelope on stdout. Parse it.
+3. Take the envelope's \`user_message\` field VERBATIM. Send it as your Telegram reply.
+4. STOP. The script may have:
+   (a) inferred everything → user_message is the bullet summary ("OK here's what I've got…"). User reply will be yes/no/cancel and route 0 handles it.
+   (b) inferred some fields → user_message is the NEXT missing question (e.g. "What 2-3 trigger phrases should I listen for?"). User's next answer goes through route 0 ingest-answer.
+   (c) extraction failed → user_message is Q1 from fresh elicit (graceful degrade). Equivalent to today's UX.
+
+BANNED_RESPONSES:
+- Calling elicit.ts --mode=create directly (skips the intake step the recipe demands).
+- Composing the summary or a question yourself instead of running the script.
+- Re-summarizing what the user said in chat ("So you want X…") — the script handles that.
+- Asking "do you want me to set this up?" — the user's message IS that confirmation. Just run the script.
+- Reading source code of intake-from-context.ts / elicit.ts / commit-and-deploy.ts to "verify" the pipeline. The pipeline works. Run the command.
+- Writing SKILL.md / eval.yaml via raw exec under any path (\`user-skills/\`, \`skills/\`, workspace, etc.). The ONLY path to create a skill is the script chain.
+EOF
+  exit 0
+fi
+
 # --- ROUTE 1a: Explicit /teach ---
 if echo "$LMSG" | grep -qE '^[[:space:]]*/teach\b'; then
   cat <<EOF
