@@ -276,9 +276,18 @@ async function llmReview(bundle: DraftBundle): Promise<LlmVerdict | { error: "of
             { role: "system", content: systemPrompt },
             { role: "user", content: userMessage },
           ],
-          max_tokens: 1024,
-          temperature: 0.0,
-          // Kimi K2.6 instant mode — matches OpenClaw config (no thinking budget).
+          // Bumped from 1024 → 2048: kimi-k2.6 in thinking mode burns
+          // ~50% of the budget on reasoning_content before producing the
+          // verdict JSON. 1024 was clipping the response and forcing
+          // "malformed" errors silently.
+          max_tokens: 2048,
+          // Moonshot rejects temperature != 1.0 on kimi-k2.6 with HTTP 400
+          // ("invalid temperature: only 1 is allowed for this model").
+          // Until 2026-05-21 we set 0.0 — every safety call silently
+          // returned "offline" and the safety gate was effectively
+          // bypassed on a 400 (fail-closed → "retry in a few minutes"
+          // message). Now temperature=1.0 to match Moonshot's policy.
+          temperature: 1.0,
         }),
       });
       if (r.status >= 500) {

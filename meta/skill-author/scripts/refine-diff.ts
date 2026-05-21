@@ -423,8 +423,12 @@ async function callKimi(
           ],
           // Allow enough room for a SKILL.md + eval.yaml round-trip.
           // A typical user-skill SKILL.md is ~3-6KB; we double + buffer.
-          max_tokens: 8192,
-          temperature: 0.0,
+          // Kimi K2.6 in thinking mode also burns tokens on reasoning_content
+          // — 12K leaves headroom for that without overflowing.
+          max_tokens: 12000,
+          // Moonshot rejects temperature != 1.0 on kimi-k2.6 with HTTP 400
+          // ("invalid temperature: only 1 is allowed for this model").
+          temperature: 1.0,
         }),
       });
       if (r.status >= 500) {
