@@ -338,13 +338,20 @@ async function readVaultKey(name: string): Promise<string | null> {
 }
 
 function extractFirstJSON(text: string): Record<string, any> | null {
-  const start = text.indexOf("{");
+  if (!text) return null;
+  // Strip markdown code fences (```json ... ```), which Kimi often wraps the
+  // payload in despite the system prompt saying "raw JSON, no fences". Be
+  // permissive: match ```json, ```JSON, ```javascript, or just ```.
+  let cleaned = text;
+  const fence = cleaned.match(/```(?:json|JSON|javascript|js)?\s*\n([\s\S]+?)\n```/);
+  if (fence && fence[1]) cleaned = fence[1];
+  const start = cleaned.indexOf("{");
   if (start < 0) return null;
   let depth = 0;
   let inString = false;
   let escape = false;
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i];
+  for (let i = start; i < cleaned.length; i++) {
+    const ch = cleaned[i];
     if (escape) { escape = false; continue; }
     if (ch === "\\") { escape = true; continue; }
     if (ch === '"') { inString = !inString; continue; }
@@ -353,7 +360,7 @@ function extractFirstJSON(text: string): Record<string, any> | null {
     else if (ch === "}") {
       depth--;
       if (depth === 0) {
-        try { return JSON.parse(text.slice(start, i + 1)); } catch { return null; }
+        try { return JSON.parse(cleaned.slice(start, i + 1)); } catch { return null; }
       }
     }
   }
@@ -386,7 +393,9 @@ HARD RULES (violating any one of these makes your output rejected and the user h
 
 8. If the user's request is ambiguous (e.g. "make it better"), produce a change_summary with one bullet: "ambiguous request — please rephrase or use /refine <slug>" and leave proposed_skill_md/proposed_eval_yaml identical to the current content. The validator rejects identity-diffs gracefully.
 
-9. Output raw JSON — no markdown fences, no explanation, no preamble. Just \`{\`...\`}\`.`;
+9. Output raw JSON — no markdown fences, no explanation, no preamble. Just \`{\`...\`}\`. If you wrap the JSON in \`\`\`json fences the parser will still extract it, but plain JSON is preferred.
+
+10. Your FIRST character of output MUST be \`{\`. Your LAST character of output MUST be \`}\`. Anything before \`{\` or after \`}\` (including newlines, prose, fences) is wasted tokens that risk truncating the actual JSON before it finishes.`;
 }
 
 interface LlmCallResult {
@@ -404,52 +413,99 @@ async function callKimi(
 
   const userMessage = `Apply the change request to the skill files below. Return the JSON envelope per the system prompt.\n\n\`\`\`json\n${JSON.stringify(userPayload, null, 2)}\n\`\`\``;
 
-  // Same retry shape as safety-scan.ts — 3s total budget, retry on 5xx.
+  // Kimi K2.6 in thinking mode genuinely takes 20-60s on a full SKILL.md
+  // refine (chain-of-thought burns most of the budget). Give the API
+  // 90s per attempt via AbortController, with a 120s overall budget that
+  // allows one full retry on a transient 5xx without blowing past
+  // Telegram's UX patience threshold.
+  const PER_REQUEST_TIMEOUT_MS = 90_000;
+  const TOTAL_BUDGET_MS = 120_000;
   let lastError = "";
   const start = Date.now();
-  while (Date.now() - start < 8000) {
+  while (Date.now() - start < TOTAL_BUDGET_MS) {
+    const ctrl = new AbortController();
+    const timeoutHandle = setTimeout(() => ctrl.abort(), PER_REQUEST_TIMEOUT_MS);
     try {
       const r = await fetch("https://api.moonshot.ai/v1/chat/completions", {
         method: "POST",
+        signal: ctrl.signal,
         headers: {
           "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "kimi-k2.6",
+          // Why moonshot-v1-32k, not kimi-k2.6:
+          //   kimi-k2.6 runs in mandatory thinking mode (Moonshot rejects
+          //   temperature != 1.0 there) and takes 2-3 minutes per refine on
+          //   a 5KB SKILL.md, often with the JSON truncated to
+          //   reasoning_content. moonshot-v1-32k is the legacy non-thinking
+          //   variant — ~25-50s for the same prompt, supports
+          //   response_format json_object, returns clean valid JSON in
+          //   `content`. Refine-diff needs deterministic structured edits,
+          //   not deep chain-of-thought, so the legacy model is the right
+          //   tool. Kimi K2.6 remains primary for the conversational agent
+          //   (per identity/MODEL_ROUTING.md) — this is a per-script
+          //   override, not a config change.
+          model: "moonshot-v1-32k",
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userMessage },
           ],
-          // Allow enough room for a SKILL.md + eval.yaml round-trip.
-          // A typical user-skill SKILL.md is ~3-6KB; we double + buffer.
-          // Kimi K2.6 in thinking mode also burns tokens on reasoning_content
-          // — 12K leaves headroom for that without overflowing.
-          max_tokens: 12000,
-          // Moonshot rejects temperature != 1.0 on kimi-k2.6 with HTTP 400
-          // ("invalid temperature: only 1 is allowed for this model").
-          temperature: 1.0,
+          // response_format=json_object forces Moonshot to emit
+          // syntactically valid JSON (no unescaped newlines inside string
+          // values, no markdown fences). Verified against the live API.
+          response_format: { type: "json_object" },
+          // 8000 max_tokens easily covers a 5KB SKILL.md round-trip with
+          // headroom for change_summary bullets. Observed completion_tokens
+          // for paul-graham-insights refine: 1826.
+          max_tokens: 8000,
+          // Low temperature for deterministic structured output. The
+          // legacy moonshot models accept the full 0..1 range; only
+          // kimi-k2.6 rejects temperature != 1.0.
+          temperature: 0.2,
         }),
       });
       if (r.status >= 500) {
+        clearTimeout(timeoutHandle);
         lastError = `${r.status}`;
-        await new Promise(res => setTimeout(res, 800));
+        await new Promise(res => setTimeout(res, 1500));
         continue;
       }
       if (!r.ok) {
+        clearTimeout(timeoutHandle);
         return { ok: false, error: `Moonshot API ${r.status}: ${(await r.text()).slice(0, 300)}` };
       }
-      const body = await r.json() as { choices?: { message?: { content?: string } }[] };
-      const text = body.choices?.[0]?.message?.content;
-      if (!text) return { ok: false, error: "Moonshot returned no content" };
-      const json = extractFirstJSON(text);
-      if (!json) return { ok: false, error: "Could not extract JSON from Moonshot reply" };
+      const body = await r.json() as {
+        choices?: {
+          message?: { content?: string; reasoning_content?: string };
+          finish_reason?: string;
+        }[];
+        usage?: { completion_tokens?: number; total_tokens?: number };
+      };
+      // Kimi K2.6 returns the actual reply in `content`, with chain-of-thought
+      // in `reasoning_content`. When the model exhausts max_tokens during
+      // reasoning, content can be empty and the JSON ends up partially in
+      // reasoning_content. Try content first, then reasoning_content as a
+      // last-resort salvage — extractFirstJSON balances braces so it's safe
+      // to feed reasoning prose into it.
+      const content = body.choices?.[0]?.message?.content ?? "";
+      const reasoning = body.choices?.[0]?.message?.reasoning_content ?? "";
+      const finishReason = body.choices?.[0]?.finish_reason ?? "?";
+      let json = content ? extractFirstJSON(content) : null;
+      if (!json && reasoning) json = extractFirstJSON(reasoning);
+      if (!json) {
+        return {
+          ok: false,
+          error: `Could not extract JSON (content=${content.length}b, reasoning=${reasoning.length}b, finish=${finishReason})`,
+        };
+      }
       if (typeof json.proposed_skill_md !== "string" || typeof json.proposed_eval_yaml !== "string") {
         return { ok: false, error: "Moonshot output missing proposed_skill_md or proposed_eval_yaml" };
       }
       if (!Array.isArray(json.change_summary)) {
         return { ok: false, error: "Moonshot output missing change_summary array" };
       }
+      clearTimeout(timeoutHandle);
       return {
         ok: true,
         proposal: {
@@ -459,11 +515,18 @@ async function callKimi(
         },
       };
     } catch (e) {
-      lastError = e instanceof Error ? e.message : String(e);
-      await new Promise(res => setTimeout(res, 800));
+      clearTimeout(timeoutHandle);
+      const isAbort = e instanceof Error && e.name === "AbortError";
+      lastError = isAbort
+        ? `request exceeded ${PER_REQUEST_TIMEOUT_MS}ms per-attempt timeout`
+        : (e instanceof Error ? e.message : String(e));
+      // For abort/timeout, do NOT retry the SAME slow prompt — fall out
+      // and report. Retry only network errors (DNS, ECONNRESET, etc.).
+      if (isAbort) break;
+      await new Promise(res => setTimeout(res, 1500));
     }
   }
-  return { ok: false, error: `Moonshot API unreachable for 8s; last error: ${lastError}` };
+  return { ok: false, error: `Moonshot API call failed after ${Math.round((Date.now() - start) / 1000)}s; last error: ${lastError}` };
 }
 
 // ──────────────────────────────────────────────────────────────────
