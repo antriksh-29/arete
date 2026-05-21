@@ -1,6 +1,6 @@
 ---
 name: paul-graham-insights
-version: 0.1.0
+version: 0.1.1
 description: |
   Share a powerful insight from Paul Graham's essays, including the source URL for each insight.
 
@@ -13,7 +13,7 @@ trigger:
 created_by: alfred
 source: telegram
 created_at: "2026-05-21T12:16:21.339Z"
-last_authoring_turn: "2026-05-21T12:16:21.339Z"
+last_authoring_turn: "2026-05-21T12:27:57.394Z"
 mutating: false
 cron: "30 13 * * *"
 eval: user-skills/paul-graham-insights/eval.yaml

@@ -58,3 +58,8 @@ the bypass can't recur.
 - safety-scan: skipped (no IOCs — pure declarative SKILL.md + plain-text insight pool)
 - routing-eval: skipped (3 distinct trigger phrases that don't collide; verified manually against existing skills)
 - commit: see git log for the merge commit
+
+## Refinement turn (2026-05-21, commit `113e90b`)
+
+- **Change requested:** can you please make paul-graham-insights also include the source URL for each insight going forward
+- **New behavior:** Include the source URL for each Paul Graham insight in the output
