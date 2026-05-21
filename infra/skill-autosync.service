@@ -1,0 +1,20 @@
+[Unit]
+Description=Auto-sync workspace user-skill edits back to personal-assistant git repo + push to GitHub
+After=openclaw-gateway.service
+PartOf=openclaw-gateway.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=%h/personal-assistant/infra/skill-autosync.sh --watch
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+Environment=REPO=%h/personal-assistant
+Environment=WORKSPACE=%h/.openclaw/workspace
+Environment=JOBS_JSON=%h/.openclaw/cron/jobs.json
+
+[Install]
+WantedBy=default.target

@@ -226,10 +226,9 @@ sync_user_skills() {
     user_skills_zombie_delete "$target" "$tracker" ""
     return 0
   fi
-  # Unlock ALL workspace user-skill files up-front. Sync writes will
-  # fail with EPERM on locked files; we re-lock at the end. Safe even
-  # if some files aren't locked yet (chattr -i on a mutable file is a
-  # no-op).
+  # Unlock any leftover-immutable files from PR #113 (#114 superseded
+  # the immutable-bit approach with autosync, but we still unlock here
+  # in case any files were locked by an older deploy).
   if [ -x "$immutable_helper" ]; then
     bash "$immutable_helper" unlock >/dev/null 2>&1 || true
   fi
@@ -265,13 +264,11 @@ sync_user_skills() {
   user_skills_zombie_delete "$target" "$tracker" "$current_names"
   printf '%s\n' $current_names > "$tracker"
 
-  # Re-lock all workspace user-skill files with the immutable bit so
-  # the agent's `exec cat > .../SKILL.md` bypass is impossible (EPERM).
-  # This is the structural fix; the audit daemon below is now just
-  # defense-in-depth.
-  if [ -x "$immutable_helper" ]; then
-    bash "$immutable_helper" lock 2>&1 | sed 's/^/  /'
-  fi
+  # Note: PR #113's chattr +i locking is removed (#114). The bot was
+  # able to `sudo chattr -i` its way around immutability since botuser
+  # has NOPASSWD sudo. Switched to the brain-style autosync approach:
+  # skill-autosync.sh watches workspace edits and pushes them to the
+  # repo + GitHub. Bot edits are preserved instead of fought.
 
   # Regenerate the skill roster so the audit daemon knows the new
   # expected sha256 hashes for each user-skill file. The daemon
@@ -700,6 +697,43 @@ install_skill_write_audit() {
   fi
 }
 step "install skill-write-audit daemon" install_skill_write_audit
+
+# ── 4d. install skill-autosync daemon ──────────────────────────
+# Mirrors workspace user-skill edits back into the repo + pushes to
+# GitHub, brain-style. Replaces the immutable-bit approach from #113
+# (which the bot bypassed with sudo chattr). Trust-and-push instead
+# of fight-the-write.
+install_skill_autosync() {
+  local script_src="$HOME/personal-assistant/infra/skill-autosync.sh"
+  local unit_src="$HOME/personal-assistant/infra/skill-autosync.service"
+  local unit_dst="$HOME/.config/systemd/user/skill-autosync.service"
+  if [ ! -f "$script_src" ] || [ ! -f "$unit_src" ]; then
+    echo "  ${yellow}!${rst} skill-autosync files not in repo — skipping"
+    return 0
+  fi
+  mkdir -p "$(dirname "$unit_dst")"
+  local changed=0
+  if [ ! -f "$unit_dst" ] || ! cmp -s "$unit_src" "$unit_dst"; then
+    cp "$unit_src" "$unit_dst"
+    systemctl --user daemon-reload
+    echo "  installed/updated skill-autosync.service"
+    changed=1
+  fi
+  if ! systemctl --user is-enabled skill-autosync.service >/dev/null 2>&1; then
+    systemctl --user enable skill-autosync.service
+    changed=1
+  fi
+  if [ "$changed" = "1" ] || ! systemctl --user is-active skill-autosync.service >/dev/null 2>&1; then
+    systemctl --user restart skill-autosync.service 2>/dev/null || true
+    sleep 1
+  fi
+  if systemctl --user is-active skill-autosync.service >/dev/null 2>&1; then
+    echo "  ${green}✓${rst} skill-autosync watching workspace; pushes edits to GitHub"
+  else
+    echo "  ${yellow}!${rst} skill-autosync not active — check journalctl --user -u skill-autosync"
+  fi
+}
+step "install skill-autosync daemon" install_skill_autosync
 
 install_bh_dropin() {
   local dir="$HOME/.config/systemd/user/openclaw-gateway.service.d"
