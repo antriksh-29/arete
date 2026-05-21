@@ -2,8 +2,15 @@
 # Send a Telegram message to the user.
 # Used by the reminder system and any other one-shot notification path.
 #
-# Usage: send-telegram.sh "message text"
-#        send-telegram.sh -                 # reads message from stdin
+# Usage:
+#   send-telegram.sh "message text"
+#   send-telegram.sh -                 # reads from stdin
+#   send-telegram.sh --html "<b>bold</b> body"     # HTML parse mode
+#   send-telegram.sh --html -          # HTML from stdin
+#
+# HTML mode supports Telegram's restricted HTML subset: <b>, <i>, <u>,
+# <s>, <code>, <pre>, <a href="...">, <blockquote>. Caller MUST escape
+# any user-supplied &, <, > characters before passing them in.
 
 set -e
 TOKEN="$(/usr/local/bin/bot-cred get TELEGRAM_BOT_TOKEN)"
@@ -14,7 +21,13 @@ if [ -z "$TOKEN" ] || [ -z "$USER_ID" ]; then
   exit 1
 fi
 
-if [ "$1" = "-" ]; then
+PARSE_MODE=""
+if [ "${1:-}" = "--html" ]; then
+  PARSE_MODE="HTML"
+  shift
+fi
+
+if [ "${1:-}" = "-" ]; then
   MSG=$(cat)
 else
   MSG="$*"
@@ -25,13 +38,17 @@ if [ -z "$MSG" ]; then
   exit 1
 fi
 
-# NOTE: parse_mode intentionally omitted. Telegram's Markdown parser rejects
-# messages with unbalanced *, _, [, or ` characters with HTTP 400 (curl exit
-# 22), causing silent delivery failure. Sending as plain text is more robust;
-# if formatting is needed in the future, switch to MarkdownV2 + escape
-# user-supplied content through a sanitizer.
-curl -sf -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
-  --data-urlencode "chat_id=${USER_ID}" \
-  --data-urlencode "text=${MSG}" >/dev/null
+# Default to plain text (no parse_mode). Telegram's Markdown parser is
+# strict and rejects messages with unbalanced *, _, [, ` (HTTP 400 /
+# silent delivery failure). HTML is opt-in via --html for callers that
+# control their content and want bold / italic / blockquote.
+ARGS=("-sf" "-X" "POST" "https://api.telegram.org/bot${TOKEN}/sendMessage"
+      "--data-urlencode" "chat_id=${USER_ID}"
+      "--data-urlencode" "text=${MSG}")
+if [ -n "$PARSE_MODE" ]; then
+  ARGS+=("--data-urlencode" "parse_mode=${PARSE_MODE}")
+fi
 
-echo "[$(date -Iseconds)] sent telegram: ${MSG:0:80}"
+curl "${ARGS[@]}" >/dev/null
+
+echo "[$(date -Iseconds)] sent telegram${PARSE_MODE:+ (parse_mode=$PARSE_MODE)}: ${MSG:0:80}"
