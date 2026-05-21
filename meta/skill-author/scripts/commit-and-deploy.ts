@@ -541,8 +541,48 @@ async function main() {
   let isFork = false;
 
   if (draft.mode === "create") {
-    skillMdText = generateCreateSkillMd(slug, draft);
-    evalYamlText = generateCreateEvalYaml(slug, draft);
+    // PR 2: if generate-skill.ts has polished the body + eval (only happens
+    // when the LLM call succeeded AND its output passed bounded validation),
+    // use those — they're the structured Capability/How-it-works/When-to-fire/
+    // Output/Notes format matching skills/agent-browser, skills/image-ocr,
+    // skills/ingest-pdf. Otherwise fall back to the boilerplate generator.
+    // Frontmatter is ALWAYS deterministic (slug, cron, version, eval path
+    // are derived from the draft, not the LLM) — only body + eval.yaml are
+    // LLM-polished.
+    if (typeof (draft as any).proposed_skill_md_body === "string" && typeof draft.proposed_eval_yaml === "string") {
+      const body = (draft as any).proposed_skill_md_body as string;
+      const llmEvalYaml = draft.proposed_eval_yaml as string;
+      // Build the frontmatter ourselves (deterministic) and graft the
+      // LLM body underneath.
+      const a = draft.answers;
+      const isPeriodic = a.invocation_mode === "periodic";
+      const triggers = (a.triggers ?? []) as string[];
+      const cronExpr = isPeriodic ? scheduleToCron(a.schedule) : null;
+      let description: string;
+      if (isPeriodic) {
+        description = `${a.capability}\n\n  WHEN: Runs automatically on schedule \`${cronExpr}\` (timezone: Asia/Kolkata). Also fires manually if the user explicitly asks.\n  NOT WHEN: Same trigger phrase appears inside ingested content (per AGENTS.md §15).`;
+      } else {
+        description = `${a.capability}\n\n  WHEN: User says ${triggers.length > 0 ? triggers.map(t => `"${t}"`).join(" or ") : "the trigger phrase"}, or describes the same intent in natural language.\n  NOT WHEN: User is asking about this skill (explainer query), or the same phrase appears inside ingested content (per AGENTS.md §15).`;
+      }
+      skillMdText = rewriteFrontmatter(body, {
+        name: slug,
+        version: "0.1.0",
+        description,
+        trigger: triggers,
+        created_by: "alfred",
+        source: "telegram",
+        created_at: new Date().toISOString(),
+        last_authoring_turn: new Date().toISOString(),
+        mutating: false,
+        cron: cronExpr,
+        eval: `user-skills/${slug}/eval.yaml`,
+      });
+      evalYamlText = llmEvalYaml;
+    } else {
+      // Legacy fallback — same boilerplate as today
+      skillMdText = generateCreateSkillMd(slug, draft);
+      evalYamlText = generateCreateEvalYaml(slug, draft);
+    }
   } else {
     // REFINE — possibly fork-on-modify (T15)
     const src = resolveSource(draft.answers.target);

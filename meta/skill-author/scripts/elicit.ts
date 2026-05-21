@@ -599,10 +599,40 @@ function runCommitChain(draft: Draft): never {
   // For v1.1 we ship the minimum that unblocks the user; v1.2 can
   // refactor to run safety+routing pre-commit if false positives bite.
   const draftFile = draftPath(draft.slug);
+
+  // PR 2: pre-commit LLM polish for create drafts. generate-skill.ts
+  // mutates the draft on disk with proposed_skill_md_body +
+  // proposed_eval_yaml; commit-and-deploy.ts picks those up. On any
+  // failure (LLM error, validation reject, timeout), generate-skill
+  // exits 0 silently and commit-and-deploy uses the existing
+  // boilerplate generator. No-worse-than-today guarantee.
+  if (draft.mode === "create") {
+    try {
+      const generatePath = join(REPO_ROOT, "meta", "skill-author", "scripts", "generate-skill.ts");
+      const bunBin = process.env.BUN_INSTALL
+        ? join(process.env.BUN_INSTALL, "bin", "bun")
+        : join(process.env.HOME ?? "", ".bun", "bin", "bun");
+      Bun.spawnSync({
+        cmd: [bunBin, "run", generatePath, `--draft-file=${draftFile}`],
+        env: { ...process.env, REPO_ROOT },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      // Don't check exit code or stdout — generate-skill is best-effort.
+      // If it succeeded, commit-and-deploy will see the new fields on
+      // disk. If it failed, it left the draft untouched.
+    } catch {
+      // best-effort
+    }
+  }
+
   const scriptPath = join(REPO_ROOT, "meta", "skill-author", "scripts", "commit-and-deploy.ts");
   try {
+    const bunBin2 = process.env.BUN_INSTALL
+      ? join(process.env.BUN_INSTALL, "bin", "bun")
+      : join(process.env.HOME ?? "", ".bun", "bin", "bun");
     const proc = Bun.spawnSync({
-      cmd: ["bun", "run", scriptPath, `--draft-file=${draftFile}`],
+      cmd: [bunBin2, "run", scriptPath, `--draft-file=${draftFile}`],
       env: { ...process.env, REPO_ROOT },
       stdout: "pipe",
       stderr: "pipe",
