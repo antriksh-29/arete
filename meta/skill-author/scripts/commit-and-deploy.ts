@@ -32,6 +32,9 @@ interface Draft {
   schema_version: 1;
   slug: string;
   mode: "create" | "refine";
+  // Distinguishes the one-shot LLM-driven refine path from the Q&A
+  // refine path. Set by refine-diff.ts; absent for elicit.ts drafts.
+  sub_mode?: "refine-diff";
   created_at: string;
   updated_at: string;
   completed_questions: number[];
@@ -39,6 +42,14 @@ interface Draft {
   source_tier?: "skills" | "openclaw/skills" | "user-skills";
   source_sha?: string;
   source_triggers?: string[];
+  // Populated by refine-diff.ts when the LLM-produced proposal passed
+  // all six bounded-diff guards. When present, commit-and-deploy writes
+  // these strings verbatim instead of running applyRefineDiff(). The
+  // existing fork-on-modify code path still runs to set forked_from
+  // frontmatter, but the BODY content is the LLM's proposal.
+  proposed_skill_md?: string;
+  proposed_eval_yaml?: string;
+  change_summary?: string[];
 }
 
 interface DeployArgs {
@@ -539,28 +550,64 @@ async function main() {
       emit({ ok: false, phase: "error", user_message: `Refine source \`${draft.answers.target}\` not found.`, draft_slug: slug, verdict: "error" });
     }
     isFork = src!.tier !== "user-skills";
-    let baseSkill: string;
-    let baseEval: string;
-    if (isFork) {
-      const cloned = cloneForFork({ tier: src!.tier, dir: src!.dir }, userSkillDir, draft.source_sha ?? "unknown");
-      baseSkill = rewriteFrontmatter(cloned.skillMdOriginal, {
-        name: slug,
-        version: "0.1.0",                // reset on fork
-        created_by: "alfred",
-        source: "telegram",
-        forked_from: `${src!.tier}/${draft.answers.target}@${draft.source_sha ?? "unknown"}`,
-        created_at: new Date().toISOString(),
-        last_authoring_turn: new Date().toISOString(),
-        eval: `user-skills/${slug}/eval.yaml`,
-      });
-      baseEval = cloned.evalYamlOriginal;
+
+    if (draft.sub_mode === "refine-diff" && typeof draft.proposed_skill_md === "string" && typeof draft.proposed_eval_yaml === "string") {
+      // ── one-shot LLM-driven refine (refine-diff.ts produced full content) ──
+      // The LLM's proposed_skill_md was bounded-diff validated against the
+      // SOURCE file (which may live in skills/ or openclaw/skills/). For a
+      // fork case, the immutable fields the validator checked (name,
+      // created_at, etc.) match the source, so it's safe to layer the
+      // fork frontmatter on top — we get the LLM's content edits + the
+      // bookkeeping fields that mark this as a fresh fork.
+      if (isFork) {
+        // Ensure the destination directory exists; we don't actually
+        // need cloneForFork's file copies (we have proposed_* already).
+        mkdirSync(userSkillDir, { recursive: true });
+        skillMdText = rewriteFrontmatter(draft.proposed_skill_md, {
+          name: slug,
+          version: "0.1.0",                // reset on fork
+          created_by: "alfred",
+          source: "telegram",
+          forked_from: `${src!.tier}/${draft.answers.target}@${draft.source_sha ?? "unknown"}`,
+          created_at: new Date().toISOString(),
+          last_authoring_turn: new Date().toISOString(),
+          eval: `user-skills/${slug}/eval.yaml`,
+        });
+      } else {
+        // In-place refine — write the LLM's proposed content as-is.
+        // The LLM already bumped the version per the system prompt; we
+        // refresh last_authoring_turn unconditionally so the brain audit
+        // page can show the timestamp.
+        skillMdText = rewriteFrontmatter(draft.proposed_skill_md, {
+          last_authoring_turn: new Date().toISOString(),
+        });
+      }
+      evalYamlText = draft.proposed_eval_yaml;
     } else {
-      // In-place refine of an existing user-skill
-      baseSkill = readFileSync(join(userSkillDir, "SKILL.md"), "utf8");
-      baseEval = existsSync(join(userSkillDir, "eval.yaml")) ? readFileSync(join(userSkillDir, "eval.yaml"), "utf8") : "";
+      // ── classic Q&A refine flow (elicit R1/R2/R3) ──
+      let baseSkill: string;
+      let baseEval: string;
+      if (isFork) {
+        const cloned = cloneForFork({ tier: src!.tier, dir: src!.dir }, userSkillDir, draft.source_sha ?? "unknown");
+        baseSkill = rewriteFrontmatter(cloned.skillMdOriginal, {
+          name: slug,
+          version: "0.1.0",                // reset on fork
+          created_by: "alfred",
+          source: "telegram",
+          forked_from: `${src!.tier}/${draft.answers.target}@${draft.source_sha ?? "unknown"}`,
+          created_at: new Date().toISOString(),
+          last_authoring_turn: new Date().toISOString(),
+          eval: `user-skills/${slug}/eval.yaml`,
+        });
+        baseEval = cloned.evalYamlOriginal;
+      } else {
+        // In-place refine of an existing user-skill
+        baseSkill = readFileSync(join(userSkillDir, "SKILL.md"), "utf8");
+        baseEval = existsSync(join(userSkillDir, "eval.yaml")) ? readFileSync(join(userSkillDir, "eval.yaml"), "utf8") : "";
+      }
+      skillMdText = applyRefineDiff(baseSkill, draft, slug);
+      evalYamlText = appendRefineTriggers(baseEval, slug, draft.answers.additional_triggers ?? []);
     }
-    skillMdText = applyRefineDiff(baseSkill, draft, slug);
-    evalYamlText = appendRefineTriggers(baseEval, slug, draft.answers.additional_triggers ?? []);
   }
 
   writeFileSync(join(userSkillDir, "SKILL.md"), skillMdText);

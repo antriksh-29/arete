@@ -213,8 +213,42 @@ EOF
   exit 0
 fi
 
-# --- ROUTE 1b: Explicit /refine <name> ---
-REFINE_TARGET=$(echo "$MSG" | grep -oiE '^[[:space:]]*/refine[[:space:]]+([a-z0-9_-]+)' | head -1 | awk '{print $NF}')
+# --- ROUTE 1b: Explicit /refine <name> [description] ---
+# Two shapes:
+#   /refine paul-graham-insights                      → Q&A elicit (R1/R2/R3)
+#   /refine paul-graham-insights add source URL ...   → one-shot LLM diff
+# The presence of any non-empty token after the slug switches to the
+# one-shot refine-diff.ts path. The slow Q&A path stays as the explicit
+# fallback for users who want walkthrough questions.
+REFINE_TARGET=$(echo "$MSG" | sed -nE 's|^[[:space:]]*/refine[[:space:]]+([a-zA-Z0-9_-]+).*$|\1|p' | head -1)
+REFINE_DESC_AFTER_SLUG=$(echo "$MSG" | sed -nE 's|^[[:space:]]*/refine[[:space:]]+[a-zA-Z0-9_-]+[[:space:]]+(.+)$|\1|p' | head -1)
+if [ -n "$REFINE_TARGET" ] && [ -n "$REFINE_DESC_AFTER_SLUG" ]; then
+  # Inline description present → one-shot refine.
+  ESCAPED_MSG=$(printf '%s' "$MSG" | sed 's/"/\\"/g')
+  cat <<EOF
+INTENT=skill_refine
+TARGET=${REFINE_TARGET}
+CONFIDENCE=100
+TRIGGER_SOURCE=explicit_slash_command_with_description
+ONE_SHOT=true
+
+REQUIRED_ACTION=Run the one-shot refine-diff for skill \`${REFINE_TARGET}\`. The user's message IS the spec. Do NOT ask any questions. The script reads the current SKILL.md + eval.yaml, asks Kimi for a bounded diff, validates it via six deterministic guards, and emits a confirmation envelope. Your ONLY action this turn is to run refine-diff.ts ONCE and relay its envelope verbatim.
+
+EXECUTION_RECIPE:
+1. Run EXACTLY this Bash command (no other tool calls):
+   ~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/refine-diff.ts --mode=propose --target=${REFINE_TARGET} --description="${ESCAPED_MSG}"
+2. The script returns a single-line JSON envelope on stdout. Parse it.
+3. Take the envelope's \`user_message\` field VERBATIM. Send it as your Telegram reply.
+4. STOP. The user's "yes"/"no"/"cancel" reply on the next turn is handled by the active-draft router rule (→ elicit.ts --mode=ingest-answer, which detects awaiting_confirmation=true and runs the commit chain).
+
+BANNED_RESPONSES:
+- Asking R1/R2/R3 yourself instead of running refine-diff.ts.
+- Editing the source SKILL.md directly via \`exec\`.
+- Reading the source SKILL.md and "summarizing" the change yourself — refine-diff.ts is the only authorized component.
+- Composing the change_summary bullets yourself — they come from refine-diff.ts's envelope.
+EOF
+  exit 0
+fi
 if [ -n "$REFINE_TARGET" ]; then
   cat <<EOF
 INTENT=skill_refine
@@ -235,6 +269,79 @@ BANNED_RESPONSES:
 - Composing your own version of R1.
 - Reading the source SKILL.md and "summarizing" it instead of running elicit.
 - Pre-filling answers from session memory.
+EOF
+  exit 0
+fi
+
+# --- ROUTE 1c: Implicit refine via fuzzy slug match (one-shot) ---
+# Scan the message for any known user-skill / skill slug substring.
+# If one matches AND the message has a change-verb signal, route to
+# the one-shot refine-diff. This catches phrasings the strict
+# "the <name> skill ..." regex below misses, like:
+#   • "make paul-graham-insights also include the source URL"
+#   • "add a new insight to the pg insights skill"
+#   • "switch steve jobs facts to fire at 9am instead"
+#
+# Two-pass match: first the exact kebab-case slug, then the
+# space-separated form (paul-graham-insights → "paul graham insights").
+# Picks the LONGEST matching slug to avoid "pg" colliding with a
+# longer "pg-insights" — substring matches are sorted descending.
+MATCHED_SLUG=""
+MATCHED_SLUG_LEN=0
+for tier in user-skills skills openclaw/skills; do
+  [ -d "$tier" ] || continue
+  for d in "$tier"/*/; do
+    [ -d "$d" ] || continue
+    [ -f "$d/SKILL.md" ] || continue
+    slug=$(basename "$d")
+    # Skip stub-only slugs (kebab length < 3 chars unlikely to match safely)
+    [ ${#slug} -lt 3 ] && continue
+    slug_spaced=$(echo "$slug" | tr '-' ' ')
+    if echo "$LMSG" | grep -qF -- "$slug"; then
+      if [ ${#slug} -gt $MATCHED_SLUG_LEN ]; then
+        MATCHED_SLUG="$slug"
+        MATCHED_SLUG_LEN=${#slug}
+      fi
+    elif echo "$LMSG" | grep -qF -- "$slug_spaced"; then
+      if [ ${#slug_spaced} -gt $MATCHED_SLUG_LEN ]; then
+        MATCHED_SLUG="$slug"
+        MATCHED_SLUG_LEN=${#slug_spaced}
+      fi
+    fi
+  done
+done
+
+CHANGE_VERB=0
+if echo "$LMSG" | grep -qE '\b(add|include|make|extend|also|should|modify|tweak|update|change|edit|refine|fix|adjust|tune|set|switch|move|remove|delete|drop|replace|rename|reschedule)\b'; then
+  CHANGE_VERB=1
+fi
+
+if [ -n "$MATCHED_SLUG" ] && [ "$CHANGE_VERB" -eq 1 ]; then
+  ESCAPED_MSG=$(printf '%s' "$MSG" | sed 's/"/\\"/g')
+  cat <<EOF
+INTENT=skill_refine
+TARGET=${MATCHED_SLUG}
+CONFIDENCE=85
+TRIGGER_SOURCE=fuzzy_slug_match
+ONE_SHOT=true
+
+REQUIRED_ACTION=Run the one-shot refine-diff for skill \`${MATCHED_SLUG}\`. The user's natural-language message IS the change spec. Do NOT ask R1/R2/R3 yourself. Do NOT ask for confirmation before running the script — the script's envelope is the confirmation prompt.
+
+EXECUTION_RECIPE:
+1. Run EXACTLY this Bash command (no other tool calls):
+   ~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/refine-diff.ts --mode=propose --target=${MATCHED_SLUG} --description="${ESCAPED_MSG}"
+2. The script returns a single-line JSON envelope on stdout. Parse it.
+3. Take the envelope's \`user_message\` field VERBATIM. Send it as your Telegram reply. The script's reply already contains the change_summary bullets and the "Reply yes/no/cancel" footer.
+4. STOP. The user's "yes" reply on the next turn lands in the active-draft router rule (route 0) and runs the commit chain.
+
+If refine-diff.ts emits an error or fallback envelope (e.g. "I tried to make that change in one shot but the diff looked off"), relay that VERBATIM. Do NOT retry, do NOT escalate, do NOT edit the file yourself.
+
+BANNED_RESPONSES:
+- Asking the user "did you mean to refine \`${MATCHED_SLUG}\`?" — the fuzzy match already had >=85% confidence; just run the script. The script's confirmation envelope handles user disambiguation.
+- Composing R1/R2/R3 questions.
+- Editing the SKILL.md directly via \`exec cat > ...\`.
+- Composing the change_summary bullets yourself — they come from refine-diff.ts's envelope.
+- Saying "Done. Updated ${MATCHED_SLUG}" or "🎉 Live" before the deploy callback hook fires.
 EOF
   exit 0
 fi

@@ -100,15 +100,36 @@ REQUIRED_ACTION=<exact next action>
   EXECUTION_RECIPE may tell you to ask an opt-in question FIRST — follow
   it verbatim, do NOT start the elicit yet.
 
-- **INTENT=skill_refine** → STOP. Your ONLY action is to run
-  `~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=refine --target=$TARGET`
-  (absolute paths required). Same opt-in rule as `skill_create` when
-  CONFIDENCE<100. The script handles fork-on-modify automatically if
-  `$TARGET` is in `skills/` or `openclaw/skills/` rather than
-  `user-skills/` — you do not need to know which tier the source lives
-  in. NEVER edit the source `skills/<name>/SKILL.md` or
-  `openclaw/skills/<name>/SKILL.md` directly; the fork-on-modify
-  mechanic preserves the original.
+- **INTENT=skill_refine** → STOP. Two sub-paths depending on the router
+  output's `ONE_SHOT` flag:
+
+  - **`ONE_SHOT=true`** (the user's message contains the change spec
+    — fuzzy slug match, explicit `/refine <slug> <description>`, or the
+    inline-description heuristic): the router's EXECUTION_RECIPE runs
+    `refine-diff.ts --mode=propose --target=$TARGET --description="..."`.
+    The script reads the current SKILL.md + eval.yaml, asks Kimi K2.6
+    for a bounded diff, validates it through six deterministic guards
+    (immutable fields, editable allowlist, size delta, section count,
+    YAML schema, change_summary shape), then emits an envelope showing
+    the change as bullets ending in "Reply yes / no / cancel". DO NOT
+    ASK QUESTIONS — the user's message IS the spec. DO NOT compose the
+    change_summary bullets yourself; relay refine-diff.ts's envelope
+    byte-for-byte. If the script returns a fallback envelope ("I tried
+    to make that change in one shot but the diff looked off"), relay
+    that verbatim and STOP.
+
+  - **`ONE_SHOT` absent / false** (bare `/refine <slug>`): the router's
+    EXECUTION_RECIPE runs `elicit.ts --mode=refine --target=$TARGET`,
+    which asks R1 (what's wrong), R2 (what should happen instead), and
+    R3 (any new trigger phrases). Same opt-in rule as `skill_create`
+    when CONFIDENCE<100. The user's subsequent answers are routed by
+    the active-draft rule (INTENT=skill_authoring_continue).
+
+  Either path handles fork-on-modify automatically if `$TARGET` lives
+  in `skills/` or `openclaw/skills/` rather than `user-skills/` — you
+  do not need to know which tier the source lives in. NEVER edit the
+  source `skills/<name>/SKILL.md` or `openclaw/skills/<name>/SKILL.md`
+  directly; the fork-on-modify mechanic preserves the original.
 
 The BANNED_RESPONSES block in router output is binding. If you
 catch yourself about to emit any phrase from that list, abort and
