@@ -70,6 +70,53 @@ list_managed_slugs() {
   done
 }
 
+# Install/update the systemd timer + service for one periodic skill.
+# Reads `cron:` from SKILL.md frontmatter, invokes the installer that
+# generates the unit files. ALSO removes any matching OpenClaw cron
+# entry from jobs.json — the systemd timer is now the canonical
+# delivery path (replaces the broken agentTurn dispatch which
+# misrouted periodic fires into the skill-author refine flow).
+sync_periodic_timer_for_slug() {
+  local slug="$1"
+  local skill_md="$WORKSPACE_SKILLS/$slug/SKILL.md"
+  [ -f "$skill_md" ] || return 0
+  # Extract cron value from frontmatter
+  local cron_val
+  cron_val=$(awk '/^---$/{c++} c==1 && /^cron:/{gsub(/^cron:[[:space:]]*"?|"?[[:space:]]*$/, "", $0); print; exit}' "$skill_md" | head -1)
+  local installer="$REPO/infra/install-periodic-skill-timer.sh"
+  if [ -z "$cron_val" ] || [ "$cron_val" = "null" ]; then
+    # Manual skill: remove any leftover timer
+    if systemctl --user list-units --all --no-pager 2>/dev/null | grep -q "skill-${slug}\\.timer"; then
+      systemctl --user disable --now "skill-${slug}.timer" >/dev/null 2>&1 || true
+      rm -f "$HOME/.config/systemd/user/skill-${slug}.timer" "$HOME/.config/systemd/user/skill-${slug}.service"
+      systemctl --user daemon-reload
+      log "removed periodic timer for manual skill: $slug"
+    fi
+  else
+    if [ -x "$installer" ]; then
+      bash "$installer" "$slug" "$cron_val" "Asia/Kolkata" >> "$LOG" 2>&1 && \
+        log "installed/updated periodic timer: $slug (cron=$cron_val)"
+    fi
+  fi
+  # ALWAYS drop any OpenClaw cron entry for this slug — the systemd timer
+  # is the canonical dispatcher now.
+  if [ -f "$JOBS_JSON" ]; then
+    python3 - "$slug" "$JOBS_JSON" <<'PY'
+import json, sys
+slug, p = sys.argv[1], sys.argv[2]
+try:
+    d = json.load(open(p))
+except Exception:
+    sys.exit(0)
+before = len(d.get("jobs", []))
+d["jobs"] = [j for j in d.get("jobs", []) if (j.get("name") or "").lower() != slug.lower()]
+if len(d["jobs"]) != before:
+    open(p, "w").write(json.dumps(d, indent=2))
+    print(f"removed OpenClaw cron entry for {slug} (replaced by systemd timer)")
+PY
+  fi
+}
+
 # Update jobs.json so a SKILL.md cron field change actually fires.
 # Pulls the `cron:` value from SKILL.md frontmatter and rewrites the
 # matching job's schedule.expr. Adds the job if it doesn't exist yet.
@@ -318,7 +365,12 @@ one_pass() {
     before_cron=$(jq -r ".jobs[] | select(.description | test(\"$slug\"; \"i\")) | .schedule.expr" "$JOBS_JSON" 2>/dev/null | head -1)
     if mirror_to_repo "$slug"; then
       slugs_changed+=("$slug")
-      sync_cron_for_slug "$slug"
+      # Periodic skills: install/update the systemd timer + dispatcher.
+      # ALSO removes any OpenClaw cron entry (replaced by systemd).
+      sync_periodic_timer_for_slug "$slug"
+      # Legacy: still maintain jobs.json for any remaining callers
+      # that might rely on it. The systemd timer is canonical.
+      sync_cron_for_slug "$slug" 2>/dev/null || true
       after_cron=$(jq -r ".jobs[] | select(.description | test(\"$slug\"; \"i\")) | .schedule.expr" "$JOBS_JSON" 2>/dev/null | head -1)
       local change_desc
       change_desc=$(describe_cron_change "$slug" "$before_cron" "$after_cron")
