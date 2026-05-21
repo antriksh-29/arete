@@ -15,7 +15,7 @@ source: telegram
 created_at: "2026-05-20T13:55:00.000Z"
 last_authoring_turn: "2026-05-20T13:55:00.000Z"
 mutating: false
-cron: "30 18 * * *"
+cron: "30 11 * * *"
 eval: user-skills/paul-graham-insights/eval.yaml
 ---
 
