@@ -15,3 +15,7 @@ _Authored fresh via Telegram._
 ## Connections
 - Skill file: [[../../../user-skills/help-me-get-a-daily-report-on-all-the-to/SKILL.md]]
 - Eval file: [[../../../user-skills/help-me-get-a-daily-report-on-all-the-to/eval.yaml]]
+## Refinement turn (2026-05-21, commit `4999009`)
+
+- **Change requested:** Update the description and capability section to say 6:30pm instead of 6:15pm
+- **New behavior:** Updated the delivery time to 6:30pm
