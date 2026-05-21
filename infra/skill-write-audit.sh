@@ -280,7 +280,14 @@ PY
 one_pass() {
   audit_repo
   audit_workspace
-  audit_workspace_user_skills
+  # NOTE: audit_workspace_user_skills was the roster-revert mechanism
+  # (#112) — superseded by skill-autosync.sh (#114), which now MIRRORS
+  # workspace edits TO the repo + GitHub instead of reverting them.
+  # The two are mutually exclusive: revert-to-repo discards user
+  # intent; autosync preserves it. We chose autosync because users
+  # editing a skill via Telegram expect the change to land on GitHub
+  # the same way ~/.brain changes land in antriksh-brain.
+  # audit_workspace_user_skills
   audit_crons
 }
 
