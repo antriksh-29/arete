@@ -216,6 +216,7 @@ step "sync openclaw/skills/" sync_openclaw_skills
 sync_user_skills() {
   local target="$HOME/.openclaw/workspace/skills"
   local tracker="$HOME/.openclaw/.user-skills-managed.list"
+  local immutable_helper="$HOME/personal-assistant/infra/skill-immutable.sh"
   if [ ! -d "$target" ]; then
     echo "  ${yellow}!${rst} $target missing — skipping user-skills sync"
     return 0
@@ -224,6 +225,13 @@ sync_user_skills() {
     echo "  user-skills/ not present in repo — nothing to sync"
     user_skills_zombie_delete "$target" "$tracker" ""
     return 0
+  fi
+  # Unlock ALL workspace user-skill files up-front. Sync writes will
+  # fail with EPERM on locked files; we re-lock at the end. Safe even
+  # if some files aren't locked yet (chattr -i on a mutable file is a
+  # no-op).
+  if [ -x "$immutable_helper" ]; then
+    bash "$immutable_helper" unlock >/dev/null 2>&1 || true
   fi
   local copied=0
   local current_names=""
@@ -256,6 +264,14 @@ sync_user_skills() {
   echo "  synced $copied user-skill file(s) → $target/"
   user_skills_zombie_delete "$target" "$tracker" "$current_names"
   printf '%s\n' $current_names > "$tracker"
+
+  # Re-lock all workspace user-skill files with the immutable bit so
+  # the agent's `exec cat > .../SKILL.md` bypass is impossible (EPERM).
+  # This is the structural fix; the audit daemon below is now just
+  # defense-in-depth.
+  if [ -x "$immutable_helper" ]; then
+    bash "$immutable_helper" lock 2>&1 | sed 's/^/  /'
+  fi
 
   # Regenerate the skill roster so the audit daemon knows the new
   # expected sha256 hashes for each user-skill file. The daemon
