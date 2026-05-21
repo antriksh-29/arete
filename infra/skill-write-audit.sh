@@ -128,12 +128,27 @@ audit_workspace() {
 # ──────────────────────────────────────────────────────────────────
 
 audit_crons() {
+  # Audit OpenClaw cron jobs for the "empty stub" bypass pattern: bot
+  # called CronCreate but never populated a payload, leaving an entry
+  # that fires nothing. Skip entries whose `name` matches a legitimate
+  # user-skill slug — those are the autosync-managed crons (#114),
+  # and OpenClaw's correct schema uses `payload`, not `prompt`, so
+  # `prompt` being empty there is normal.
   local jobs="$HOME/.openclaw/cron/jobs.json"
+  local repo_us="$REPO/user-skills"
   [ -f "$jobs" ] || return
+  [ -d "$repo_us" ] || return
   local removed
-  removed=$(python3 - <<'PY' "$jobs"
-import json, sys, re
+  removed=$(REPO_US="$repo_us" python3 - <<'PY' "$jobs"
+import json, os, sys, re
+from pathlib import Path
 p = sys.argv[1]
+repo_us = Path(os.environ.get("REPO_US", ""))
+known_slugs = set()
+if repo_us.is_dir():
+    for d in repo_us.iterdir():
+        if d.is_dir() and (d / "SKILL.md").is_file():
+            known_slugs.add(d.name)
 try:
     d = json.load(open(p))
 except Exception:
@@ -144,6 +159,14 @@ SKILL_SHAPED = re.compile(
     re.I,
 )
 for j in d.get("jobs", []):
+    # 1. Exempt: entry has a payload (OpenClaw's schema for "do something") OR
+    #            entry's name maps to a known user-skill slug
+    has_payload = bool(j.get("payload"))
+    name = (j.get("name") or "").lower()
+    if has_payload or name in known_slugs:
+        keep.append(j)
+        continue
+    # 2. Drop: empty payload AND empty prompt AND skill-shaped description
     prompt = (j.get("prompt") or j.get("command") or "").strip()
     desc = (j.get("description") or "")
     if not prompt and SKILL_SHAPED.search(desc):
