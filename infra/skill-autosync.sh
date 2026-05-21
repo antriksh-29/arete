@@ -113,25 +113,117 @@ if cron_val is None:
 elif matching:
     job = matching[0]
     current = job.get("schedule", {}).get("expr")
+    # Always upgrade legacy schema (prompt only) to OpenClaw's expected
+    # shape (payload+delivery). Without these fields the cron module
+    # throws "Cannot read properties of undefined" at fire time and
+    # NOTHING actually fires. Lesson learned the hard way from the
+    # 11:30 IST PG cron that never fired (#114 follow-up).
+    needs_schema_upgrade = "payload" not in job or "delivery" not in job
     if current != cron_val:
         job["schedule"]["expr"] = cron_val
-        # Bump description timestamp so the user sees the change reflected
         changed = True
         print(f"updated {slug} cron: {current} -> {cron_val}")
+    if needs_schema_upgrade:
+        job["name"] = slug
+        job["sessionTarget"] = "isolated"
+        job["wakeMode"] = "now"
+        job["payload"] = {"kind": "agentTurn", "message": f"Run the {slug} skill and deliver its output per user-skills/{slug}/SKILL.md."}
+        # Read user's Telegram chat ID from the bot-cred vault. Without
+        # `to`, the cron fires but delivery fails (`Delivering to
+        # Telegram requires target <chatId>`) — that's the 11:30 IST
+        # bug that took 5 PRs to find.
+        import subprocess
+        try:
+            chat_id = subprocess.check_output(["/usr/local/bin/bot-cred", "get", "TELEGRAM_USER_ID"], text=True).strip().splitlines()[0]
+        except Exception:
+            chat_id = ""
+        job["delivery"] = {"mode": "announce", "channel": "last", "to": chat_id}
+        job.pop("prompt", None)  # legacy field — OpenClaw doesn't read it
+        if "createdAtMs" not in job or isinstance(job.get("createdAtMs"), str):
+            import time as _t
+            job["createdAtMs"] = int(_t.time() * 1000)
+            job.pop("createdAt", None)
+        changed = True
+        print(f"upgraded {slug} cron schema (added payload+delivery+to={chat_id})")
+    # Update description so it matches the actual schedule (helps the user
+    # see at a glance what's set without re-reading the cron expression).
+    desc_time = ""
+    parts = cron_val.split()
+    if len(parts) == 5 and parts[2] == "*" and parts[3] == "*" and parts[4] == "*":
+        try:
+            desc_time = f"{int(parts[1]):02d}:{int(parts[0]):02d} IST"
+        except (ValueError, TypeError):
+            pass
+    if desc_time:
+        new_desc = f"{slug} skill — daily {desc_time}"
+        if job.get("description") != new_desc:
+            job["description"] = new_desc
+            changed = True
 else:
-    # Add a new cron entry for this slug
+    # Add a new cron entry using OpenClaw's correct schema (mirrors the
+    # working CLI-generated shape; delivery requires `to: <chat_id>`).
+    import subprocess, time as _t
+    try:
+        chat_id = subprocess.check_output(["/usr/local/bin/bot-cred", "get", "TELEGRAM_USER_ID"], text=True).strip().splitlines()[0]
+    except Exception:
+        chat_id = ""
     jobs["jobs"].append({
         "id": str(uuid.uuid4()),
-        "description": f"{slug} skill (auto-synced from SKILL.md)",
+        "name": slug,
+        "description": f"{slug} skill (auto-registered from SKILL.md)",
+        "enabled": True,
+        "createdAtMs": int(_t.time() * 1000),
         "schedule": {"kind": "cron", "expr": cron_val, "tz": "Asia/Kolkata"},
-        "prompt": f"Run the {slug} skill per user-skills/{slug}/SKILL.md.",
-        "createdAt": "2026-05-21T00:00:00.000Z",
+        "sessionTarget": "isolated",
+        "wakeMode": "now",
+        "payload": {"kind": "agentTurn", "message": f"Run the {slug} skill and deliver its output per user-skills/{slug}/SKILL.md."},
+        "delivery": {"mode": "announce", "channel": "last", "to": chat_id},
+        "state": {},
     })
     changed = True
-    print(f"registered cron for {slug}: {cron_val}")
+    print(f"registered cron for {slug}: {cron_val} -> {chat_id}")
 
 if changed:
     open(jobs_path, "w").write(json.dumps(jobs, indent=2))
+PY
+}
+
+# Normalize SKILL.md body text so the human-readable description matches
+# the actual `cron:` frontmatter value. The bot tends to change the
+# `cron:` field but leave the body text saying the old time, which is
+# confusing on GitHub. This patches the workspace file in place BEFORE
+# mirroring, so repo + workspace + jobs.json all show the same time.
+normalize_skill_body() {
+  local slug="$1"
+  local skill_md="$WORKSPACE_SKILLS/$slug/SKILL.md"
+  [ -f "$skill_md" ] || return 0
+  python3 - "$skill_md" <<'PY'
+import re, sys
+p = sys.argv[1]
+text = open(p).read()
+m = re.match(r"^---\n(.*?)\n---\n(.*)$", text, re.S)
+if not m: sys.exit(0)
+fm, body = m.group(1), m.group(2)
+cm = re.search(r'^cron:\s*"?([^"\n]+)"?\s*$', fm, re.M)
+if not cm: sys.exit(0)
+cron_val = cm.group(1).strip().strip('"')
+parts = cron_val.split()
+if len(parts) != 5: sys.exit(0)
+mm, hh = parts[0], parts[1]
+try:
+    hh_int, mm_int = int(hh), int(mm)
+except (ValueError, TypeError):
+    sys.exit(0)
+hhmm = f"{hh_int:02d}:{mm_int:02d}"
+# Patch the description / body wherever a stale schedule mention lives.
+new_fm = re.sub(r'schedule `[0-9 \*/-]+`', f'schedule `{cron_val}`', fm)
+new_body = re.sub(r'schedule:\s*`[0-9 \*/-]+`', f'schedule: `{cron_val}`', body)
+new_body = re.sub(r'(Fires once per day at )\d{1,2}:\d{2}( IST\.)', rf'\g<1>{hhmm}\g<2>', new_body)
+new_body = re.sub(r'schedule `[0-9 \*/-]+`', f'schedule `{cron_val}`', new_body)
+out = f"---\n{new_fm}\n---\n{new_body}"
+if out != text:
+    open(p, "w").write(out)
+    print(f"normalized body text to match cron {cron_val} ({hhmm} IST)")
 PY
 }
 
@@ -139,6 +231,7 @@ PY
 # changed, 1 if no changes. Doesn't push — caller batches push.
 mirror_to_repo() {
   local slug="$1"
+  normalize_skill_body "$slug"
   local changed=0
   for f in SKILL.md eval.yaml; do
     local ws="$WORKSPACE_SKILLS/$slug/$f"

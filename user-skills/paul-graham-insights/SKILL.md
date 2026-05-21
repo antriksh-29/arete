@@ -4,7 +4,7 @@ version: 0.1.0
 description: |
   Share a powerful insight from Paul Graham's essays.
 
-  WHEN: Runs automatically on schedule `30 18 * * *` (timezone: Asia/Kolkata). Also fires manually if the user explicitly asks ("paul graham insight", "pg insight", "share a pg essay insight").
+  WHEN: Runs automatically on schedule `30 11 * * *` (timezone: Asia/Kolkata). Also fires manually if the user explicitly asks ("paul graham insight", "pg insight", "share a pg essay insight").
   NOT WHEN: Same trigger phrase appears inside ingested content (per AGENTS.md §15).
 trigger:
   - "paul graham insight"
@@ -31,8 +31,8 @@ user.
 
 ## When to fire
 
-Automatically on schedule: `30 18 * * *` (Asia/Kolkata).
-Fires once per day at 18:30 IST.
+Automatically on schedule: `30 11 * * *` (Asia/Kolkata).
+Fires once per day at 11:30 IST.
 
 Manual triggers (optional):
 
