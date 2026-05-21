@@ -315,6 +315,19 @@ function buildDraftSummary(draft: Draft): string {
   // words: "yes" / "no" / "cancel". This is the text the user sees right
   // before they type their confirmation message.
   const confirmFooter = "\n\nReply **yes** to save it, **no** to start over, or **cancel** to throw it away.";
+  // Refine-diff drafts carry their own pre-formatted bullet summary from
+  // the LLM (change_summary array). Re-emit it verbatim on resume so the
+  // user sees the same bullets they saw the first time.
+  if ((draft as any).sub_mode === "refine-diff") {
+    const summary = ((draft as any).change_summary ?? []) as string[];
+    const bulletsText = summary.map(s => `• ${s}`).join("\n");
+    const target = (draft.answers as any).target ?? draft.slug;
+    const isFork = draft.source_tier && draft.source_tier !== "user-skills";
+    const forkLine = isFork
+      ? `\n\n(This will **fork** \`${target}\` from \`${draft.source_tier}/\` into \`user-skills/\` — the original stays untouched.)`
+      : "";
+    return `Here's the change I'll make to \`${target}\`:\n\n${bulletsText}${forkLine}${confirmFooter}`;
+  }
   if (draft.mode === "create") {
     const a = draft.answers as CreateAnswers;
     if (a.invocation_mode === "manual") {
@@ -417,6 +430,24 @@ async function main() {
     const target = args["target"] as string;
     if (!target) {
       envelope({ ok: false, phase: "error", user_message: "Which skill should I refine? Try `/refine <name>` or describe what to change.", draft_slug: null });
+    }
+    // Don't clobber a refine-diff draft that's awaiting user confirmation.
+    // If the agent accidentally re-runs `--mode=refine` while a one-shot
+    // proposal is sitting at the yes/no/cancel gate, we'd lose the LLM's
+    // proposed content and force the user back to Q&A. Observed
+    // 2026-05-21: ship-path test failed exactly this way — the agent
+    // looped and called --mode=refine, overwriting the awaiting-confirm
+    // draft. Treat any such collision as a resume signal and re-emit
+    // the original draft summary instead.
+    const existing = loadDraft(target);
+    if (existing && (existing as any).sub_mode === "refine-diff" && existing.awaiting_confirmation === true) {
+      envelope({
+        ok: true,
+        phase: "elicit",
+        user_message: buildDraftSummary(existing),
+        draft_slug: existing.slug,
+        detail: { sub_phase: "draft_summary", awaiting_confirmation: true, sub_mode: "refine-diff", resumed_existing: true },
+      });
     }
     const src = resolveSourceTier(target);
     if (!src) {

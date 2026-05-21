@@ -14,16 +14,21 @@ if [ -z "$USER_MSG" ]; then
   exit 0
 fi
 
-# Skip purely operational messages — cheap pre-filter so we don't burn
-# tokens on "yes" / "ok" / single-emoji replies. The sub-agent itself
-# also filters but this is faster and saves cost.
+# Skip the heavy signal-detector spawn on cheap operational messages
+# ("yes", "ok", short single-word replies). The intent-router below
+# is ALWAYS run — without it, "yes" / "no" / "cancel" replies that
+# confirm an active skill-author draft lose their routing directive
+# and the main agent improvises (observed 2026-05-21: ship-path test
+# failed because spawn-signal-detector exited early on "yes" → router
+# output dropped → agent re-ran refine-diff and overwrote the draft).
+SKIP_DETECTOR=0
 TRIM=$(echo -n "$USER_MSG" | tr -d '[:space:]')
 if [ ${#TRIM} -lt 8 ]; then
-  exit 0
+  SKIP_DETECTOR=1
 fi
 case "$(echo "$USER_MSG" | tr '[:upper:]' '[:lower:]' | tr -d '[:punct:]' | xargs)" in
-  yes|yeah|yep|ok|okay|sure|thanks|thx|nope|no|cool|noted|got\ it|done|approve|approved|reject|rejected|send\ it|let\ us\ go|lets\ go)
-    exit 0
+  yes|yeah|yep|ok|okay|sure|thanks|thx|nope|no|cool|noted|got\ it|done|approve|approved|reject|rejected|send\ it|let\ us\ go|lets\ go|cancel|abort|stop)
+    SKIP_DETECTOR=1
     ;;
 esac
 
@@ -34,17 +39,19 @@ LOG="$LOG_DIR/$(date +%Y-%m-%d).log"
 
 export PATH="/home/botuser/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
-echo "[$TS] spawning capture for: ${USER_MSG:0:120}" >> "$LOG"
-
-# Background detached run — main agent's exec returns immediately.
-# nohup + & + redirect = fire-and-forget.
-nohup openclaw agent \
-  --agent signal-detector \
-  --message "$USER_MSG" \
-  --json \
-  >> "$LOG" 2>&1 &
-
-echo "ok: signal-detector spawned (pid $!, log $LOG)"
+if [ "$SKIP_DETECTOR" -eq 0 ]; then
+  echo "[$TS] spawning capture for: ${USER_MSG:0:120}" >> "$LOG"
+  # Background detached run — main agent's exec returns immediately.
+  # nohup + & + redirect = fire-and-forget.
+  nohup openclaw agent \
+    --agent signal-detector \
+    --message "$USER_MSG" \
+    --json \
+    >> "$LOG" 2>&1 &
+  echo "ok: signal-detector spawned (pid $!, log $LOG)"
+else
+  echo "ok: signal-detector skipped (operational reply — running router only)"
+fi
 
 # ── Intent-router (synchronous) ────────────────────────────────
 # Run the deterministic intent classifier and append its output
