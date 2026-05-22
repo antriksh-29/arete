@@ -776,6 +776,41 @@ Telegram inbound queue.
 3. `composio__COMPOSIO_MULTI_EXECUTE_TOOL` to run the call with the
    parameters the schema documented.
 
+**FOR LARGE / PAGINATED FETCHES (>30 items expected): use the wrapper
+not the MCP tool.** Composio's `MULTI_EXECUTE_TOOL` silently truncates
+responses larger than ~30 items per page to a `data_preview` (3 items)
+plus a `remote_file_info.file_path` pointing to a sandbox file you
+CANNOT read (the workbench tool that could read it was disabled in
+PR-A0 for cost reasons). Verified 2026-05-22: a "list all my YouTube
+subscriptions" request returned only 3 items inline; the full 161-item
+list was inaccessible.
+
+The fix is `infra/composio-paginate.py` — invoke via Bash exec:
+
+\`\`\`bash
+python3 ~/personal-assistant/infra/composio-paginate.py \\
+  YOUTUBE_LIST_USER_SUBSCRIPTIONS \\
+  --args '{"part":"snippet","maxResults":15,"mine":true}' \\
+  --slim 'snippet.title,snippet.resourceId.channelId,id' \\
+  --max-pages 15
+\`\`\`
+
+This wrapper:
+  • Calls Composio with `sync_response_to_workbench: False`
+  • Uses `maxResults: 15` per page (below the truncation threshold)
+  • Loops on `nextPageToken` until exhausted
+  • Falls back to `data_preview` if any single page still truncates
+  • Returns clean JSON: `{"items": [...], "total": N, "pages": P}`
+
+Apply this pattern for ANY of: YouTube subscriptions/playlists/videos,
+Gmail searches with >30 hits, Google Calendar event lists spanning
+weeks, Google Drive file listings, Notion database queries — anywhere
+a single MCP call would return more than ~30 items.
+
+If unsure how many items you'll get: estimate from the user's
+phrasing ("all my subscriptions", "every email this month", "the
+whole roster") → use the wrapper. When in doubt, use the wrapper.
+
 **Connected toolkits** — the list below is auto-refreshed on every
 deploy from `bash ~/bin/composio-connections.sh`. If the user mentions
 an app NOT in this list, do NOT assume it's unavailable — run that
