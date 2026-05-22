@@ -807,6 +807,19 @@ Gmail searches with >30 hits, Google Calendar event lists spanning
 weeks, Google Drive file listings, Notion database queries — anywhere
 a single MCP call would return more than ~30 items.
 
+**SHORTCUT for "categorize my YouTube subscriptions" requests** — instead
+of pagination + LLM categorization inside the agent loop (5+ minutes,
+hits the spool-stall watchdog), use the dedicated one-shot script:
+
+\`\`\`bash
+python3 ~/personal-assistant/infra/youtube-subs-categorize.py \\
+  --brain-page youtube-subscriptions-<descriptive-slug>
+\`\`\`
+
+The script does the entire pipeline (paginate → single Moonshot
+categorize call → brain page write) in ~30 seconds and returns clean
+JSON to stdout. Your job is to invoke it and relay the summary.
+
 If unsure how many items you'll get: estimate from the user's
 phrasing ("all my subscriptions", "every email this month", "the
 whole roster") → use the wrapper. When in doubt, use the wrapper.

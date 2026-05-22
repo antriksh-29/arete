@@ -35,9 +35,17 @@ SESSIONS_DIR="${SESSIONS_DIR:-$HOME/.openclaw/agents/main/sessions}"
 DRAFTS_DIR="${DRAFTS_DIR:-$HOME/personal-assistant/.context/skill-author-drafts}"
 STATE_FILE="${STATE_FILE:-$HOME/.openclaw/.spool-watchdog-state}"
 LOG="${LOG:-/tmp/spool-stall-watchdog.log}"
-STALL_THRESHOLD_MIN="${STALL_THRESHOLD_MIN:-5}"
+# Threshold raised from 5min → 10min after 2026-05-22 incident: a
+# legitimate "list all 161 YouTube subs + categorize + brain write"
+# request was actively logging journal output but still got killed
+# at the 5-min mark. Long-running but progressing work needs room.
+STALL_THRESHOLD_MIN="${STALL_THRESHOLD_MIN:-10}"
 STALL_DEPTH="${STALL_DEPTH:-3}"
 COOLDOWN_MIN="${COOLDOWN_MIN:-3}"
+# If the gateway has emitted ANY journal entry in the last
+# JOURNAL_QUIET_MIN minutes, treat the job as alive — don't kill it
+# even if the spool file is "old". A truly hung gateway emits nothing.
+JOURNAL_QUIET_MIN="${JOURNAL_QUIET_MIN:-2}"
 TG_SEND="$HOME/bin/send-telegram.sh"
 DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
@@ -81,7 +89,24 @@ if [ "$is_stuck" -eq 0 ]; then
   exit 0
 fi
 
-log "stall detected: $reason"
+# Liveness check — if the gateway has emitted ANY journal output in
+# the last JOURNAL_QUIET_MIN minutes, the work is progressing. Don't
+# kill long-running but active jobs (PR #129's YouTube fetch is the
+# motivating case: 5+ min of pagination + categorization, but
+# constantly logging activity).
+since="${JOURNAL_QUIET_MIN} minutes ago"
+recent_journal_lines=$(journalctl --user -u openclaw-gateway \
+                        --since "$since" --no-pager 2>/dev/null \
+                      | grep -cE "node\[|gateway|agent|tool|model" 2>/dev/null \
+                      || echo 0)
+if [ "$recent_journal_lines" -ge 3 ]; then
+  log "spool old but gateway is active ($recent_journal_lines journal lines in last ${JOURNAL_QUIET_MIN}min) — skipping kill"
+  # Update cooldown so we don't check again immediately
+  echo "$now_epoch" > "$STATE_FILE"
+  exit 0
+fi
+
+log "stall detected: $reason (journal quiet: $recent_journal_lines lines in last ${JOURNAL_QUIET_MIN}min)"
 
 # Snapshot the stuck head-of-line message for context
 head_msg=""
