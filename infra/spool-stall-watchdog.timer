@@ -1,0 +1,14 @@
+[Unit]
+Description=Spool stall watchdog timer — runs every minute
+Requires=spool-stall-watchdog.service
+
+[Timer]
+# Run every 60 seconds. Persistent=false because we don't want to fire on
+# missed boots (catching up days of pending work isn't useful here).
+OnBootSec=2min
+OnUnitActiveSec=60s
+Unit=spool-stall-watchdog.service
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

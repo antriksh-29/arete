@@ -757,6 +757,51 @@ install_skill_autosync() {
 }
 step "install skill-autosync daemon" install_skill_autosync
 
+# ── 4d.5 install spool-stall watchdog timer ────────────────────────
+# Detects the case where a single Telegram inbound message has been
+# in-flight for >5 minutes (e.g. Kimi hallucination loop, network
+# stall, model timeout) and recovers by:
+#   1. Clearing the spool
+#   2. Retiring the active session
+#   3. SIGKILL-restarting the gateway
+#   4. Telegram-notifying the user
+# Observed 2026-05-22: user asked "list my YouTube subscriptions",
+# Kimi fabricated a 161-entry list and looped on `cat > /tmp/...txt`
+# for 30+ minutes blocking the inbound queue. Watchdog catches that
+# class of bug within a minute and recovers.
+install_spool_stall_watchdog() {
+  local svc_src="$HOME/personal-assistant/infra/spool-stall-watchdog.service"
+  local tmr_src="$HOME/personal-assistant/infra/spool-stall-watchdog.timer"
+  local svc_dst="$HOME/.config/systemd/user/spool-stall-watchdog.service"
+  local tmr_dst="$HOME/.config/systemd/user/spool-stall-watchdog.timer"
+  if [ ! -f "$svc_src" ] || [ ! -f "$tmr_src" ]; then
+    echo "  ${yellow}!${rst} spool-stall-watchdog unit files not in repo — skipping"
+    return 0
+  fi
+  mkdir -p "$(dirname "$svc_dst")"
+  local changed=0
+  if [ ! -f "$svc_dst" ] || ! cmp -s "$svc_src" "$svc_dst"; then
+    cp "$svc_src" "$svc_dst"
+    changed=1
+  fi
+  if [ ! -f "$tmr_dst" ] || ! cmp -s "$tmr_src" "$tmr_dst"; then
+    cp "$tmr_src" "$tmr_dst"
+    changed=1
+  fi
+  if [ "$changed" = "1" ]; then
+    systemctl --user daemon-reload
+    echo "  installed/updated spool-stall-watchdog units"
+  fi
+  systemctl --user enable spool-stall-watchdog.timer >/dev/null 2>&1
+  systemctl --user start spool-stall-watchdog.timer >/dev/null 2>&1
+  if systemctl --user is-active spool-stall-watchdog.timer >/dev/null 2>&1; then
+    echo "  ${green}✓${rst} spool-stall-watchdog timer active (60s interval, 5min stall threshold)"
+  else
+    echo "  ${yellow}!${rst} spool-stall-watchdog timer not active"
+  fi
+}
+step "install spool-stall watchdog" install_spool_stall_watchdog
+
 install_bh_dropin() {
   local dir="$HOME/.config/systemd/user/openclaw-gateway.service.d"
   local file="$dir/browser-harness.conf"

@@ -1,0 +1,11 @@
+[Unit]
+Description=Spool stall watchdog — detect & recover stuck Telegram inbound queue
+After=openclaw-gateway.service
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/bash %h/personal-assistant/infra/spool-stall-watchdog.sh
+TimeoutStartSec=60
+StandardOutput=journal
+StandardError=journal
