@@ -244,7 +244,15 @@ async function readVaultKey(name: string): Promise<string | null> {
   }
 }
 
-const INTAKE_SYSTEM_PROMPT = `You read a recent Telegram chat between Alfred (a personal assistant bot) and his user, then extract the structured fields needed to create a new automated skill. The user just said something like "yes implement this" / "let's build it" — meaning the conversation above the latest message has already established WHAT the skill should do.
+const INTAKE_SYSTEM_PROMPT = `You read a recent Telegram chat between Alfred (a personal assistant bot) and his user, plus the user's latest message, then extract the structured fields needed to create a new automated skill.
+
+Two possible shapes of the latest message:
+
+  (a) "Substantive first message" — the user opened the conversation with a detailed spec (multiple sentences, mentions schedule, output format, channels, etc.). In this case the chat history may be empty or unrelated. EXTRACT FROM THE LATEST MESSAGE ITSELF.
+
+  (b) "Confirmation after chat" — the latest message is short ("yes implement this", "let's build it", "ship it"). The actual spec is in the chat history above. EXTRACT FROM THE CHAT HISTORY.
+
+In both cases, you treat the union of {chat history + latest message} as the source of truth. Prefer the latest message's literal wording when it conflicts with chat history (e.g. user said "actually 6:30pm not 6:15pm" — use 6:30pm).
 
 Your job: extract these fields from the conversation. Return ONLY the JSON object specified below. Use null for fields you cannot confidently determine from chat context.
 
@@ -537,18 +545,33 @@ async function main() {
     fallbackToFreshElicit("no message provided");
   }
 
-  // Resolve session file: explicit arg > auto-detect freshest jsonl
+  // Resolve session file: explicit arg > auto-detect freshest jsonl. If we
+  // can't find one, that's OK — extraction can work off the --message alone
+  // (added 2026-05-22 after image-v33 bug report: the user's FIRST detailed
+  // message has enough spec to extract from without any prior chat).
   let sessionFile = (args["session-file"] as string) ?? "";
   if (!sessionFile) sessionFile = findActiveSessionFile() ?? "";
-  if (!sessionFile || !existsSync(sessionFile)) {
-    // No session file means no context to read — fall back to fresh elicit.
-    fallbackToFreshElicit("no session file found");
+
+  let messages: ChatMessage[] = [];
+  if (sessionFile && existsSync(sessionFile)) {
+    messages = readSessionTail(sessionFile, RECENT_MESSAGES);
   }
 
-  const messages = readSessionTail(sessionFile, RECENT_MESSAGES);
-  if (messages.length < 2) {
-    // Not enough context to extract anything useful — fall back.
-    fallbackToFreshElicit(`only ${messages.length} messages in session`);
+  // Heuristic — is the user's CURRENT message substantive enough to extract
+  // from on its own? We require at least 80 chars or 12 words, since shorter
+  // messages like "yes implement this" are confirmations, not specs.
+  const wordCount = latestMessage.split(/\s+/).filter(Boolean).length;
+  const messageIsSubstantive = latestMessage.length >= 80 || wordCount >= 12;
+
+  // Three cases:
+  //   (a) Substantive first message, no useful chat history → extract from
+  //       message alone. This is the image-v33 case.
+  //   (b) Short "yes implement this" confirmation, chat has history →
+  //       extract from chat history (PR #121 original use case).
+  //   (c) Short message, no chat → no useful input, fall back to elicit Q1.
+  const haveContext = messages.length >= 2 || messageIsSubstantive;
+  if (!haveContext) {
+    fallbackToFreshElicit(`no chat history and message is too short (${latestMessage.length} chars, ${wordCount} words)`);
   }
 
   const llmResult = await callKimiForExtraction(messages, latestMessage);

@@ -495,6 +495,27 @@ if echo "$LMSG" | grep -qE "\b${NOUN_RE}\b.{0,40}\b${TIME_RE}\b"; then IMPLICIT_
 if echo "$LMSG" | grep -qE '\bwhen\s+i\s+(say|type|ask|tell|message)\b.{0,80}(reply|respond|send|give|share|tell|do|fetch|return)\b'; then IMPLICIT_CREATE=1; fi
 # Capability desire: "I want (you|a way|alfred) to ..."
 if echo "$LMSG" | grep -qE '\bi\s+want\s+(you to|a way to|something to|to be able|the bot to|alfred to|you|alfred)\b'; then IMPLICIT_CREATE=1; fi
+# Capability desire (broad): "I want to create/build/make/set up X", "I'd like to set up/build X"
+# Catches the image-v33 case: "I want to create a personalised video recommender..."
+if echo "$LMSG" | grep -qE "\bi\s+(want|need|would\s+like|.d\s+like)\s+to\s+(create|build|make|set\s*up|setup|have|get|automate|schedule)\b"; then IMPLICIT_CREATE=1; fi
+
+# Schedule shapes the earlier regexes miss:
+#   • "everyday" written as one word (instead of "every day")
+#   • Time written with period: "10.45am", "6.15 pm"
+#   • Long messages (200+ chars) with any time-of-day reference are
+#     almost always a skill request, not chat
+if echo "$LMSG" | grep -qE "\beveryday\b.{0,80}(send|give|share|tell|remind|notify|email|fetch|find|check|recommend|show|deliver|update|message|pick|post|alert|ping|let\s+me\s+know)"; then IMPLICIT_CREATE=1; fi
+if echo "$LMSG" | grep -qE "(send|give|share|tell|remind|notify|email|fetch|find|check|recommend|show|deliver|update|message|pick|post|alert|ping|let\s+me\s+know).{0,80}\beveryday\b"; then IMPLICIT_CREATE=1; fi
+# Period-style time: "10.45am", "6.15 PM"
+if echo "$LMSG" | grep -qE "\b[0-9]{1,2}[.][0-9]{2}\s*(am|pm)?\b.{0,80}(send|give|share|tell|remind|notify|email|recommend|fetch|find|check|deliver|message|let\s+me\s+know|reply|update|ping|post|alert)"; then IMPLICIT_CREATE=1; fi
+if echo "$LMSG" | grep -qE "(send|give|share|tell|remind|notify|email|recommend|fetch|find|check|deliver|message|let\s+me\s+know|reply|update|ping|post|alert).{0,80}\b[0-9]{1,2}[.][0-9]{2}\s*(am|pm)?"; then IMPLICIT_CREATE=1; fi
+# Long-message + any time-of-day heuristic: 200+ chars AND
+# (XX:XX | XX.XX | XX am/pm) AND ANY recurrence word
+if [ ${#MSG} -ge 200 ] \
+   && echo "$LMSG" | grep -qE '\b[0-9]{1,2}([:.][0-9]{2})?\s*(am|pm)\b' \
+   && echo "$LMSG" | grep -qE '\b(every|daily|weekly|hourly|everyday|each\s+(day|morning|week|hour))\b'; then
+  IMPLICIT_CREATE=1
+fi
 
 # --- Implicit refine signals (target a specific existing skill) ---
 # "the X skill should also ..." / "modify the X skill ..."
@@ -554,33 +575,56 @@ EOF
 fi
 
 if [ "$IMPLICIT_CREATE" -eq 1 ]; then
+  # PR 4 (post-image-v33): route through intake-from-context.ts, not directly
+  # to elicit.ts --mode=create. The user's first detailed message often
+  # contains capability, schedule, output, and even logic — extracting that
+  # via a single LLM call beats asking Q1-Q5 from scratch and forcing the
+  # user to re-state everything they already said.
+  #
+  # Graceful degrade: if the LLM extraction fails, returns empty, or any
+  # script error occurs, intake-from-context spawns a fresh `elicit.ts
+  # --mode=create` and pipes its envelope through — equivalent to today's
+  # UX (no-worse-than-baseline guarantee).
+  ESCAPED_MSG=$(printf '%s' "$MSG" | sed 's/"/\\"/g')
+  SESSION_FILE=$(find "$HOME/.openclaw/agents/main/sessions/" -maxdepth 1 -name '*.jsonl' \
+                   ! -name '*.trajectory.*' ! -name '*.reset.*' ! -name '*.checkpoint.*' \
+                   -mmin -60 -printf '%T@ %p\n' 2>/dev/null \
+                 | sort -rn | awk 'NR==1{print $2}')
   cat <<EOF
 INTENT=skill_create
 TARGET=
 CONFIDENCE=70
 TRIGGER_SOURCE=implicit_natural_language
+SESSION_FILE=${SESSION_FILE:-NONE}
 
-REQUIRED_ACTION=The user's natural-language message looks like a recurring/automatable request. Start the elicit IMMEDIATELY — no opt-in step. The user gets to confirm at the end via the draft-summary "Sound right?" prompt; if they say no there, the draft is discarded and no skill is created. This is simpler and less prone to "yes" being misclassified as something else.
+REQUIRED_ACTION=The user's natural-language message looks like a recurring/automatable request — possibly with the full spec in one message (capability + schedule + output format). Do NOT run elicit.ts --mode=create directly (that asks Q1 from scratch and ignores the rich context). Run intake-from-context.ts which extracts as much as it can from the user's CURRENT message (and the chat history if present), saves a partial-or-full draft, and either:
+  • emits the bullet summary (if all slots fillable from context) — user replies yes/no/cancel
+  • emits only the missing-slot question (e.g. "what output format?") — user answers, route 0 picks it up
+  • falls back to a clean elicit Q1 (if message lacks any extractable signal) — no-worse-than-today
+
+The user gets to confirm the entire spec at the bullet summary (\`yes\`/\`no\`/\`cancel\`), so there's no risk of mis-extraction landing a wrong skill.
 
 EXECUTION_RECIPE:
 1. Run EXACTLY this Bash command (no other tool calls, no preamble text):
-   ~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=create
+   ~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/intake-from-context.ts --mode=create-oneshot --message="${ESCAPED_MSG}"${SESSION_FILE:+ --session-file=${SESSION_FILE}}
 2. The script returns a single-line JSON envelope on stdout. Parse it.
 3. Take the envelope's \`user_message\` field VERBATIM. Send it as your Telegram reply.
-4. STOP. Q2..Q5 come on FUTURE turns once the user answers Q1.
+4. STOP. The next user turn lands in route 0 (active-draft continue) if there's a missing slot to ask, or handles yes/no/cancel if the summary was emitted.
 
-If the envelope says "You have an unfinished draft from … Continue where we left off, or start fresh?" — that is the elicit script's normal resume prompt. RELAY IT VERBATIM and STOP. Do NOT decide "the pipeline is stuck" and write user-skills/ files yourself. The pipeline is NOT stuck — it is waiting for the user to choose "continue" or "start fresh". Your only job is to relay and wait.
+If the envelope says "You have an unfinished draft from … Continue where we left off, or start fresh?" — that's the elicit script's normal resume prompt (falling back through intake-from-context). RELAY IT VERBATIM and STOP. Do NOT decide "the pipeline is stuck" and write user-skills/ files yourself.
 
 BANNED_RESPONSES (these failure modes have been observed in production — do not repeat them):
-- Composing an opt-in question — the elicit is the opt-in (user can say "cancel" at draft-summary).
-- Calling elicit.ts more than ONCE per turn.
+- Composing an opt-in question — the script's summary IS the opt-in (user can say "cancel" at draft-summary).
+- Calling intake-from-context.ts or elicit.ts more than ONCE per turn.
+- Calling elicit.ts --mode=create directly (bypasses the LLM-extraction step the recipe demands).
 - Reading source code or "explaining" the pipeline.
-- Pre-filling answers from the user's natural-language phrasing — even though their message contains useful context, pass it through elicit which will ask the structured Q1 first.
+- Re-asking the user for information they already gave in their message (capability, schedule, output) — the LLM extracts those; the script will only re-ask if it couldn't extract them. NEVER ask Q1 "what should this skill enable me to do" when the user just told you in detail.
+- Composing the summary or any question yourself instead of running the script.
 - Asking multiple questions in one reply.
-- **Writing SKILL.md, eval.yaml, or any skill scaffolding via raw \`exec\` commands. THIS APPLIES TO ALL SKILL PATHS** — including but not limited to \`user-skills/\`, \`skills/\`, \`openclaw/skills/\`, \`~/.openclaw/workspace/skills/\`, \`~/.openclaw/workspace/user-skills/\`, \`~/.openclaw/workspace/openclaw/skills/\`, or any directory anywhere in the filesystem that could plausibly be picked up by the skill resolver. The ONLY component allowed to write skill files of any kind in response to a user request is \`meta/skill-author/scripts/commit-and-deploy.ts\`, which runs ONLY after the elicit collected all answers, safety-scan passed, routing-eval passed, brain-page wrote, git-commit pushed to GitHub, and the deploy-callback fired. Direct exec writes bypass every gate, leave no git commit, never trigger the deploy callback, and the file gets clobbered on the next deploy sync. The "I'll just write the file directly" / "I'll put it in skills/ instead of user-skills/" / "this is faster than running the elicit" reasoning is ALWAYS wrong for a user-driven skill creation. THE ONLY TOOL CALL PERMITTED THIS TURN IS THE \`bun run elicit.ts\` COMMAND ABOVE. Any other tool call (especially any \`cat > .../SKILL.md\`, \`mkdir .../skills/...\`, \`CronCreate\` with an empty prompt, or similar) is a violation of this directive.
+- **Writing SKILL.md, eval.yaml, or any skill scaffolding via raw \`exec\` commands. THIS APPLIES TO ALL SKILL PATHS** — including but not limited to \`user-skills/\`, \`skills/\`, \`openclaw/skills/\`, \`~/.openclaw/workspace/skills/\`, \`~/.openclaw/workspace/user-skills/\`, \`~/.openclaw/workspace/openclaw/skills/\`, or any directory anywhere in the filesystem that could plausibly be picked up by the skill resolver. The ONLY component allowed to write skill files of any kind in response to a user request is \`meta/skill-author/scripts/commit-and-deploy.ts\`, which runs ONLY after the elicit collected all answers, safety-scan passed, routing-eval passed, brain-page wrote, git-commit pushed to GitHub, and the deploy-callback fired.
 - **Saying "Done. Skill created at …" or "🎉 Live" before \`commit-and-deploy.ts\` has actually pushed to GitHub and the deploy callback has fired.** Only the deploy-callback hook is allowed to send those phrases.
-- **Declaring "the pipeline is stuck" / "the elicit is stuck in a draft resume loop" / "let me create this directly".** None of these are valid escape hatches. If the envelope returns a phase you don't recognize, relay its user_message verbatim and let the next user message drive the next step.
-- **Composing a fake schedule table** (e.g. a "| Time | What |" cron lineup) without actually running the cron-list / skill-list tools. If the user asks "what's my schedule", run the appropriate tool; don't hallucinate the rows.
+- **Declaring "the pipeline is stuck" / "let me create this directly".** None of these are valid escape hatches.
+- **Composing a fake schedule table** without actually running the cron-list tool.
 EOF
   exit 0
 fi
