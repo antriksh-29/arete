@@ -22,10 +22,21 @@ Generates a personalized video recommendation from YouTube daily, selecting from
 - https://youtube.com/@ycrootaccess?si=fGyn0R3KOUK7wm8i
 
 ## How it works
-- Fetches recent videos from the two specified YouTube channels
-- Selects one video based on a predefined algorithm
+- At 11:45 AM IST, asks the user what kind of video they want to watch today
+- Waits for the user's reply before selecting any video
+- Fetches recent videos from the two specified YouTube channels only
+- Selects the most relevant video based on the user's topic
 - Formats the recommendation with the video title, description, and YouTube link
-- Delivers the recommendation as a Telegram chat message
+- Delivers the recommendation as a Telegram chat message right after the user's reply
+
+## Recommendation Rules
+- Only use the two channels listed above.
+- Do not recommend a video until the user has replied with a topic.
+- Start with a question like: "What kind of video do you want to watch today?"
+- Return exactly:
+  - video title
+  - video description
+  - video link
 
 ## When to fire
 Fires once per day at 11:45 AM IST.
