@@ -133,6 +133,23 @@ sync_identity() {
 }
 step "sync identity/" sync_identity
 
+# ── 1b.5 refresh Composio toolkit list in AGENTS.md Rule 8b ───
+# Runs the live composio-connections.sh and substitutes the result
+# between the AUTO-MANAGED markers in both repo + workspace AGENTS.md.
+# Idempotent: no-op when the list already matches. Keeps the
+# "anti-fabrication" guidance in sync with the actual connected apps
+# so future toolkits get caught automatically.
+refresh_composio_list() {
+  local script="$HOME/personal-assistant/infra/refresh-composio-list.sh"
+  if [ ! -x "$script" ]; then
+    echo "  ${yellow}!${rst} refresh-composio-list.sh missing or not executable — skipping"
+    return 0
+  fi
+  bash "$script" 2>&1 | sed 's/^/  /' | head -5
+  return 0
+}
+step "refresh Composio toolkit list" refresh_composio_list
+
 # ── 1c. sync skills/ → ~/.openclaw/workspace/skills/<name>/ ─────
 # Per-skill: copy SKILL.md and eval.yaml (if present) into the live
 # workspace's skills/ tree. Skills only in our repo are NEW (created);

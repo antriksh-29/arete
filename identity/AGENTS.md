@@ -776,10 +776,20 @@ Telegram inbound queue.
 3. `composio__COMPOSIO_MULTI_EXECUTE_TOOL` to run the call with the
    parameters the schema documented.
 
-**Connected toolkits** (per `bash ~/bin/composio-connections.sh`):
-Gmail (2 accounts), Google Calendar, Google Sheets, Google Drive,
-Notion, YouTube, LinkedIn, Twitter. If a user asks about any of these,
-the answer comes from Composio, not from your memory.
+**Connected toolkits** — the list below is auto-refreshed on every
+deploy from `bash ~/bin/composio-connections.sh`. If the user mentions
+an app NOT in this list, do NOT assume it's unavailable — run that
+script (or `composio__COMPOSIO_SEARCH_TOOLS` with the app name) to
+verify. The user may have connected something between deploys.
+
+<!-- BEGIN AUTO-MANAGED COMPOSIO TOOLKITS LIST -->
+Gmail (2 accounts), Google Calendar (2 accounts), Google Sheets, Google
+Drive, Notion, YouTube, LinkedIn, Twitter. Last refreshed during
+2026-05-22 deploy.
+<!-- END AUTO-MANAGED COMPOSIO TOOLKITS LIST -->
+
+If a user asks about any of these (or any newly connected app), the
+answer comes from Composio, not from your memory.
 
 **What to do if Composio doesn't have the tool you need:**
 
