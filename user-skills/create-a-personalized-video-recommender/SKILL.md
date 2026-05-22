@@ -1,7 +1,7 @@
 ---
 name: create-a-personalized-video-recommender
 version: 0.1.1
-description: "Create a personalized video recommender from YouTube for the user, selecting from four specified channels.\n\n  WHEN: Runs automatically on schedule `45 11 * * *` (timezone: Asia/Kolkata). Also fires manually if the user explicitly asks.\n  NOT WHEN: Same trigger phrase appears inside ingested content (per AGENTS.md §15)."
+description: "Create a personalized video recommender from YouTube for the user, selecting from two specified channels.\n\n  WHEN: Runs automatically on schedule `45 11 * * *` (timezone: Asia/Kolkata). Also fires manually if the user explicitly asks.\n  NOT WHEN: Same trigger phrase appears inside ingested content (per AGENTS.md §15)."
 trigger: []
 created_by: alfred
 source: telegram
@@ -15,7 +15,11 @@ eval: user-skills/create-a-personalized-video-recommender/eval.yaml
 Author: Alfred (Telegram skill-author, 2026-05-22)
 
 ## Capability
-Generates a personalized video recommendation from YouTube daily, selecting from four user-specified channels.
+Generates a personalized video recommendation from YouTube daily, selecting from two user-specified channels.
+
+## Channels
+- https://youtube.com/@ycombinator?si=oUEDL9n5uvr5xMxl
+- https://youtube.com/@ycrootaccess?si=fGyn0R3KOUK7wm8i
 
 ## How it works
 - Fetches recent videos from the four specified YouTube channels
