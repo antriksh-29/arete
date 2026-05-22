@@ -857,6 +857,44 @@ install_brain_autosync_timer() {
 }
 step "install brain-autosync timer" install_brain_autosync_timer
 
+# ── 4d.7 install session-rotator timer ────────────────────────────────
+# Proactively retire OpenClaw agent sessions before they exceed the
+# model's context limit. Observed 2026-05-22: every 2-4 hours the
+# main session crosses ~150-200 messages, model returns a
+# context-overflow assistantError, user has to /new to recover.
+# This timer rotates at 120 messages (well below the overflow point).
+install_session_rotator() {
+  local script="$HOME/personal-assistant/infra/session-rotator.sh"
+  local svc_src="$HOME/personal-assistant/infra/session-rotator.service"
+  local tmr_src="$HOME/personal-assistant/infra/session-rotator.timer"
+  local svc_dst="$HOME/.config/systemd/user/session-rotator.service"
+  local tmr_dst="$HOME/.config/systemd/user/session-rotator.timer"
+  if [ ! -x "$script" ] || [ ! -f "$svc_src" ] || [ ! -f "$tmr_src" ]; then
+    echo "  ${yellow}!${rst} session-rotator files missing in repo — skipping"
+    return 0
+  fi
+  mkdir -p "$(dirname "$svc_dst")"
+  local changed=0
+  if [ ! -f "$svc_dst" ] || ! cmp -s "$svc_src" "$svc_dst"; then
+    cp "$svc_src" "$svc_dst"; changed=1
+  fi
+  if [ ! -f "$tmr_dst" ] || ! cmp -s "$tmr_src" "$tmr_dst"; then
+    cp "$tmr_src" "$tmr_dst"; changed=1
+  fi
+  if [ "$changed" = "1" ]; then
+    systemctl --user daemon-reload
+    echo "  installed/updated session-rotator units"
+  fi
+  systemctl --user enable session-rotator.timer >/dev/null 2>&1
+  systemctl --user start session-rotator.timer >/dev/null 2>&1
+  if systemctl --user is-active session-rotator.timer >/dev/null 2>&1; then
+    echo "  ${green}✓${rst} session-rotator timer active (5min interval, retires at 120 msgs)"
+  else
+    echo "  ${yellow}!${rst} session-rotator timer not active"
+  fi
+}
+step "install session-rotator timer" install_session_rotator
+
 install_bh_dropin() {
   local dir="$HOME/.config/systemd/user/openclaw-gateway.service.d"
   local file="$dir/browser-harness.conf"
