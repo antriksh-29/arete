@@ -1,0 +1,13 @@
+[Unit]
+Description=Brain autosync — commit + push any uncommitted ~/.brain/ changes to GitHub
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+# Use the brain SSH key for git push (configured in ~/.ssh/config as
+# `Host github.com-brain`). Remote URL must use that host.
+ExecStart=/bin/bash %h/personal-assistant/infra/brain-autosync.sh
+TimeoutStartSec=60
+StandardOutput=journal
+StandardError=journal

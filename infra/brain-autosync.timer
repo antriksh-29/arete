@@ -1,0 +1,12 @@
+[Unit]
+Description=Brain autosync timer — runs every 60s
+Requires=brain-autosync.service
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=60s
+Unit=brain-autosync.service
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

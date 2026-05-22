@@ -819,6 +819,44 @@ install_spool_stall_watchdog() {
 }
 step "install spool-stall watchdog" install_spool_stall_watchdog
 
+# ── 4d.6 install brain-autosync timer ────────────────────────────────
+# 60s polling: any uncommitted changes in ~/.brain/ get staged,
+# committed, pushed to GitHub. Catches the case where an agent or
+# domain-specific script writes a brain file but forgets to commit
+# (observed 2026-05-22 image-v36: bot modified a brain page but
+# changes never reached the public GitHub mirror).
+install_brain_autosync_timer() {
+  local script="$HOME/personal-assistant/infra/brain-autosync.sh"
+  local svc_src="$HOME/personal-assistant/infra/brain-autosync.service"
+  local tmr_src="$HOME/personal-assistant/infra/brain-autosync.timer"
+  local svc_dst="$HOME/.config/systemd/user/brain-autosync.service"
+  local tmr_dst="$HOME/.config/systemd/user/brain-autosync.timer"
+  if [ ! -x "$script" ] || [ ! -f "$svc_src" ] || [ ! -f "$tmr_src" ]; then
+    echo "  ${yellow}!${rst} brain-autosync files missing in repo — skipping"
+    return 0
+  fi
+  mkdir -p "$(dirname "$svc_dst")"
+  local changed=0
+  if [ ! -f "$svc_dst" ] || ! cmp -s "$svc_src" "$svc_dst"; then
+    cp "$svc_src" "$svc_dst"; changed=1
+  fi
+  if [ ! -f "$tmr_dst" ] || ! cmp -s "$tmr_src" "$tmr_dst"; then
+    cp "$tmr_src" "$tmr_dst"; changed=1
+  fi
+  if [ "$changed" = "1" ]; then
+    systemctl --user daemon-reload
+    echo "  installed/updated brain-autosync units"
+  fi
+  systemctl --user enable brain-autosync.timer >/dev/null 2>&1
+  systemctl --user start brain-autosync.timer >/dev/null 2>&1
+  if systemctl --user is-active brain-autosync.timer >/dev/null 2>&1; then
+    echo "  ${green}✓${rst} brain-autosync timer active (60s interval, ≤60s edit → GitHub latency)"
+  else
+    echo "  ${yellow}!${rst} brain-autosync timer not active"
+  fi
+}
+step "install brain-autosync timer" install_brain_autosync_timer
+
 install_bh_dropin() {
   local dir="$HOME/.config/systemd/user/openclaw-gateway.service.d"
   local file="$dir/browser-harness.conf"

@@ -226,10 +226,55 @@ def write_brain_page(categorized: dict[str, list[dict]], total_input: int, slug:
     return page_path
 
 
+def commit_and_push_brain(page_path: Path, total_channels: int) -> dict:
+    """Commit the brain edit and push to GitHub. The brain repo uses
+    a per-skill commit pattern (see reading-checkin.sh / water-log.sh).
+    Without this step, files land on disk but never reach the GitHub
+    mirror — the failure mode observed 2026-05-22.
+
+    Returns {"committed": bool, "pushed": bool, "sha": str, "stderr": str}.
+    """
+    repo = Path.home() / ".brain"
+    if not (repo / ".git").is_dir():
+        return {"committed": False, "pushed": False, "sha": "", "stderr": "no .brain/.git dir"}
+
+    rel = page_path.relative_to(repo) if str(page_path).startswith(str(repo)) else page_path
+
+    # Stage only this file (avoid `git add -A` which sweeps in unrelated edits)
+    add = subprocess.run(["git", "-C", str(repo), "add", "--", str(rel)],
+                         capture_output=True, text=True, timeout=15)
+    if add.returncode != 0:
+        return {"committed": False, "pushed": False, "sha": "", "stderr": f"add: {add.stderr[:200]}"}
+
+    # If nothing changed (e.g. re-run with identical content), bail cleanly
+    diff = subprocess.run(["git", "-C", str(repo), "diff", "--cached", "--quiet"],
+                          capture_output=True, text=True, timeout=10)
+    if diff.returncode == 0:
+        return {"committed": False, "pushed": False, "sha": "", "stderr": "no changes to commit"}
+
+    msg = f"reference: youtube subscriptions complete ({total_channels} channels)"
+    commit = subprocess.run(["git", "-C", str(repo), "commit", "-m", msg],
+                            capture_output=True, text=True, timeout=15)
+    if commit.returncode != 0:
+        return {"committed": False, "pushed": False, "sha": "", "stderr": f"commit: {commit.stderr[:200]}"}
+
+    sha_r = subprocess.run(["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
+                           capture_output=True, text=True, timeout=10)
+    sha = sha_r.stdout.strip()
+
+    push = subprocess.run(["git", "-C", str(repo), "push"],
+                          capture_output=True, text=True, timeout=30)
+    if push.returncode != 0:
+        return {"committed": True, "pushed": False, "sha": sha,
+                "stderr": f"push: {push.stderr[:200]}"}
+    return {"committed": True, "pushed": True, "sha": sha, "stderr": ""}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--brain-page", default=None, help="Brain page slug (default: youtube-subscriptions-<date>)")
     ap.add_argument("--account", default=None)
+    ap.add_argument("--no-push", action="store_true", help="Skip git commit+push (default: push)")
     args = ap.parse_args()
 
     slug = args.brain_page or f"youtube-subscriptions-{datetime.now().strftime('%Y-%m-%d')}"
@@ -246,8 +291,18 @@ def main() -> int:
         print(f"ERROR: {type(e).__name__}: {e}", file=sys.stderr)
         return 1
 
-    elapsed = time.time() - t0
     total_categorized = sum(len(v) for v in categorized.values())
+
+    # Commit + push the brain page so it lands on GitHub (without this,
+    # the file sits on disk locally and divergence with the GitHub mirror
+    # accumulates — observed 2026-05-22 image-v36 failure).
+    push_result = {"committed": False, "pushed": False, "sha": "", "stderr": "skipped"}
+    if not args.no_push:
+        push_result = commit_and_push_brain(page_path, total_categorized)
+        print(f"[git] committed={push_result['committed']} pushed={push_result['pushed']} "
+              f"sha={push_result['sha']} {push_result['stderr']}", file=sys.stderr)
+
+    elapsed = time.time() - t0
     summary = {
         "ok": True,
         "total_channels": total_categorized,
@@ -255,6 +310,7 @@ def main() -> int:
         "categories": {k: len(v) for k, v in categorized.items()},
         "brain_page": str(page_path),
         "elapsed_s": round(elapsed, 1),
+        "git": push_result,
     }
     print(json.dumps(summary, indent=2))
     return 0
