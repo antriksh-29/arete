@@ -15,3 +15,6 @@ triggers:
     notes: This request is for news, not video recommendations.
 
 schedule: daily
+channels:
+  - https://youtube.com/@ycombinator?si=oUEDL9n5uvr5xMxl
+  - https://youtube.com/@ycrootaccess?si=fGyn0R3KOUK7wm8i
