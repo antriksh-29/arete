@@ -201,9 +201,18 @@ CRITICAL RULES:
 1. Return ONLY a JSON object:
    { "skill_md_body": "<the body, starting from '# /<slug>'>", "eval_yaml": "<the full eval.yaml content>" }
 2. NO frontmatter in skill_md_body — that's added separately. Start with '# /<slug>'.
-3. Distill the Capability section. Do NOT paste the user's raw input. Clean it up.
+3. Distill the Capability section's PROSE only. NEVER drop concrete details from the user's input:
+   • URLs, domain names, channel names, account handles, file paths
+   • Specific brand names, source publications, app names
+   • Exact times, dates, thresholds, durations, counts
+   • Quoted phrases the user wants matched literally
+   These are LOAD-BEARING. The skill executor (Kimi at fire-time) reads the SKILL.md
+   to know WHAT to fetch / WHERE to look. If you drop "https://youtube.com/@ycombinator"
+   and write "the two specified channels", the skill cannot run.
+   Preserve them verbatim in either Capability, How it works, or a new "## Sources" /
+   "## Inputs" section — wherever makes the document read naturally.
 4. eval.yaml MUST have >= 2 positive triggers and >= 1 negative trigger.
-5. For periodic skills, "## How it works" MUST mention the data source / fetching strategy. If the data source is unclear, write "User's brain pages" or "External API (see implementation)".
+5. For periodic skills, "## How it works" MUST mention the data source / fetching strategy AND list the concrete sources (channel URLs, RSS feeds, brand names) — not abstract phrases like "the configured sources". If the user didn't specify, write "User's brain pages" or "External API (see implementation)".
 6. The "## Output format" section MUST show a concrete example, not a placeholder like "<output here>".
 7. Output raw JSON. First char '{', last char '}'. No markdown fences.
 

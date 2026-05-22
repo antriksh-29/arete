@@ -70,6 +70,31 @@ list_managed_slugs() {
   done
 }
 
+# Detect which delivery path a periodic skill should use:
+#   • POOL skill  — SKILL.md has a `## Insight pool` (or similar `## ... pool`)
+#                   section, the dispatcher picks an item from the pool and
+#                   sends it. systemd timer + run-periodic-skill.py path.
+#   • FETCH skill — no pool section; SKILL.md describes what to fetch and
+#                   format. OpenClaw cron + agentTurn payload, Kimi reads
+#                   SKILL.md and runs the fetch via available tools.
+#
+# Returns "pool" or "fetch" on stdout. Architecture flowing from the
+# 2026-05-22 image-v33-followup investigation: PR #116 incorrectly
+# made systemd canonical for ALL periodic skills, breaking fetch-style
+# ones (YC launches, YouTube recommender) which never had a pool.
+classify_skill() {
+  local slug="$1"
+  local skill_md="$WORKSPACE_SKILLS/$slug/SKILL.md"
+  [ -f "$skill_md" ] || { echo "fetch"; return 0; }
+  # Look for any `## ... pool` heading anywhere in the body. Catches
+  # "## Insight pool", "## Fact pool", "## Quote pool", etc.
+  if grep -qE '^##\s+[A-Za-z ]*[Pp]ool\b' "$skill_md" 2>/dev/null; then
+    echo "pool"
+  else
+    echo "fetch"
+  fi
+}
+
 # Install/update the systemd timer + service for one periodic skill.
 # Reads `cron:` from SKILL.md frontmatter, invokes the installer that
 # generates the unit files. ALSO removes any matching OpenClaw cron
@@ -365,12 +390,31 @@ one_pass() {
     before_cron=$(jq -r ".jobs[] | select(.description | test(\"$slug\"; \"i\")) | .schedule.expr" "$JOBS_JSON" 2>/dev/null | head -1)
     if mirror_to_repo "$slug"; then
       slugs_changed+=("$slug")
-      # Periodic skills: install/update the systemd timer + dispatcher.
-      # ALSO removes any OpenClaw cron entry (replaced by systemd).
-      sync_periodic_timer_for_slug "$slug"
-      # Legacy: still maintain jobs.json for any remaining callers
-      # that might rely on it. The systemd timer is canonical.
-      sync_cron_for_slug "$slug" 2>/dev/null || true
+      # PR 5 (post-image-v33-followup): classify skill type and route to
+      # the correct delivery path. Pool skills run via systemd timer +
+      # run-periodic-skill.py; fetch skills run via OpenClaw cron +
+      # agentTurn (Kimi reads SKILL.md and runs the fetch via tools).
+      # Both attempting to register simultaneously creates a race where
+      # the wrong path wins and the skill fires nothing or errors out.
+      local skill_type
+      skill_type=$(classify_skill "$slug")
+      log "  slug=$slug type=$skill_type — routing to appropriate delivery"
+      if [ "$skill_type" = "pool" ]; then
+        # Pool skill: systemd timer is canonical. sync_periodic_timer_for_slug
+        # ALSO drops any leftover OpenClaw cron entry.
+        sync_periodic_timer_for_slug "$slug"
+      else
+        # Fetch skill: OpenClaw cron is canonical. Ensure no leftover
+        # systemd timer exists, then register the cron entry.
+        if systemctl --user list-units --all --no-pager 2>/dev/null | grep -q "skill-${slug}\\.timer"; then
+          systemctl --user disable --now "skill-${slug}.timer" >/dev/null 2>&1 || true
+          rm -f "$HOME/.config/systemd/user/skill-${slug}.timer" "$HOME/.config/systemd/user/skill-${slug}.service" \
+                "$HOME/.config/systemd/user/timers.target.wants/skill-${slug}.timer"
+          systemctl --user daemon-reload
+          log "removed stray systemd timer for fetch skill: $slug"
+        fi
+        sync_cron_for_slug "$slug" 2>/dev/null || true
+      fi
       after_cron=$(jq -r ".jobs[] | select(.description | test(\"$slug\"; \"i\")) | .schedule.expr" "$JOBS_JSON" 2>/dev/null | head -1)
       local change_desc
       change_desc=$(describe_cron_change "$slug" "$before_cron" "$after_cron")
@@ -424,7 +468,38 @@ watch_mode() {
   done
 }
 
+# Reconcile mode: run the delivery-path setup for EVERY managed skill,
+# without requiring workspace drift. Called from deploy-vps.sh after
+# sync_user_skills() lands files in the workspace, so a freshly deployed
+# skill always has its systemd timer or OpenClaw cron registered — even
+# when the inotify watcher missed the file-create event (PR #116-#121
+# race: deploy restarts the autosync service at the exact moment new
+# files land, tearing down the watcher right when it would have fired).
+reconcile_all() {
+  log "skill-autosync reconcile_all start (deterministic timer/cron setup)"
+  for slug in $(list_managed_slugs); do
+    local skill_type
+    skill_type=$(classify_skill "$slug")
+    log "  reconciling $slug ($skill_type)"
+    if [ "$skill_type" = "pool" ]; then
+      sync_periodic_timer_for_slug "$slug"
+    else
+      # remove any stale systemd timer first
+      if systemctl --user list-units --all --no-pager 2>/dev/null | grep -q "skill-${slug}\\.timer"; then
+        systemctl --user disable --now "skill-${slug}.timer" >/dev/null 2>&1 || true
+        rm -f "$HOME/.config/systemd/user/skill-${slug}.timer" "$HOME/.config/systemd/user/skill-${slug}.service" \
+              "$HOME/.config/systemd/user/timers.target.wants/skill-${slug}.timer"
+        systemctl --user daemon-reload
+        log "    removed stray systemd timer (skill is fetch-type, OpenClaw cron is canonical)"
+      fi
+      sync_cron_for_slug "$slug" 2>/dev/null || true
+    fi
+  done
+  log "skill-autosync reconcile_all done"
+}
+
 case "$MODE" in
   --watch) watch_mode ;;
+  --reconcile) reconcile_all ;;
   --once|*) one_pass ;;
 esac

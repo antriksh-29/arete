@@ -305,6 +305,28 @@ user_skills_zombie_delete() {
 }
 step "sync user-skills/" sync_user_skills
 
+# ── 1d.2 reconcile periodic delivery paths ─────────────────────────
+# After files land in workspace, deterministically install/refresh the
+# systemd timer (pool skills) or OpenClaw cron entry (fetch skills)
+# for every managed slug. Without this, fresh skills can miss the
+# inotify watch in skill-autosync.service (the service is restarted
+# during this same deploy, tearing down the watcher right when the
+# new files arrive). PR #5 (image-v33-followup) added this step;
+# observed 2026-05-22: create-a-personalized-video-recommender had
+# its cron field set but no timer or cron entry, so 11am came and
+# nothing fired. Reconcile is idempotent — running it on every
+# deploy reliably converges all skills to the correct delivery path.
+reconcile_periodic_delivery() {
+  local autosync_script="$HOME/personal-assistant/infra/skill-autosync.sh"
+  if [ ! -x "$autosync_script" ]; then
+    echo "  ${yellow}!${rst} skill-autosync.sh missing — skipping periodic delivery reconcile"
+    return 0
+  fi
+  bash "$autosync_script" --reconcile 2>&1 | sed 's/^/  /' | head -40
+  return 0
+}
+step "reconcile periodic delivery paths" reconcile_periodic_delivery
+
 # ── 1e. pre-flight: verify openclaw-gateway supports graceful reload ─
 # If the unit has no ExecReload, deploys full-restart and kill in-flight
 # Telegram turns — surface that fact loudly so we know.
