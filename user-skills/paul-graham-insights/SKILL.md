@@ -49,26 +49,26 @@ below. Pick uniformly at random; if a recent state file
 prefer an insight NOT in the last 5 emitted; otherwise pick freely.
 
 Format: just the insight, with the essay title/year and source URL as a one-line
-footer (e.g. `— Paul Graham, "Do Things That Don't Scale" (2013) [URL]`).
+footer (e.g. `— Paul Graham, "Do Things That Don't Scale" (2013) http://paulgraham.com/ds.html`).
 No preamble. No commentary.
 
 ## Insight pool (15)
 
-1. The most successful startups in YC's experience took longer than expected to find product-market fit. The founders who pushed through "looks like nothing's working" were the ones who reached escape velocity. — Paul Graham, "Do Things That Don't Scale" (2013) [URL]
-2. Default Alive vs Default Dead: at the current growth rate and burn, will you reach profitability before money runs out? Founders systematically overestimate their position; calculate honestly. — Paul Graham, "Default Alive or Default Dead?" (2015) [URL]
-3. Make something people want. Not: make something people might want. Not: build a platform. The default state of any product is "no one cares" — your job is to overcome that with a thing humans actively want. — Paul Graham, "How to Get Startup Ideas" (2012) [URL]
-4. Live in the future, then build what's missing. The best startup ideas come from founders who are themselves users frustrated by what doesn't exist yet, not from market-gap analyses. — Paul Graham, "How to Get Startup Ideas" (2012) [URL]
-5. Schlep blindness: founders avoid ideas that involve unglamorous, painful work — exactly the ideas with the least competition. Stripe, Airbnb, and DoorDash all required schleps others wouldn't touch. — Paul Graham, "Schlep Blindness" (2012) [URL]
-6. Maker's Schedule vs Manager's Schedule: a single meeting in the middle of a maker's day can blow the whole afternoon by destroying flow state. Protect long uninterrupted blocks for builders. — Paul Graham, "Maker's Schedule, Manager's Schedule" (2009) [URL]
-7. The acid test for a founder: can you write a one-sentence description of what your company does that the listener immediately gets? If not, you don't have product-market clarity yet. — Paul Graham, "How to Convince Investors" (2013) [URL]
-8. Founder mode: the largest companies are often run by their founders in ways consultants would call wrong — direct contact with line workers, skipping reporting layers, idiosyncratic decision-making. It scales because of, not despite, this. — Paul Graham, "Founder Mode" (2024) [URL]
-9. The best way to predict a founder's success is whether they're "relentlessly resourceful". It beats experience, IQ, and credentials. Synonyms: gritty, bound to find a way. — Paul Graham, "Relentlessly Resourceful" (2009) [URL]
-10. Y Combinator's #1 piece of advice is "talk to users". The reason it works isn't because users know what they want — it's because their problems become inarguable when you watch them struggle. — Paul Graham, "Do Things That Don't Scale" (2013) [URL]
-11. Cities tell you what to do. Berkeley says "live well"; New York says "make more money"; Silicon Valley says "be more powerful". Choose the city whose message matches your goal. — Paul Graham, "Cities and Ambition" (2008) [URL]
-12. The Bus Ticket Theory of Genius: outsized achievement requires a near-pathological obsession with a narrow domain. Not "passion" in the LinkedIn sense — actual inability to think about anything else. — Paul Graham, "The Bus Ticket Theory of Genius" (2019) [URL]
-13. To get rich, start a company that will be valuable in 30 years. Companies that play a long game compound; companies that optimize for the next quarter eventually break. — Paul Graham, "How to Make Wealth" (2004) [URL]
-14. Wealth is the moral equivalent of money created — fixed-pie thinking is the enemy of building. The world is not zero-sum; making something valuable makes everyone richer. — Paul Graham, "Mind the Gap" (2004) [URL]
-15. The most important thing a startup can do is not run out of money. The second most important is not lose its momentum. Founder energy is the actual currency that compounds — protect it. — Paul Graham, "Startup = Growth" (2012) [URL]
+1. The most successful startups in YC's experience took longer than expected to find product-market fit. The founders who pushed through "looks like nothing's working" were the ones who reached escape velocity. — Paul Graham, "Do Things That Don't Scale" (2013) http://paulgraham.com/ds.html
+2. Default Alive vs Default Dead: at the current growth rate and burn, will you reach profitability before money runs out? Founders systematically overestimate their position; calculate honestly. — Paul Graham, "Default Alive or Default Dead?" (2015) http://paulgraham.com/aord.html
+3. Make something people want. Not: make something people might want. Not: build a platform. The default state of any product is "no one cares" — your job is to overcome that with a thing humans actively want. — Paul Graham, "How to Get Startup Ideas" (2012) http://paulgraham.com/startupideas.html
+4. Live in the future, then build what's missing. The best startup ideas come from founders who are themselves users frustrated by what doesn't exist yet, not from market-gap analyses. — Paul Graham, "How to Get Startup Ideas" (2012) http://paulgraham.com/startupideas.html
+5. Schlep blindness: founders avoid ideas that involve unglamorous, painful work — exactly the ideas with the least competition. Stripe, Airbnb, and DoorDash all required schleps others wouldn't touch. — Paul Graham, "Schlep Blindness" (2012) http://paulgraham.com/schlep.html
+6. Maker's Schedule vs Manager's Schedule: a single meeting in the middle of a maker's day can blow the whole afternoon by destroying flow state. Protect long uninterrupted blocks for builders. — Paul Graham, "Maker's Schedule, Manager's Schedule" (2009) http://paulgraham.com/makersschedule.html
+7. The acid test for a founder: can you write a one-sentence description of what your company does that the listener immediately gets? If not, you don't have product-market clarity yet. — Paul Graham, "How to Convince Investors" (2013) http://paulgraham.com/convince.html
+8. Founder mode: the largest companies are often run by their founders in ways consultants would call wrong — direct contact with line workers, skipping reporting layers, idiosyncratic decision-making. It scales because of, not despite, this. — Paul Graham, "Founder Mode" (2024) http://paulgraham.com/foundermode.html
+9. The best way to predict a founder's success is whether they're "relentlessly resourceful". It beats experience, IQ, and credentials. Synonyms: gritty, bound to find a way. — Paul Graham, "Relentlessly Resourceful" (2009) http://paulgraham.com/relres.html
+10. Y Combinator's #1 piece of advice is "talk to users". The reason it works isn't because users know what they want — it's because their problems become inarguable when you watch them struggle. — Paul Graham, "Do Things That Don't Scale" (2013) http://paulgraham.com/ds.html
+11. Cities tell you what to do. Berkeley says "live well"; New York says "make more money"; Silicon Valley says "be more powerful". Choose the city whose message matches your goal. — Paul Graham, "Cities and Ambition" (2008) http://paulgraham.com/cities.html
+12. The Bus Ticket Theory of Genius: outsized achievement requires a near-pathological obsession with a narrow domain. Not "passion" in the LinkedIn sense — actual inability to think about anything else. — Paul Graham, "The Bus Ticket Theory of Genius" (2019) http://paulgraham.com/genius.html
+13. To get rich, start a company that will be valuable in 30 years. Companies that play a long game compound; companies that optimize for the next quarter eventually break. — Paul Graham, "How to Make Wealth" (2004) http://paulgraham.com/wealth.html
+14. Wealth is the moral equivalent of money created — fixed-pie thinking is the enemy of building. The world is not zero-sum; making something valuable makes everyone richer. — Paul Graham, "Mind the Gap" (2004) http://paulgraham.com/gap.html
+15. The most important thing a startup can do is not run out of money. The second most important is not lose its momentum. Founder energy is the actual currency that compounds — protect it. — Paul Graham, "Startup = Growth" (2012) http://paulgraham.com/growth.html
 
 ## Notes
 

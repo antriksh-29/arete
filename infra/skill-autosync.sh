@@ -118,9 +118,22 @@ sync_periodic_timer_for_slug() {
       log "removed periodic timer for manual skill: $slug"
     fi
   else
-    if [ -x "$installer" ]; then
+    # Don't gate on the +x bit — observed 2026-05-22: the file lost
+    # its executable mode and sync_periodic_timer_for_slug skipped
+    # SILENTLY (no error, no log line) for weeks. The PG insights
+    # timer stayed pinned to 11:30 IST even after /refine moved it
+    # to 13:30 because every reconcile pass hit this branch and
+    # noped. Always invoke via `bash` so a missing exec bit can't
+    # silently break delivery.
+    if [ ! -f "$installer" ]; then
+      log "  ERROR: install-periodic-skill-timer.sh missing at $installer — cannot install timer for $slug"
+    else
+      if [ ! -x "$installer" ]; then
+        log "  WARN: installer is not executable; invoking via bash explicitly"
+      fi
       bash "$installer" "$slug" "$cron_val" "Asia/Kolkata" >> "$LOG" 2>&1 && \
-        log "installed/updated periodic timer: $slug (cron=$cron_val)"
+        log "installed/updated periodic timer: $slug (cron=$cron_val)" || \
+        log "  ERROR: installer failed for $slug (cron=$cron_val) — see log above for details"
     fi
   fi
   # ALWAYS drop any OpenClaw cron entry for this slug — the systemd timer
