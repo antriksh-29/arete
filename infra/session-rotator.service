@@ -1,0 +1,11 @@
+[Unit]
+Description=Session rotator — retire OpenClaw agent sessions before context overflow
+After=openclaw-gateway.service
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/bash %h/personal-assistant/infra/session-rotator.sh
+TimeoutStartSec=60
+StandardOutput=journal
+StandardError=journal

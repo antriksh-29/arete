@@ -1,0 +1,12 @@
+[Unit]
+Description=Session rotator timer — runs every 5 min
+Requires=session-rotator.service
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+Unit=session-rotator.service
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
