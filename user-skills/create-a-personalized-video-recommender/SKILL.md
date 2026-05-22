@@ -22,7 +22,7 @@ Generates a personalized video recommendation from YouTube daily, selecting from
 - https://youtube.com/@ycrootaccess?si=fGyn0R3KOUK7wm8i
 
 ## How it works
-- Fetches recent videos from the four specified YouTube channels
+- Fetches recent videos from the two specified YouTube channels
 - Selects one video based on a predefined algorithm
 - Formats the recommendation with the video title, description, and YouTube link
 - Delivers the recommendation as a Telegram chat message
