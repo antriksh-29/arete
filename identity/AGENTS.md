@@ -97,6 +97,33 @@ REQUIRED_ACTION=<exact next action>
   me to set this up?" — the user's message IS that confirmation. Do
   NOT compose a summary yourself; relay the script's envelope verbatim.
 
+- **INTENT=skill_periodic_reply** → STOP composing a generic reply. A
+  periodic skill (e.g. `create-a-personalized-video-recommender`) asked
+  the user a question on a cron; the router's `SKILL_SLUG` field tells
+  you which one, and `SKILL_PROMPT_PREVIEW` shows what the cron sent.
+  The user's current message is the *input the skill was waiting for*.
+
+  Your ONLY action this turn:
+  1. Read `~/personal-assistant/user-skills/<SKILL_SLUG>/SKILL.md` —
+     specifically the "How it works", "Recommendation Rules", and
+     "Output format" sections.
+  2. Execute the skill end-to-end with the user's message as the topic
+     input (e.g. for the video recommender: fetch videos from the
+     channels listed in SKILL.md and pick the one that best matches the
+     user's mood/topic).
+  3. Reply in the exact shape the SKILL.md "Output format" specifies.
+
+  **Anti-patterns to avoid (this exact failure shipped 2026-05-23):**
+  - Composing a generic answer from your own memory (book lists, Goggins
+    quotes, motivational essays) instead of running the skill.
+  - Asking the user "can you tell me more / what genre / what length" —
+    the SKILL.md already specifies what input is sufficient.
+  - Suggesting the user invoke the skill manually ("try /<slug>") — you
+    are already in the skill's reply leg; just run it.
+  - Treating the message as unrelated chat because no skill slug was
+    typed — the router consumed the state-file marker, this IS the
+    right skill.
+
 - **INTENT=skill_create** → STOP composing a normal reply. Your ONLY
   action is to run `~/.bun/bin/bun run ~/personal-assistant/meta/skill-author/scripts/elicit.ts --mode=create`
   ONCE (absolute paths required; bun and meta/ are NOT in the workspace).

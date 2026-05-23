@@ -968,6 +968,50 @@ EOF
   exit 0
 fi
 
+# ── PERIODIC-SKILL REPLY (deterministic fallback) ──────────────
+# A periodic skill (e.g. create-a-personalized-video-recommender) asked
+# the user a question on a cron. The user's reply ("motivation to raise
+# on bad days...") looks like free-form chat — none of the routes above
+# match. Without context, the agent would just answer generically and
+# the originating skill would never fire.
+#
+# State file is written by ~/personal-assistant/infra/send-skill-prompt.sh
+# (and by run-periodic-skill.py for pool-based skills). We consume it
+# one-shot — first reply within 15 min routes to the skill, then the
+# file is deleted so a later unrelated message doesn't get mis-routed.
+LAST_PS_FILE="$HOME/.brain-bootstrap-raw/state/last-periodic-skill.json"
+if [ -f "$LAST_PS_FILE" ]; then
+  PS_SLUG=$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("slug",""))' "$LAST_PS_FILE" 2>/dev/null || echo "")
+  PS_SENT_AT=$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("sent_at",0))' "$LAST_PS_FILE" 2>/dev/null || echo 0)
+  PS_PREVIEW=$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("message_preview",""))' "$LAST_PS_FILE" 2>/dev/null || echo "")
+  NOW=$(date +%s)
+  AGE=$(( NOW - PS_SENT_AT ))
+  if [ -n "$PS_SLUG" ] && [ "$AGE" -lt 900 ]; then
+    # Consume the marker so a stray follow-up message doesn't also route.
+    rm -f "$LAST_PS_FILE"
+    SKILL_MD_PATH="user-skills/${PS_SLUG}/SKILL.md"
+    cat <<EOF
+INTENT=skill_periodic_reply
+SKILL_SLUG=${PS_SLUG}
+SKILL_PROMPT_AGE_SEC=${AGE}
+SKILL_PROMPT_PREVIEW=${PS_PREVIEW}
+
+REQUIRED_ACTION=The user is replying to a periodic-skill prompt that fired ${AGE}s ago from /${PS_SLUG}. Treat the user's message as the input to that skill — do NOT compose a generic chat reply.
+
+EXECUTION_RECIPE:
+1. Read ~/personal-assistant/${SKILL_MD_PATH} for the skill's "How it works" / output format.
+2. Execute the skill end-to-end using the user's message ('${MSG}') as the topic / parameter the skill was waiting for.
+3. Deliver the skill's output exactly as the SKILL.md "Output format" section prescribes.
+
+BANNED_RESPONSES:
+- A generic chat reply (book recommendation, life advice, motivational quotes from your own memory) that ignores the skill's specific output contract.
+- Asking the user to repeat themselves or to "tell you more" — the SKILL.md already specifies what input is sufficient.
+- Suggesting they invoke the skill manually (e.g. "try /${PS_SLUG}") — you're already in the skill's flow.
+EOF
+    exit 0
+  fi
+fi
+
 # ── DEFAULT: chat ──────────────────────────────────────────────
 echo "INTENT=chat"
 echo "REASON=no_actionable_intent_detected"

@@ -135,6 +135,33 @@ def pick_index(items: list[str], recent: list[int]) -> int:
     return random.choice(fresh)
 
 
+def reply_footer(slug: str) -> str:
+    # Visible (small italic) footer appended to every periodic-skill
+    # Telegram message. Two jobs:
+    #   1. Tell the user this came from a specific skill — and that
+    #      replying continues the conversation with it.
+    #   2. Stamp the message body with a machine-readable slug so that
+    #      when Telegram quotes it in the user's reply, the agent can
+    #      see which skill the reply belongs to.
+    # The "/<slug>" form mirrors how the user invokes skills manually.
+    return f'\n\n<i>↩ reply to keep talking to /{html.escape(slug)}</i>'
+
+
+def write_last_periodic_state(slug: str, msg: str) -> None:
+    # Deterministic backup for intent-router.sh. If the LLM misses the
+    # tag (e.g. OpenClaw doesn't render reply-quoted bodies into the
+    # turn), the router can still see "the last cron fire was N seconds
+    # ago for skill X" and route the user's next non-classified message
+    # to that skill. One-shot: router deletes this file after consuming.
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    state_path = STATE_DIR / "last-periodic-skill.json"
+    state_path.write_text(json.dumps({
+        "slug": slug,
+        "sent_at": int(time.time()),
+        "message_preview": msg[:240],
+    }, indent=2))
+
+
 def format_message(item: str) -> str:
     """Produce Telegram-HTML formatted output. Caller passes --html to
     send-telegram.sh.
@@ -194,7 +221,7 @@ def main(argv: list[str]) -> int:
 
     state = load_state(slug)
     idx = pick_index(items, state.get("recent_indices", []))
-    msg = format_message(items[idx])
+    msg = format_message(items[idx]) + reply_footer(slug)
 
     if dry:
         print(f"--- would send (item {idx + 1}/{len(items)}) ---")
@@ -208,6 +235,7 @@ def main(argv: list[str]) -> int:
         state["last_sent_at"] = int(time.time())
         state["last_index"] = idx
         save_state(slug, state)
+        write_last_periodic_state(slug, msg)
         print(f"sent {slug} item {idx + 1}/{len(items)}")
     return rc
 
