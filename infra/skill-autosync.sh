@@ -155,6 +155,85 @@ PY
   fi
 }
 
+# Reverse direction: if jobs.json has a different cron for this slug
+# than the workspace SKILL.md, write SKILL.md to match jobs.json. This
+# catches the 2026-05-24 failure: agent ran `openclaw cron edit ... --cron
+# "0 16 * * *"` directly on the live jobs.json (per AGENTS.md PR #135's
+# fork between pool/fetch skills), workspace SKILL.md was never touched,
+# inotify never fired, and the schedule change never reached GitHub.
+#
+# Reconciliation rule: jobs.json wins. It's the live runtime — whatever
+# fires the cron is what the user actually has. SKILL.md is the durable
+# truth in the repo, so write jobs.json's expr into SKILL.md and let the
+# normal mirror_to_repo flow push it.
+#
+# Cron-only changes don't bump version or last_authoring_turn, so the
+# regression guard (PR #135) is a no-op here — it only fires on version
+# downgrades or last_authoring rollbacks.
+reverse_sync_skill_md_from_jobs_json() {
+  local slug="$1"
+  local skill_md="$WORKSPACE_SKILLS/$slug/SKILL.md"
+  [ -f "$skill_md" ] || return 0
+  [ -f "$JOBS_JSON" ] || return 0
+
+  python3 - "$slug" "$skill_md" "$JOBS_JSON" <<'PY'
+import json, re, sys
+slug, skill_md, jobs_path = sys.argv[1], sys.argv[2], sys.argv[3]
+
+# Read jobs.json cron expr for this slug. Match by job name first (the
+# canonical identity field after PR #135's rename support), then by
+# description containing the slug as a fallback for legacy jobs.
+try:
+    jobs = json.load(open(jobs_path))
+except Exception:
+    sys.exit(0)
+matching = [j for j in jobs.get("jobs", []) if (j.get("name") or "").lower() == slug.lower()]
+if not matching:
+    matching = [j for j in jobs.get("jobs", []) if slug.lower() in (j.get("description") or "").lower()]
+if not matching:
+    sys.exit(0)
+jobs_cron = (matching[0].get("schedule") or {}).get("expr")
+if not jobs_cron:
+    sys.exit(0)
+
+# Read SKILL.md cron.
+text = open(skill_md).read()
+fm_m = re.match(r"^---\n(.*?)\n---", text, re.S)
+if not fm_m:
+    sys.exit(0)
+fm = fm_m.group(1)
+md_cron_m = re.search(r'^cron:\s*"?([^"\n]+)"?\s*$', fm, re.M)
+md_cron = md_cron_m.group(1).strip().strip('"') if md_cron_m else None
+
+# Identical → no drift, no work.
+if md_cron == jobs_cron:
+    sys.exit(0)
+
+# If SKILL.md has cron: null (manual skill) and jobs.json has a real expr,
+# that's a schema inconsistency — don't auto-resolve, log + bail. The
+# normal sync_cron_for_slug path will handle dropping the stale jobs.json
+# entry if SKILL.md is really meant to be manual.
+if not md_cron or md_cron.lower() in ("null", "none"):
+    print(f"SKIP_REVERSE_SYNC {slug}: SKILL.md has cron=null but jobs.json has {jobs_cron!r}; needs manual reconciliation", file=sys.stderr)
+    sys.exit(0)
+
+# Write jobs.json's expr into SKILL.md frontmatter. Preserve quoting
+# style if the existing cron field had quotes.
+import shutil
+shutil.copy(skill_md, skill_md + ".bak-reverse-sync")
+new_fm = re.sub(
+    r'^(cron:\s*)"?[^"\n]+"?\s*$',
+    rf'\g<1>"{jobs_cron}"',
+    fm,
+    count=1,
+    flags=re.M,
+)
+new_text = f"---\n{new_fm}\n---" + text[fm_m.end():]
+open(skill_md, "w").write(new_text)
+print(f"REVERSE_SYNCED {slug}: SKILL.md cron {md_cron!r} -> {jobs_cron!r} (jobs.json was authoritative)")
+PY
+}
+
 # Update jobs.json so a SKILL.md cron field change actually fires.
 # Pulls the `cron:` value from SKILL.md frontmatter and rewrites the
 # matching job's schedule.expr. Adds the job if it doesn't exist yet.
@@ -478,6 +557,12 @@ one_pass() {
   for slug in $(list_managed_slugs); do
     local before_cron after_cron
     before_cron=$(jq -r ".jobs[] | select(.description | test(\"$slug\"; \"i\")) | .schedule.expr" "$JOBS_JSON" 2>/dev/null | head -1)
+    # Reverse-sync FIRST: if the agent edited jobs.json directly (via
+    # `openclaw cron edit`) without touching SKILL.md, pull jobs.json's
+    # expr into SKILL.md so the workspace becomes the durable record.
+    # This makes mirror_to_repo (next line) detect a real change and push
+    # it. Without this, jobs.json edits never reach GitHub.
+    reverse_sync_skill_md_from_jobs_json "$slug" 2>>"$LOG"
     if mirror_to_repo "$slug"; then
       slugs_changed+=("$slug")
       # PR 5 (post-image-v33-followup): classify skill type and route to
@@ -546,13 +631,22 @@ watch_mode() {
   fi
 
   while true; do
-    # Wait for any change in the workspace skills dir. -t 60 timeouts
-    # so we still re-pass every minute as a safety net.
+    # Wait for any change in the workspace skills dir OR jobs.json.
+    # jobs.json gets edited when the agent runs `openclaw cron edit`
+    # directly — without this watch, the change would only be detected
+    # by the 60s timeout fallback, leaving up to a minute of drift.
+    #
+    # -t 60 timeouts so we still re-pass every minute as a safety net.
+    # head -10 caps how many events we consume per wake (multi-file
+    # edits debounce naturally).
+    local watch_paths=("$WORKSPACE_SKILLS")
+    [ -f "$JOBS_JSON" ] && watch_paths+=("$JOBS_JSON")
     inotifywait -r -e modify,close_write,moved_to,create --timeout 60 \
-      "$WORKSPACE_SKILLS" 2>/dev/null | head -10 \
+      "${watch_paths[@]}" 2>/dev/null | head -10 \
       | while read -r _ _; do : ; done
-    # Debounce: brief delay so multi-file edits (SKILL.md + eval.yaml)
-    # batch into a single commit.
+    # Debounce: brief delay so multi-file edits (SKILL.md + eval.yaml,
+    # or `openclaw cron edit` writing jobs.json then triggering a hot
+    # reload) batch into a single commit.
     sleep 2
     one_pass
   done
@@ -571,6 +665,11 @@ reconcile_all() {
     local skill_type
     skill_type=$(classify_skill "$slug")
     log "  reconciling $slug ($skill_type)"
+    # Pull any jobs.json drift into SKILL.md first so the rest of the
+    # pass operates on a unified source of truth. Same rationale as
+    # one_pass — covers the case where a deploy lands after the agent
+    # made a cron edit via the OpenClaw CLI between heartbeats.
+    reverse_sync_skill_md_from_jobs_json "$slug" 2>>"$LOG"
     if [ "$skill_type" = "pool" ]; then
       sync_periodic_timer_for_slug "$slug"
     else

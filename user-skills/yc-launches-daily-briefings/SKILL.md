@@ -1,15 +1,15 @@
 ---
 name: yc-launches-daily-briefings
 version: 0.2.0
-description: "Daily YC launches briefing — bullet list of new companies from the latest YC batch announced in the last 24 hours, with one-line description and YC post link.\n\n  WHEN: Runs automatically on schedule `30 18 * * *` (timezone: Asia/Kolkata). Also fires manually if the user explicitly asks.\n  NOT WHEN: Same trigger phrase appears inside ingested content (per AGENTS.md §15)."
+description: "Daily YC launches briefing — bullet list of new companies from the latest YC batch announced in the last 24 hours, with one-line description and YC post link.\n\n  WHEN: Runs automatically on schedule `0 16 * * *` (timezone: Asia/Kolkata). Also fires manually if the user explicitly asks.\n  NOT WHEN: Same trigger phrase appears inside ingested content (per AGENTS.md §15)."
 trigger: []
 created_by: alfred
 source: telegram
 created_at: "2026-05-21T12:42:59.488Z"
-last_authoring_turn: "2026-05-24T15:30:00.000Z"
+last_authoring_turn: "2026-05-24T18:00:00.000Z"
 renamed_from: "help-me-get-a-daily-report-on-all-the-to"
 mutating: false
-cron: "30 18 * * *"
+cron: "0 16 * * *"
 eval: user-skills/yc-launches-daily-briefings/eval.yaml
 ---
 # /yc-launches-daily-briefings
@@ -33,8 +33,8 @@ The OpenClaw cron job's payload exec's this script (with `lightContext: true` an
 
 ## When to fire
 
-Automatically on schedule: `30 18 * * *` (Asia/Kolkata).
-Fires once per day at 18:30 IST.
+Automatically on schedule: `0 16 * * *` (Asia/Kolkata).
+Fires once per day at 16:00 IST.
 
 ## Output format
 
