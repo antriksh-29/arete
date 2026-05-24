@@ -97,6 +97,45 @@ REQUIRED_ACTION=<exact next action>
   me to set this up?" — the user's message IS that confirmation. Do
   NOT compose a summary yourself; relay the script's envelope verbatim.
 
+- **INTENT=skill_mutation_edit** → STOP. The user wants to CHANGE/EDIT a
+  scheduled skill's timing (e.g. "change the YC launches cron to 8:30pm").
+  This is NOT a create intent. The skill-author pipeline (intake-from-context,
+  elicit, generate-skill, commit-and-deploy) is FORBIDDEN on this turn —
+  every one of those scripts would create a new skill.
+
+  The router output includes `CURRENT_SCHEDULED_SKILLS:` — a list of every
+  scheduled skill on disk + its current schedule, gathered from OpenClaw
+  crons, systemd timers, and `user-skills/*/SKILL.md` frontmatter. Use it.
+
+  Three-state protocol (the protocol the 2026-05-23 incident violated):
+  1. If you cannot identify exactly ONE skill from the user's message
+     against `CURRENT_SCHEDULED_SKILLS`, send a Telegram message listing
+     the candidates and ask which one. STOP. Touch no files.
+  2. If you cannot parse the new time unambiguously (no "8pm", "8:30pm",
+     "0 20 * * *", "every morning at X", etc.), ask one short clarifying
+     question. STOP. Touch no files.
+  3. If BOTH slug and new time are unambiguous, send EXACTLY one Telegram
+     message of the form:
+       "I'll change `<slug>` from `<old-cron-or-time>` to `<new-cron-or-time>` — reply yes / no."
+     STOP. Apply only after the user replies "yes". On confirmation, you
+     may then:
+       - `openclaw cron edit <job-id> --cron "<new-expr>"` for OpenClaw crons
+       - Edit `~/.openclaw/workspace/skills/<slug>/SKILL.md` frontmatter
+         `cron:` field for systemd-timer skills (skill-autosync will mirror
+         to repo + regenerate the timer).
+
+  **Anti-patterns that broke things on 2026-05-23 (do not repeat):**
+  - Creating a new skill named "change-the-…", "update-the-…", etc.
+    (`commit-and-deploy.ts` now hard-rejects these slugs at write time.)
+  - Touching the *wrong* skill's SKILL.md as collateral. Every edit must
+    name the exact slug the user confirmed.
+  - Replying "Done. Updated to <new time>" without actually editing
+    jobs.json or the SKILL.md frontmatter.
+  - Calling intake-from-context.ts, elicit.ts, generate-skill.ts, or
+    commit-and-deploy.ts on this turn. These are CREATE-path tools.
+  - Hand-editing systemd timer files directly. Let skill-autosync regenerate
+    them from SKILL.md frontmatter; that's the canonical source.
+
 - **INTENT=skill_periodic_reply** → STOP composing a generic reply. A
   periodic skill (e.g. `create-a-personalized-video-recommender`) asked
   the user a question on a cron; the router's `SKILL_SLUG` field tells

@@ -4,7 +4,8 @@ created: 2026-05-21
 updated: 2026-05-21
 tags: [user-skill, alfred-authored]
 ---
-# user-skill: help-me-get-a-daily-report-on-all-the-to
+# user-skill: yc-launches-daily-briefings
+_(Renamed from `help-me-get-a-daily-report-on-all-the-to` on 2026-05-24.)_
 _Authored fresh via Telegram._
 **Initial commit:** `cc9d810`
 ## Elicit Q&A
