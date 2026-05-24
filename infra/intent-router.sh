@@ -1038,27 +1038,90 @@ EOF
   exit 0
 fi
 
-# ── PERIODIC-SKILL REPLY (deterministic fallback) ──────────────
-# A periodic skill (e.g. create-a-personalized-video-recommender) asked
-# the user a question on a cron. The user's reply ("motivation to raise
-# on bad days...") looks like free-form chat — none of the routes above
-# match. Without context, the agent would just answer generically and
-# the originating skill would never fire.
-#
-# State file is written by ~/personal-assistant/infra/send-skill-prompt.sh
-# (and by run-periodic-skill.py for pool-based skills). We consume it
-# one-shot — first reply within 15 min routes to the skill, then the
-# file is deleted so a later unrelated message doesn't get mis-routed.
-LAST_PS_FILE="$HOME/.brain-bootstrap-raw/state/last-periodic-skill.json"
-if [ -f "$LAST_PS_FILE" ]; then
-  PS_SLUG=$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("slug",""))' "$LAST_PS_FILE" 2>/dev/null || echo "")
-  PS_SENT_AT=$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("sent_at",0))' "$LAST_PS_FILE" 2>/dev/null || echo 0)
-  PS_PREVIEW=$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("message_preview",""))' "$LAST_PS_FILE" 2>/dev/null || echo "")
-  NOW=$(date +%s)
-  AGE=$(( NOW - PS_SENT_AT ))
-  if [ -n "$PS_SLUG" ] && [ "$AGE" -lt 900 ]; then
-    # Consume the marker so a stray follow-up message doesn't also route.
-    rm -f "$LAST_PS_FILE"
+# ── PERIODIC-SKILL REPLY (deterministic, multi-slot) ───────────
+# 2026-05-24 rewrite: the previous single-slot LAST_PS_FILE marker was
+# overwritten when a second cron fired after the first (PG at 15:41
+# clobbered video-recommender at 11:45). Now we read
+# recent-skill-prompts.jsonl — every cron fire appends a slug +
+# timestamp + telegram message_id. We only route deterministically when
+# there's EXACTLY ONE recent (<60min) entry that hasn't been consumed.
+# If there are two recent fires from different skills, we fall through
+# to chat and let the LLM use the Telegram reply-quote (which OpenClaw
+# renders in the message context) to disambiguate per the AGENTS.md
+# "skill_periodic_reply via reply-quote" rule.
+RECENT_JSONL="$HOME/.brain-bootstrap-raw/state/recent-skill-prompts.jsonl"
+LEGACY_SINGLE="$HOME/.brain-bootstrap-raw/state/last-periodic-skill.json"
+# Migration: if only the legacy file exists, fall back to its single
+# slot for one more pass — caller will rotate to jsonl on next cron.
+if [ -f "$RECENT_JSONL" ] || [ -f "$LEGACY_SINGLE" ]; then
+  PS_PARSE=$(python3 - "$RECENT_JSONL" "$LEGACY_SINGLE" <<'PY' 2>/dev/null
+import json, os, sys, time
+recent_path, legacy_path = sys.argv[1], sys.argv[2]
+now = int(time.time())
+WINDOW = 3600  # 60 min — wider than the old 15min, since multi-slot disambiguates
+entries = []
+if os.path.isfile(recent_path):
+    for line in open(recent_path):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            e = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if "consumed" in e and e["consumed"]:
+            continue
+        if now - int(e.get("sent_at", 0)) < WINDOW:
+            entries.append(e)
+elif os.path.isfile(legacy_path):
+    try:
+        e = json.load(open(legacy_path))
+        if now - int(e.get("sent_at", 0)) < 900:  # legacy 15-min window
+            entries.append(e)
+    except Exception:
+        pass
+# Output rules:
+#   - 1 fresh entry → "ok\tSLUG\tAGE\tPREVIEW\tMSG_ID"
+#   - 0 fresh entries → "none"
+#   - 2+ fresh entries → "multi" (let LLM handle via reply-quote rule)
+if len(entries) == 0:
+    print("none")
+elif len(entries) == 1:
+    e = entries[0]
+    age = now - int(e.get("sent_at", 0))
+    print(f"ok\t{e.get('slug','')}\t{age}\t{e.get('message_preview','')[:120]}\t{e.get('message_id','') or ''}")
+else:
+    slugs = ",".join(sorted({e.get("slug","") for e in entries}))
+    print(f"multi\t{slugs}")
+PY
+)
+  if [ "${PS_PARSE%%	*}" = "ok" ]; then
+    PS_SLUG=$(echo "$PS_PARSE" | awk -F'\t' '{print $2}')
+    PS_AGE=$(echo "$PS_PARSE" | awk -F'\t' '{print $3}')
+    PS_PREVIEW=$(echo "$PS_PARSE" | awk -F'\t' '{print $4}')
+    # Mark consumed in the jsonl (don't delete; preserve audit trail).
+    python3 - "$RECENT_JSONL" "$PS_SLUG" <<'PY' 2>/dev/null || true
+import json, os, sys
+path, slug = sys.argv[1], sys.argv[2]
+if not os.path.isfile(path):
+    sys.exit(0)
+out = []
+marked = False
+for line in open(path):
+    line = line.strip()
+    if not line: continue
+    try: e = json.loads(line)
+    except: continue
+    if not marked and e.get("slug") == slug and not e.get("consumed"):
+        e["consumed"] = True
+        marked = True
+    out.append(e)
+with open(path, "w") as f:
+    for e in out: f.write(json.dumps(e) + "\n")
+PY
+    # Also remove legacy single-slot so we don't double-fire.
+    rm -f "$LEGACY_SINGLE"
+    AGE="$PS_AGE"
     SKILL_MD_PATH="user-skills/${PS_SLUG}/SKILL.md"
     cat <<EOF
 INTENT=skill_periodic_reply
