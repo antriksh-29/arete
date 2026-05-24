@@ -205,8 +205,15 @@ desired = desired + [
 # in agents.list[] will have their .model field set. Missing agents
 # are reported but not added (defensive — don't invent agent rows).
 PER_AGENT_MODEL = {
-    "signal-detector": "openai/gpt-5.4-mini",
-    "feedback-learner": "openai/gpt-5.4-mini",
+    # 2026-05-24: comment header above ALREADY said "Pinning to Kimi"
+    # since the OpenAI session-format regression was found — but the
+    # dict still said openai/gpt-5.4-mini. Every deploy ran this script
+    # and reverted live fixes back to gpt. Today: gpt's Codex quota was
+    # exhausted, the bare-string override has no fallback chain, every
+    # user turn died on the signal-detector lane.
+    # Comment + code now in sync.
+    "signal-detector": "moonshot/kimi-k2.6",
+    "feedback-learner": "moonshot/kimi-k2.6",
 }
 
 with open(config_path) as f:
