@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """yc-launches-daily.py — deterministic dispatcher for the
-help-me-get-a-daily-report-on-all-the-to skill.
+yc-launches-daily-briefings skill (formerly named
+help-me-get-a-daily-report-on-all-the-to, renamed 2026-05-24).
 
 REPLACES the agentTurn cron path. That path was failing with
 "cron: isolated agent setup timed out before runner start" every

@@ -312,10 +312,87 @@ if out != text:
 PY
 }
 
+# Regression guard: reject a workspace SKILL.md if mirroring it would
+# DOWNGRADE the repo version. Post-2026-05-23 incident: an unrelated
+# elicit/skill-author turn left a stale 2026-05-20 copy of
+# paul-graham-insights/SKILL.md in the workspace; this script blindly
+# committed it, version went 0.1.1 → 0.1.0, last_authoring rolled back,
+# forked_from field disappeared, and the deploy installer pushed the
+# PG cron from 1:30pm to 9:00am. The user noticed when the next-day
+# schedule was wrong.
+#
+# A regression looks like ANY of:
+#   - frontmatter `version:` decreased (semver-aware compare)
+#   - frontmatter `last_authoring_turn:` is older than the repo's
+#   - the repo had `forked_from:` and the workspace copy doesn't
+#
+# Returns 0 (allow) if safe; non-zero (abort + log) if the workspace
+# copy looks like a regression. Caller skips mirroring on non-zero.
+guard_against_regression() {
+  local slug="$1"
+  local ws="$WORKSPACE_SKILLS/$slug/SKILL.md"
+  local rp="$REPO_US/$slug/SKILL.md"
+  [ -f "$ws" ] || return 0
+  [ -f "$rp" ] || return 0  # no repo version yet — first sync is always OK
+  python3 - "$ws" "$rp" "$slug" <<'PY' || return $?
+import re, sys
+ws_path, rp_path, slug = sys.argv[1], sys.argv[2], sys.argv[3]
+
+def parse_fm(p):
+    txt = open(p).read()
+    m = re.match(r"^---\n(.*?)\n---", txt, re.S)
+    return m.group(1) if m else ""
+
+def field(fm, key):
+    m = re.search(rf'^{key}:\s*"?([^"\n]+)"?\s*$', fm, re.M)
+    return m.group(1).strip().strip('"') if m else None
+
+def semver_lt(a, b):
+    # a < b? Parse "x.y.z"; missing/non-numeric components → fall back
+    # to string compare (which is what semver.lt does for malformed).
+    def parts(s):
+        return tuple(int(x) if x.isdigit() else 0 for x in (s or "0").split("."))
+    return parts(a) < parts(b)
+
+ws_fm, rp_fm = parse_fm(ws_path), parse_fm(rp_path)
+ws_ver, rp_ver = field(ws_fm, "version"), field(rp_fm, "version")
+ws_lat, rp_lat = field(ws_fm, "last_authoring_turn"), field(rp_fm, "last_authoring_turn")
+ws_fork, rp_fork = field(ws_fm, "forked_from"), field(rp_fm, "forked_from")
+
+reasons = []
+if ws_ver and rp_ver and semver_lt(ws_ver, rp_ver):
+    reasons.append(f"version downgrade: {rp_ver} → {ws_ver}")
+if ws_lat and rp_lat and ws_lat < rp_lat:
+    reasons.append(f"last_authoring_turn rolled back: {rp_lat} → {ws_lat}")
+if rp_fork and not ws_fork:
+    reasons.append(f"forked_from field dropped (was {rp_fork})")
+
+if reasons:
+    print(f"REGRESSION_BLOCKED slug={slug}: {'; '.join(reasons)}", file=sys.stderr)
+    sys.exit(2)
+sys.exit(0)
+PY
+}
+
 # Mirror one slug's workspace files into the repo. Returns 0 if anything
 # changed, 1 if no changes. Doesn't push — caller batches push.
 mirror_to_repo() {
   local slug="$1"
+  # Regression check FIRST. If the workspace copy would downgrade the
+  # repo version, abort mirroring for this slug entirely — better to
+  # leave the repo intact and surface the conflict than silently push
+  # a regression. The error is logged so a human can investigate.
+  if ! guard_against_regression "$slug" 2>>"$LOG"; then
+    log "  SKIP mirror_to_repo($slug): regression guard fired (see log for details)"
+    # Move the offending workspace SKILL.md aside so the watcher doesn't
+    # keep re-firing on the same drift every minute.
+    local ws="$WORKSPACE_SKILLS/$slug/SKILL.md"
+    if [ -f "$ws" ]; then
+      mv "$ws" "${ws}.regression-quarantine.$(date -u +%Y%m%d-%H%M%S)"
+      log "    quarantined offending workspace SKILL.md → ${ws}.regression-quarantine.*"
+    fi
+    return 1
+  fi
   normalize_skill_body "$slug"
   local changed=0
   for f in SKILL.md eval.yaml; do

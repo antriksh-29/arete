@@ -84,6 +84,45 @@ const SOURCE_TIERS = ["skills", "openclaw/skills"] as const;
 // Slug + collision
 // ──────────────────────────────────────────────────────────────────
 
+// Slugs starting with these tokens are user EDIT intents, not skill
+// names. The 2026-05-23 failure: user said "change the hackernews
+// daily briefing to 8pm — starting today" and the skill-author
+// happily created a skill literally named
+// `change-the-hackernews-daily-briefing-sch[edule-to-8pm]`. The fix is
+// belt-and-suspenders: intent-router.sh blocks the intent upstream
+// (skill_mutation_edit route), and this guard refuses to write the
+// skill if the slug still leaks through.
+const EDIT_VERB_SLUGS = [
+  "change-the-",
+  "change-",
+  "update-the-",
+  "update-",
+  "modify-the-",
+  "modify-",
+  "edit-the-",
+  "edit-",
+  "rename-the-",
+  "rename-",
+  "delete-the-",
+  "delete-",
+  "remove-the-",
+  "remove-",
+  "disable-the-",
+  "disable-",
+  "enable-the-",
+  "enable-",
+  "move-the-",
+  "move-",
+  "shift-the-",
+  "shift-",
+  "reschedule-the-",
+  "reschedule-",
+];
+
+function isEditVerbSlug(slug: string): boolean {
+  return EDIT_VERB_SLUGS.some((prefix) => slug.startsWith(prefix));
+}
+
 function slugify(text: string): string {
   return text
     .toLowerCase()
@@ -101,6 +140,15 @@ function resolveSlug(draft: Draft): { slug: string; bumped: boolean } {
   // For create: derive from capability, then collision-bump.
   const base = slugify(draft.answers.capability ?? "");
   if (!base) throw new Error("could not derive slug from empty capability");
+  if (isEditVerbSlug(base)) {
+    throw new Error(
+      `slug "${base}" starts with an edit verb (change-, update-, modify-, etc). ` +
+        `This is the 2026-05-23 failure shape: the user said "change X to Y" and ` +
+        `the skill-author treated it as a create. EDIT intents must route through ` +
+        `intent-router.sh's skill_mutation_edit path, never through commit-and-deploy. ` +
+        `Refusing to create the skill.`,
+    );
+  }
   if (!existsSync(join(USER_SKILLS, base))) return { slug: base, bumped: false };
   // Collision — try -v2, -v3, ... up to v10.
   for (let i = 2; i <= 10; i++) {

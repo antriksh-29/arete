@@ -450,6 +450,76 @@ EOF
   exit 0
 fi
 
+# ── EDIT-VERB FIREWALL (post-2026-05-23 incident) ──────────────
+# Pattern that broke things: user said "change the hackernews daily
+# briefing to 8pm — starting today" and IMPLICIT_CREATE fired, the
+# skill-author created a *new* skill literally named
+# `change-the-hackernews-daily-briefing-sch[edule-to-8pm]`, the
+# Paul Graham timer got mis-edited as collateral damage from a stale
+# workspace overwrite, and the user's actual intent (edit existing
+# YC launches cron) was never satisfied.
+#
+# This block catches "change/update/modify/edit/rename/move/shift/
+# delete/disable/enable the X (timing|schedule|cron|cadence|frequency)"
+# patterns AT THE TOP of the message (where the intent verb is the
+# anchor, not buried in narrative). When this matches, IMPLICIT_CREATE
+# is FORBIDDEN — we route to skill_mutation_edit, list candidate
+# skills + their current schedules, and force the agent to ask the
+# user which one before any cron mutation happens.
+#
+# Why "at the top": legitimate skill-create messages can contain edit
+# verbs deep in their description (e.g. "I want a skill that updates
+# my dashboard every hour"). We only firewall when the verb is the
+# leading intent, not a verb buried in a content description.
+EDIT_VERB_LEAD='^(please[[:space:]]+)?(can[[:space:]]+(you|we)[[:space:]]+)?(change|update|modify|edit|rename|move|shift|delete|disable|enable|reschedule|switch|swap|adjust|tweak|tune|fix|kill|stop|pause|remove)\b'
+SCHEDULE_NOUN='\b(timing|time|schedule|cron|cadence|frequency|when|hour|minute|delivery[[:space:]]+time|run[[:space:]]+time|fire[[:space:]]+time)\b'
+TIME_HINT='\b([0-9]{1,2}([:.][0-9]{2})?[[:space:]]*(am|pm)|noon|midnight|every[[:space:]]+(morning|evening|day|night|hour|week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|daily|hourly|weekly)\b'
+SKILL_REF='\b(skill|cron|job|timer|briefing|report|recommender|insight|insights|reminder|checkin|digest|alert|notification|fetch|task|automation)\b'
+
+if echo "$LMSG" | grep -qE "$EDIT_VERB_LEAD" \
+   && { echo "$LMSG" | grep -qE "$SCHEDULE_NOUN" || echo "$LMSG" | grep -qE "$TIME_HINT" ; } \
+   && { echo "$LMSG" | grep -qE "$SKILL_REF" || echo "$LMSG" | grep -qE "$TIME_HINT" ; }; then
+  # Build a list of currently scheduled skills (OpenClaw crons +
+  # systemd timers + user-skills with non-null cron) for the agent
+  # to relay back to the user.
+  HELPER="$HOME/personal-assistant/infra/list-skill-crons.sh"
+  if [ -x "$HELPER" ] || [ -f "$HELPER" ]; then
+    SCHED_LIST=$(bash "$HELPER" 2>/dev/null | head -40)
+  else
+    SCHED_LIST="(list-skill-crons.sh helper not deployed yet — agent should list what's known from \`openclaw cron list\`)"
+  fi
+  ESCAPED_MSG=$(printf '%s' "$MSG" | sed 's/"/\\"/g')
+  cat <<EOF
+INTENT=skill_mutation_edit
+LEADING_VERB=$(echo "$LMSG" | grep -oE "$EDIT_VERB_LEAD" | head -1)
+ORIGINAL_MESSAGE=${ESCAPED_MSG}
+
+CURRENT_SCHEDULED_SKILLS:
+${SCHED_LIST}
+
+REQUIRED_ACTION=The user wants to CHANGE/EDIT a scheduled skill's timing. This is NOT a create intent — IMPLICIT_CREATE is FORBIDDEN on this turn. The skill-author pipeline is ALSO FORBIDDEN. You must:
+  1. Identify which existing scheduled skill the user is referring to (use the CURRENT_SCHEDULED_SKILLS list above + the user's message).
+  2. Identify the new time (parse from the message, e.g. "8:30pm" → "30 20 * * *").
+  3. If EITHER the target skill OR the new time is ambiguous: ask ONE short question with the candidate list, then STOP. Do not touch any file.
+  4. If BOTH are unambiguous: state the proposed change as "I will change \`<slug>\` from \`<old>\` to \`<new>\` — reply yes / no" and STOP. Apply only after the user replies yes by running \`openclaw cron edit <id> --cron "<new-expr>"\` AND editing \`~/.openclaw/workspace/skills/<slug>/SKILL.md\` frontmatter \`cron:\` field to match (the autosync watcher will mirror to repo).
+
+EXECUTION_RECIPE:
+1. If the user's message names ZERO skills from the list (typical first-turn case): reply with the list of scheduled skills and ask "which one?" Do nothing else.
+2. If the user's message names exactly ONE skill AND a parseable new time: reply with the proposed change + "yes / no" footer. Wait for confirmation.
+3. If the user's message is ambiguous (matches >1 skill, or no parseable time): ask ONE disambiguating question.
+
+BANNED_RESPONSES:
+- Calling intake-from-context.ts, elicit.ts, generate-skill.ts, or commit-and-deploy.ts. NONE of these belong on an EDIT path — they create new skills.
+- Creating a skill named "change-the-…", "update-the-…", "modify-the-…", or any other slug that starts with an edit verb. (The skill-author also blacklists these at write time.)
+- Running \`openclaw cron edit\`, \`systemctl --user edit\`, or hand-editing jobs.json BEFORE the user confirms the exact (slug, new-time) pair.
+- Editing the WRONG skill's SKILL.md as collateral (the Paul Graham regression on 2026-05-23 was exactly this — autosync downgraded PG when the elicit pipeline rewrote workspace skill files during a confused turn).
+- Pretending to make the change ("Done — schedule updated to 8pm") without actually editing jobs.json.
+
+This route exists to PROTECT THE USER from the 2026-05-23 failure cascade. Take the extra confirmation turn. It is cheap; mis-mutations are expensive.
+EOF
+  exit 0
+fi
+
 # --- Implicit create signals (natural language) ---
 # "I wish you would..." / "I wish you could..."
 # "make a skill for ..." / "let's make a skill ..."
