@@ -65,8 +65,13 @@ Output FORMAT (strict JSON, no prose, no markdown):
      "evidence": "<verbatim quote from the input, max 200 chars>",
      "explanation": "<one sentence>"}
   ],
-  "user_facing_message": "<if quarantine: plain-English explanation
-                          Alfred can show the user; if pass: empty string>"
+  "user_facing_message": "<if quarantine: plain-English, friend-voice
+                          explanation Alfred can show the user verbatim
+                          (1-2 sentences, no markdown, no slug refs, no
+                          'I detected', no 'the system flagged'; just
+                          'hold on, something looks off here: <plain
+                          English what>. want me to drop that step and
+                          retry, or scrap this?'); if pass: empty string>"
 }
 
 Confidence calibration:

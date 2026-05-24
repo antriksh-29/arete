@@ -35,7 +35,45 @@ outputs:
     cmd: 'echo "✓ Done with task #2. Anything else?" | python3 infra/reply-discipline.py'
     expect_json_keys: [ok, reply]
     expect_ok: true
-    judge_rubric: "The word 'done' inside a longer reply must pass — only bare single-word acks fail."
+    judge_rubric: "The word 'done' inside a longer reply must pass — only bare content-free acks fail."
+
+  # ── friend-voice action confirms (added 2026-05-24 retune) ──
+  # Per identity/SOUL.md rule 4, bare one-word replies tied to a real
+  # action are now the target register, not the anti-pattern. They
+  # confirm what the main agent just did in the same voice Antriksh
+  # would use himself.
+  - id: rd-pass-bare-done
+    cmd: 'echo "done." | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reply]
+    expect_ok: true
+    judge_rubric: "Friend-voice action confirm passes."
+
+  - id: rd-pass-bare-sent
+    cmd: 'echo "sent." | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reply]
+    expect_ok: true
+
+  - id: rd-pass-bare-noted
+    cmd: 'echo "Noted." | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reply]
+    expect_ok: true
+    judge_rubric: "Was rd-rej before the friend-voice retune; flipped to pass."
+
+  - id: rd-pass-bare-captured
+    cmd: 'echo "Captured." | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reply]
+    expect_ok: true
+    judge_rubric: "Was rd-rej before the friend-voice retune; flipped to pass."
+
+  - id: rd-pass-on-it
+    cmd: 'echo "on it." | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reply]
+    expect_ok: true
+
+  - id: rd-pass-moved-it
+    cmd: 'echo "moved it." | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reply]
+    expect_ok: true
 
   # ── reject cases ──
   - id: rd-rej-no-reply
@@ -89,18 +127,14 @@ outputs:
     expect_json_keys: [ok, reason, suggestion]
     expect_ok: false
 
-  - id: rd-rej-bare-noted
-    cmd: 'echo "Noted." | python3 infra/reply-discipline.py'
-    expect_json_keys: [ok, reason, suggestion]
-    expect_ok: false
-
-  - id: rd-rej-bare-captured
-    cmd: 'echo "Captured." | python3 infra/reply-discipline.py'
-    expect_json_keys: [ok, reason, suggestion]
-    expect_ok: false
-
   - id: rd-rej-bare-ok
     cmd: 'echo "ok" | python3 infra/reply-discipline.py'
+    expect_json_keys: [ok, reason, suggestion]
+    expect_ok: false
+    judge_rubric: "Content-free acks like 'ok' / 'k' / 'ack' don't tie to an action — still banned."
+
+  - id: rd-rej-bare-ack
+    cmd: 'echo "ack" | python3 infra/reply-discipline.py'
     expect_json_keys: [ok, reason, suggestion]
     expect_ok: false
 

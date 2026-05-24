@@ -508,43 +508,64 @@ commit_and_push() {
   return 0
 }
 
-# Send a Telegram confirmation with the commit SHA and GitHub URL.
+# Send a friend-voice Telegram confirmation. No slug, no commit URL, no
+# file URL — those are internal-state per identity/SOUL.md hard blocklist.
+# The user sees a one-line "I tweaked your X" message with the schedule
+# change in plain English if relevant. Slug → friendly name conversion:
+# pull the `title` (or fallback to `description`) from the SKILL.md
+# frontmatter; if missing, replace hyphens with spaces.
 notify_user() {
   local slug="$1"
-  local sha="$2"
-  local cron_change="$3"   # "" or "18:30 -> 11:00"
-  local repo_url="https://github.com/antriksh-29/personal-assistant"
-  local commit_url="$repo_url/commit/$sha"
-  local file_url="$repo_url/blob/main/user-skills/$slug/SKILL.md"
+  local _sha="$2"           # kept for back-compat; not surfaced to user
+  local cron_change="$3"    # e.g. "6:15pm → 8:30pm" (plain English now)
+  local skill_md="$REPO/user-skills/$slug/SKILL.md"
 
-  local lines=(
-    "✅ Updated user-skills/$slug — pushed to GitHub."
-    ""
-  )
-  if [ -n "$cron_change" ]; then
-    lines+=("Schedule: $cron_change")
-    lines+=("")
+  # Friendly name: title from frontmatter > description > slug-with-spaces.
+  local friendly
+  friendly=$(awk '
+    /^---$/ {fm = !fm; next}
+    fm && /^title:/ {sub(/^title:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit}
+  ' "$skill_md" 2>/dev/null)
+  if [ -z "$friendly" ]; then
+    # Fallback: convert "paul-graham-insights" → "paul graham insights"
+    friendly=$(echo "$slug" | tr '-' ' ')
   fi
-  lines+=(
-    "Commit: $commit_url"
-    "File: $file_url"
-  )
+
   local msg
-  msg=$(printf '%s\n' "${lines[@]}")
+  if [ -n "$cron_change" ]; then
+    msg="moved your ${friendly} to ${cron_change}. done."
+  else
+    msg="tweaked your ${friendly}. done."
+  fi
   [ -x "$TG_SEND" ] && "$TG_SEND" "$msg" >/dev/null 2>&1 || true
 }
 
-# Compute a human-readable description of cron change for the user msg.
+# Compute a friend-voice description of a cron change for the user msg.
+# Output: "6:15pm" or "8:30am" for the after-time only — the from-time
+# is now elided (per friend-voice, "moved your X to 8:30pm" reads cleaner
+# than "from 6:15pm to 8:30pm" in chat). Returns empty if no change.
+#
+# Non-daily expressions fall through to a slug-of-last-resort: skip the
+# message entirely (return empty string), since translating arbitrary
+# cron rhythms to plain English is non-trivial. The notify_user caller
+# then falls back to "tweaked your <X>. done." with no time delta.
 describe_cron_change() {
-  local slug="$1"
+  local _slug="$1"
   local before="$2"
   local after="$3"
   if [ "$before" = "$after" ]; then echo ""; return; fi
-  # Express as `HH:MM <- HH:MM` for the daily case (5-field "M H * * *")
-  local b_fmt a_fmt
-  b_fmt=$(echo "$before" | awk '{if ($3=="*" && $4=="*" && $5=="*") printf "%02d:%02d", $2, $1; else print $0}')
-  a_fmt=$(echo "$after" | awk '{if ($3=="*" && $4=="*" && $5=="*") printf "%02d:%02d", $2, $1; else print $0}')
-  echo "$b_fmt IST → $a_fmt IST"
+  # Daily ("M H * * *"): convert to friendly "h:mmam/pm" lowercase.
+  echo "$after" | awk '
+    {
+      if ($3=="*" && $4=="*" && $5=="*") {
+        m = $1+0; h = $2+0;
+        if (h == 0)      { printf "%d:%02dam", 12, m }
+        else if (h < 12) { printf "%d:%02dam", h, m }
+        else if (h == 12){ printf "%d:%02dpm", 12, m }
+        else             { printf "%d:%02dpm", h-12, m }
+      }
+    }
+  '
 }
 
 # Single pass: for each managed slug, mirror workspace -> repo, sync

@@ -118,16 +118,21 @@ def read_cache(target_date: str) -> dict | None:
 
 
 def format_message(row: dict) -> str:
+    # Friend-voice (2026-05-24, identity/SOUL.md): cost / token / cache
+    # telemetry should never reach chat unprompted, and even when asked
+    # casually, surface only the rounded dollar figure — never per-bucket
+    # token splits. The detail is in the JSON envelope (`row`) for any
+    # caller that wants it.
     cost = row.get("totalCost", 0)
     tokens = row.get("totalTokens", 0)
     date = row.get("date", "?")
     if tokens == 0 and cost == 0:
-        return f"💰 No LLM activity logged for {date}."
-    return (
-        f"💰 Spend on {date}: ${cost:.4f} · {tokens:,} tokens "
-        f"(in {row.get('input', 0):,} / out {row.get('output', 0):,} / "
-        f"cache R {row.get('cacheRead', 0):,} W {row.get('cacheWrite', 0):,})"
-    )
+        return f"nothing logged for {date}."
+    # Round to the nearest cent. Hide token counts entirely.
+    cents = round(cost * 100)
+    if cents < 100:
+        return f"{date} cost about {cents}¢."
+    return f"{date} cost about ${cost:.2f}."
 
 
 # ── CLI ────────────────────────────────────────────────────────
@@ -204,10 +209,8 @@ def main():
         "source": None,
         "scope": target_date,
         "user_message": (
-            f"Usage report for {target_date} unavailable — both `openclaw "
-            f"gateway usage-cost` CLI and the cache at {CACHE_PATH} are "
-            "unreachable. Check `systemctl --user status openclaw-gateway` "
-            "and `openclaw doctor` to investigate."
+            f"can't pull spend for {target_date} right now, my usage "
+            "tracker is offline."
         ),
     }, ensure_ascii=False))
 

@@ -744,7 +744,7 @@ async function main() {
     emit({
       ok: false,
       phase: "error",
-      user_message: `🛑 Couldn't push the commit: ${pushed.stderr.slice(0, 200)}\n\nThe commit is on your branch at \`${finalSha}\` — you can push manually or run /refine to retry.`,
+      user_message: `🛑 the change didn't go through on my end. saved locally, but it's not live yet. want me to try again?`,
       draft_slug: slug,
       verdict: "push_failed",
       detail: { sha: finalSha, push_error: pushed.stderr },

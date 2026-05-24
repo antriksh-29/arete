@@ -35,9 +35,17 @@ BANNED_PATTERNS = [
      "the sub-agent never replies; main agent owes a real reply"),
 ]
 
-# Single-word acks that are non-replies in isolation. Only trip if
+# Single-word acks that carry no information at all. Only trip if
 # the WHOLE reply is one of these (with optional trailing punctuation).
-EMPTY_ACKS = ["captured", "noted", "ack", "done", "ok", "okay", "k"]
+#
+# History: this list used to include "done", "noted", "captured" — but
+# under friend-voice (see identity/SOUL.md rule 4), bare action-confirming
+# words like "done.", "moved it.", "sent.", "on it." are the TARGET
+# register, not the anti-pattern. They tie to a concrete action the
+# main agent just took, and Antriksh prefers them over verbose status
+# reports. Only purely content-free acks ("ok", "k", "ack") that don't
+# reference an action stay banned.
+EMPTY_ACKS = ["ack", "ok", "okay", "k"]
 
 
 # ── checks ─────────────────────────────────────────────────────
@@ -63,13 +71,15 @@ def check(reply: str) -> dict:
                 "suggestion": "Replace the banned phrase with concrete content — what action you took, what data you fetched, what you stored.",
             }
 
-    # One-word ack scan — only if reply collapses to a single banned ack
+    # One-word ack scan — only if reply collapses to a single content-free ack.
+    # Action-confirming bare words ("done.", "sent.", "moved it.") are the
+    # target friend-voice register; they pass.
     bare = re.sub(r"[^\w]", "", lc)
     if bare in EMPTY_ACKS and len(stripped) < 12:
         return {
             "ok": False,
-            "reason": f"single-word ack ({bare!r}) — looks broken",
-            "suggestion": "Add the concrete result: '✓ Stored under <slug>' or '✓ Logged 750ml — 2.25L today'.",
+            "reason": f"content-free ack ({bare!r}), looks broken",
+            "suggestion": "Bare 'ok' / 'k' / 'ack' don't tie to an action. Either say what you did ('done.', 'moved it to 8:30pm.', 'sent.'), or stay silent if there's nothing to confirm.",
         }
 
     return {"ok": True, "reply": reply}

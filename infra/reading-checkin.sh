@@ -250,18 +250,13 @@ format_ping() {
     PROMPT_DATE="on $TARGET_LABEL ($TARGET_DATE)"
   fi
 
+  # Friend-voice rewrite (2026-05-24, see identity/SOUL.md):
+  # the old version led with a "📚 Reading check-in" header and ended
+  # with a long "Please reply yes / no..." menu — both engineer-voice
+  # tells. The new shape is a single warm line that surfaces the most
+  # interesting stat as a nudge, plus the prompt itself.
   cat <<MSG
-📚 Reading check-in
-
-Did you read a book $PROMPT_DATE?
-
-Your statistics:
-
-Last 7 days: $L7
-$MO_LABEL: $MO
-Overall: $OV
-
-Please reply yes / no to this message to log your activity (use "yes for $TARGET_DATE" / "no for $TARGET_DATE" to be explicit about the date).
+📚 did you read $PROMPT_DATE? (you're at $L7 this week, $MO_LABEL is $MO so far)
 MSG
 }
 

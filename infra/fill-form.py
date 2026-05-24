@@ -2285,6 +2285,10 @@ if __name__ == "__main__":
         raise
     except Exception as e:
         log(f"FAILED: {e}")
+        # Friend-voice: surface a plain-English failure to the user, not
+        # the raw exception text (which often includes file paths, Python
+        # tracebacks, or selector internals). Full detail stays in the
+        # `error` field of the JSON envelope for debugging.
         print(json.dumps({"ok": False, "reason": "error", "error": str(e),
-                          "user_message": f"⚠️ Form fill failed: {e}"}))
+                          "user_message": "⚠️ form fill didn't go through. want me to retry, or take a different path?"}))
         sys.exit(1)

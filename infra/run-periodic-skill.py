@@ -137,14 +137,13 @@ def pick_index(items: list[str], recent: list[int]) -> int:
 
 def reply_footer(slug: str) -> str:
     # Visible (small italic) footer appended to every periodic-skill
-    # Telegram message. Two jobs:
-    #   1. Tell the user this came from a specific skill — and that
-    #      replying continues the conversation with it.
-    #   2. Stamp the message body with a machine-readable slug so that
-    #      when Telegram quotes it in the user's reply, the agent can
-    #      see which skill the reply belongs to.
-    # The "/<slug>" form mirrors how the user invokes skills manually.
-    return f'\n\n<i>↩ reply to keep talking to /{html.escape(slug)}</i>'
+    # Telegram message. The "/<slug>" form used to leak the slug into
+    # chat ("↩ reply to keep talking to /paul-graham-insights") which
+    # violates identity/SOUL.md's hard blocklist on slug references.
+    # The router disambiguates replies by Telegram message_id (see the
+    # multi-slot state in send-skill-prompt.sh and intent-router.sh),
+    # so the slug doesn't need to appear in the footer at all.
+    return '\n\n<i>↩ reply to this message to answer</i>'
 
 
 def write_last_periodic_state(slug: str, msg: str) -> None:

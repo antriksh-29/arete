@@ -45,7 +45,13 @@ esc() {
 }
 SLUG_ESC=$(esc "$SLUG")
 BODY_ESC=$(esc "$BODY")
-FOOTER="<i>↩ reply to keep talking to /${SLUG_ESC}</i>"
+# Footer used to leak the slug as a slash-command ("/${SLUG_ESC}") to the
+# user. Friend-voice retune (identity/SOUL.md rule 5 + hard blocklist):
+# slugs never reach chat. The router already disambiguates by Telegram
+# reply message_id (jsonl multi-slot, see header comment), so the footer
+# only needs to nudge the user to *reply to this message* — not to
+# /-prefix the slug.
+FOOTER="<i>↩ reply to this message to answer</i>"
 MSG="${BODY_ESC}
 
 ${FOOTER}"

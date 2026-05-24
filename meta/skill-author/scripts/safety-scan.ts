@@ -494,7 +494,7 @@ async function main() {
   emit({
     ok: true,
     phase: "safety",
-    user_message: "Creating this new skill for you. Please wait for 1–2 min.",
+    user_message: "on it, give me a min or two to set this up.",
     draft_slug: slug,
     verdict: "pass",
     detail: { stage: "llm_reviewer", llm_confidence: llm.confidence, advisory_regex_findings: iocFindings },

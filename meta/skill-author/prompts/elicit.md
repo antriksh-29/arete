@@ -9,63 +9,59 @@ template, simplified for non-technical conversation (no "tests" question
 
 ### Q1 — Capability
 
-> Got it, let's make a new skill. One line: what should this skill enable me to do?
+> nice, let's set this up. one line: what should I do for you?
 >
-> (Example: "send me a random motivational quote every morning",
-> or "when I forward you a receipt photo, log the amount + merchant
-> + date to my expense tracker".)
+> (like "send me a motivational quote every morning", or "when I
+> forward a receipt photo, log the amount, merchant, and date to my
+> expenses".)
 
 **Extracted field:** `capability` (free-form one-liner).
 
 ### Q2 — Invocation mode (the fork)
 
-> Should I run this when you ask me to, or automatically on a schedule?
+> should this run when you ask, or on a schedule?
 >
-> • Reply "manual" if you'll trigger it (you'll give me the words to listen for).
-> • Reply "periodic" if it should run on a schedule (daily/weekly/etc).
+> (say "when I ask" or "on a schedule".)
 
 **Extracted field:** `invocation_mode ∈ {"manual", "periodic"}`.
+The parser also accepts "manual" / "periodic" verbatim for back-compat.
 
 ### Q3 — Branches on Q2
 
 **If `manual`:** triggers
 
-> What 2–3 phrases should I listen for? These are the words you'll type
-> to trigger this skill.
+> cool. what 2-3 phrases should I listen for? (more specific is
+> better, so it doesn't collide with anything else I do.)
 >
-> (Example: "good morning quote", "give me my morning quote", "morning
-> motivation". More specific = less likely to collide with a neighbor skill.)
+> (like "morning quote", "give me my morning quote", "kick me off
+> with a quote".)
 
 **Extracted field:** `triggers[]` (array of 2–3 strings).
 
 **If `periodic`:** frequency
 
-> How often should I run it?
->
-> • `hourly` — every hour
-> • `daily` — once per day at a specific time (you'll pick the hour)
-> • `weekly` — once per week on a specific day + time
-> • `monthly` — once per month on a specific day + time
-> • `custom` — give me a raw cron expression
+> how often? (say hourly, daily, weekly, or monthly, or give me a
+> specific rhythm if it's something else.)
 
 **Extracted field:** `schedule.frequency`.
 
 ### Q4 — (periodic only) schedule details
 
-Asked only when `invocation_mode = periodic`. The wording varies by frequency:
+Asked only when `invocation_mode = periodic`. Friend-voice wording per
+frequency:
 
-- **daily:** "What time of day? (24h format, IST. Example: `08:00` for 8am, `22:30` for 10:30pm.)"
-- **weekly:** "What day + time? (Example: `monday 08:00` or `saturday 19:00`.)"
-- **monthly:** "What day-of-month + time? (Example: `1 09:00` for 9am on the 1st.)"
-- **hourly:** "Every hour, on the hour? Or at a specific minute past the hour? (Reply `on the hour` or e.g. `:15` for quarter past.)"
-- **custom:** "OK, paste the raw cron expression. (5-field format: `minute hour dom month dow`. Example: `*/15 8-22 * * *` = every 15 min between 8am and 10pm.)"
+- **daily:** "what time? (24h, IST. like `08:00` for 8am or `22:30` for 10:30pm.)"
+- **weekly:** "which day and time? (like `monday 08:00` or `saturday 19:00`.)"
+- **monthly:** "which day of the month, and what time? (like `1 09:00` for 9am on the 1st.)"
+- **hourly:** "on the hour, or some other minute past? (say `on the hour` or `:15`, etc.)"
+- **custom:** "paste the timing you want. plain English is fine, I'll figure it out — like 'every 15 min between 8am and 10pm'."
 
 **Extracted fields:** `schedule.time_of_day` / `schedule.day_of_week` / `schedule.day_of_month` / `schedule.custom_cron`.
 
 ### Q5 — Output shape
 
-> What should the result look like? Reply in this chat, a file,
-> a brain page, an email, a calendar event, something else?
+> where should the result land? back here in chat, or somewhere else
+> (file, note, email, calendar, etc)?
 
 **Extracted field:** `output` (free-form). Drives the generated SKILL.md
 `Output Format` section.
@@ -76,19 +72,22 @@ Asked only when `invocation_mode = periodic`. The wording varies by frequency:
 
 ### R1 — What's wrong
 
-> Got it, let's tweak `<TARGET>`. What's wrong with how it works now —
+> on it. what's not working about your <friendly skill name> right now,
 > or what should it do that it doesn't?
+
+(Refer to the skill by what Antriksh calls it, never by its slug. If
+the title in the frontmatter is friendly, use that. Otherwise infer
+from the capability line.)
 
 ### R2 — Desired behavior
 
-> OK, so when this fires, what should happen instead?
+> got it. when it runs, what should happen instead?
 
 ### R3 — Triggers
 
-> Keep the existing trigger phrases, or want to add new ones?
+> keep the existing trigger phrases, or want to add new ones?
 >
-> (Existing triggers: `<list from source SKILL.md>`. If you add new ones,
-> I'll check they don't collide with other skills.)
+> (right now I'm listening for: <list from source SKILL.md>.)
 
 ---
 
@@ -99,60 +98,59 @@ cron expressions when natural language reads better.
 
 **For CREATE — manual mode:**
 
-> OK, here's what I've got:
+> got it. when you say <trigger_1>, <trigger_2>, or <trigger_3>, I'll
+> <capability_in_one_sentence>, and reply with <output_description>.
 >
-> When you say things like **<trigger_1>**, **<trigger_2>**, or **<trigger_3>**,
-> I'll <capability_in_one_sentence>, and reply with **<output_description>**.
->
-> Sound right? (Inline button: ✅ Yes, save it • ✏️ Tweak Q<which> • ❌ Cancel)
+> shall I save this, or want to tweak?
 
 **For CREATE — periodic mode:**
 
-> OK, here's what I've got:
+> got it. every day at 8am IST, I'll send you a random motivational
+> quote (quote, then attribution).
 >
-> **Every day at 08:00 IST**, I'll send you a random motivational
-> quote, and reply with a two-line message — quote then attribution.
->
-> Sound right? (Inline button: ✅ Yes, save it • ✏️ Tweak • ❌ Cancel)
+> shall I save this, or want to tweak?
 
-The "when" string is built from `schedule`:
-- daily → "every day at HH:MM IST"
-- weekly → "every <day-of-week> at HH:MM IST"
-- monthly → "on the Nth of every month at HH:MM IST"
+The "when" string is built from `schedule` (always plain English, never
+a cron expression):
+- daily → "every day at H:MMam/pm IST"
+- weekly → "every <day-of-week> at H:MMam/pm IST"
+- monthly → "on the Nth of every month at H:MMam/pm IST"
 - hourly → "every hour at :MM"
-- custom → "on schedule `<cron-expr>`"
+- custom → translate to natural language; never paste the raw expression
+  into chat (see identity/SOUL.md rule 6).
 
 **For REFINE:**
 
-> OK, here's the diff:
+> got it, tweaking your <friendly skill name>.
 >
-> **Before:** <one-line summary of source SKILL.md behavior>
+> before: <one-line summary of source SKILL.md behavior>
+> after: <one-line summary of the desired behavior>
 >
-> **After:** <one-line summary of the desired behavior>
+> <if additional_triggers:> also listening for: <list>
 >
-> <if additional_triggers:> New triggers added: <list>
->
-> <if fork-on-modify:> This will fork `<source-tier>/<TARGET>` into
-> `user-skills/<TARGET>/`. The original stays untouched.
->
-> Sound right? (Inline button: ✅ Yes, save it • ✏️ Tweak • ❌ Cancel)
+> shall I save this, or want to tweak?
+
+(Fork notes — that the change forks the upstream skill — are an
+internal-state change, NOT user-facing. Don't surface "this will fork
+`<source-tier>/<TARGET>` into `user-skills/...`" in chat; the user
+doesn't care which tier owns the file.)
 
 ## After confirmation — the only TWO user-visible messages
 
 Per product feedback, the user does NOT see safety/routing/commit/deploy
-phase chatter. They see exactly TWO messages after pressing ✅:
+phase chatter. They see exactly TWO messages after saying "yes":
 
 **Message 1 (immediately after confirm, from safety-scan.ts):**
 
-> Creating this new skill for you. Please wait for 1–2 min.
+> on it, give me a min or two to set this up.
 
 **Message 2 (~60-90s later, from the deploy-callback hook):**
 
-> 🎉 Live. Try saying "<trigger_1>" or "<trigger_2>" — I'll know what
-> to do now.
+> 🎉 all set. try saying "<trigger_1>" or "<trigger_2>" and I'll take
+> it from there.
 >
 > (For periodic skills:)
-> 🎉 Live. I'll run this automatically — first run is at <next scheduled time>.
+> 🎉 all set. first run is at <next scheduled time, plain English>.
 
 The intermediate gate verdicts (safety pass/fail, routing collision,
 commit SHA, GH Actions status) are logged to Axiom and the brain page
@@ -174,8 +172,7 @@ Everything else: silent until "Live."
 If a draft exists at `.context/skill-author-drafts/<slug>.json` and the
 user starts a new `/teach` or `/refine` turn:
 
-> You have an unfinished draft from <relative-time>:
+> you've got a half-finished one from <relative-time>:
 > "<capability_or_change_statement>"
 >
-> Continue from where we left off, or start fresh?
-> (Inline button: ▶️ Continue • 🆕 Start fresh • 🗑️ Discard draft)
+> pick up where we left off, start over, or scrap it?

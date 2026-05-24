@@ -874,11 +874,11 @@ if __name__ == "__main__":
         body = e.read().decode("utf-8", errors="replace")[:500]
         log(f"HTTP {e.code}: {body}")
         if e.code == 429:
-            print(json.dumps({"ok": False, "reason": "rate_limit", "user_message": "🐦 X API rate limit hit — try again in a few minutes."}))
+            print(json.dumps({"ok": False, "reason": "rate_limit", "user_message": "🐦 X is rate-limiting me right now. trying again in a couple min."}))
         elif e.code in (401, 403):
-            print(json.dumps({"ok": False, "reason": "auth", "user_message": "🔑 X API auth failed — check the bearer token."}))
+            print(json.dumps({"ok": False, "reason": "auth", "user_message": "🔑 my X access expired. want to refresh it now, or skip this one?"}))
         else:
-            print(json.dumps({"ok": False, "reason": f"http_{e.code}", "user_message": f"⚠️ X API returned {e.code} — see logs."}))
+            print(json.dumps({"ok": False, "reason": f"http_{e.code}", "user_message": "⚠️ X choked on that one. want me to retry?"}))
         sys.exit(1)
     except Exception as e:
         log(f"FAILED: {e}")

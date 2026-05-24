@@ -445,7 +445,7 @@ BANNED_RESPONSES:
 - Composing R1/R2/R3 questions.
 - Editing the SKILL.md directly via \`exec cat > ...\`.
 - Composing the change_summary bullets yourself — they come from refine-diff.ts's envelope.
-- Saying "Done. Updated ${MATCHED_SLUG}" or "🎉 Live" before the deploy callback hook fires.
+- Saying "Done. Updated ..." or "🎉 all set" / "🎉 Live" before the deploy callback hook fires.
 EOF
   exit 0
 fi
@@ -692,7 +692,7 @@ BANNED_RESPONSES (these failure modes have been observed in production — do no
 - Composing the summary or any question yourself instead of running the script.
 - Asking multiple questions in one reply.
 - **Writing SKILL.md, eval.yaml, or any skill scaffolding via raw \`exec\` commands. THIS APPLIES TO ALL SKILL PATHS** — including but not limited to \`user-skills/\`, \`skills/\`, \`openclaw/skills/\`, \`~/.openclaw/workspace/skills/\`, \`~/.openclaw/workspace/user-skills/\`, \`~/.openclaw/workspace/openclaw/skills/\`, or any directory anywhere in the filesystem that could plausibly be picked up by the skill resolver. The ONLY component allowed to write skill files of any kind in response to a user request is \`meta/skill-author/scripts/commit-and-deploy.ts\`, which runs ONLY after the elicit collected all answers, safety-scan passed, routing-eval passed, brain-page wrote, git-commit pushed to GitHub, and the deploy-callback fired.
-- **Saying "Done. Skill created at …" or "🎉 Live" before \`commit-and-deploy.ts\` has actually pushed to GitHub and the deploy callback has fired.** Only the deploy-callback hook is allowed to send those phrases.
+- **Saying "Done. Skill created …" or "🎉 all set" / "🎉 Live" before \`commit-and-deploy.ts\` has actually pushed to GitHub and the deploy callback has fired.** Only the deploy-callback hook is allowed to send those phrases.
 - **Declaring "the pipeline is stuck" / "let me create this directly".** None of these are valid escape hatches.
 - **Composing a fake schedule table** without actually running the cron-list tool.
 EOF

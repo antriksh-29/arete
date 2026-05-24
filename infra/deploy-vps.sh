@@ -1004,16 +1004,22 @@ notify_user_skill_deploys() {
       | head -2 \
       | sed -E 's/.*utterance:[[:space:]]*"([^"]+)".*/"\1"/' \
       | paste -sd ', ' -)
+    # Friend-voice (2026-05-24, identity/SOUL.md hard blocklist):
+    # never surface the slug as `${slug}` in chat. Pull the friendly
+    # title from SKILL.md frontmatter; fall back to slug-with-spaces.
+    local friendly
+    friendly=$(awk '/^---$/ {fm = !fm; next} fm && /^title:/ {sub(/^title:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit}' "$HOME/personal-assistant/user-skills/$slug/SKILL.md" 2>/dev/null)
+    [ -z "$friendly" ] && friendly=$(echo "$slug" | tr '-' ' ')
     if [ "$status" = "A" ]; then
       if [ "$is_periodic" = "yes" ]; then
-        msg="🎉 Your new skill \`${slug}\` is live. It'll run automatically on its schedule. Say \`/refine ${slug}\` if you want to tweak it later."
+        msg="🎉 all set. your ${friendly} will run automatically. ping me if you want to tweak."
       elif [ -n "$triggers" ]; then
-        msg="🎉 Your new skill \`${slug}\` is live. Try saying ${triggers} — I'll know what to do now."
+        msg="🎉 all set. try saying ${triggers} and I'll take it from there."
       else
-        msg="🎉 Your new skill \`${slug}\` is live."
+        msg="🎉 all set. your ${friendly} is on."
       fi
     elif [ "$status" = "M" ]; then
-      msg="🔧 Refinement to \`${slug}\` is live. Existing triggers still work."
+      msg="🔧 tweaked your ${friendly}. nothing else changes."
     else
       continue
     fi

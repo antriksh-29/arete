@@ -234,9 +234,9 @@ build_summary_msg() {
     STATUS="❌ Target not met (${SHORT_L} short)"
   fi
   if [ -z "$ENTRIES" ]; then
-    printf '💧 Water log — %s\n\nNo entries recorded.\n\nTarget: 3L — ❌ Not met\n' "$DISPLAY_DATE"
+    printf '💧 no water logged %s. easy day to reset, start a tally?\n' "$DISPLAY_DATE"
   else
-    printf '💧 Water log — %s\n\nTotal: %s / 3L target\n%s\n\nEntries: %s\n' "$DISPLAY_DATE" "$TOTAL_L" "$STATUS" "$ENTRIES"
+    printf '💧 %s on %s. %s\n(%s)\n' "$TOTAL_L" "$DISPLAY_DATE" "$STATUS" "$ENTRIES"
   fi
 }
 
@@ -316,9 +316,9 @@ case "${1:-}" in
     rebuild_brain_page
     commit_brain
     if [ "$TARGET_DATE" = "$(now_ist '%Y-%m-%d')" ]; then
-      echo "Logged ${ML}ml. Today so far: $TOTAL_L / 3L"
+      echo "logged. you're at $TOTAL_L today."
     else
-      echo "Backfilled ${ML}ml on $TARGET_DATE. Day total: $TOTAL_L / 3L"
+      echo "added ${ML}ml to $TARGET_DATE. total for that day: $TOTAL_L."
     fi
     ;;
   summary)
