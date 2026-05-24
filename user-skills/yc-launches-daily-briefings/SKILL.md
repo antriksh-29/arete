@@ -10,7 +10,6 @@ last_authoring_turn: "2026-05-24T18:00:00.000Z"
 renamed_from: "help-me-get-a-daily-report-on-all-the-to"
 mutating: false
 cron: "15 16 * * *"
-cron: "50 16 * * *"
 ---
 # /yc-launches-daily-briefings
 
