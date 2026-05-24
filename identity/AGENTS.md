@@ -155,6 +155,27 @@ REQUIRED_ACTION=<exact next action>
   - Hand-editing systemd timer files directly. Let skill-autosync regenerate
     them from SKILL.md frontmatter; that's the canonical source.
 
+- **AUTHORITATIVE reply-quote rule for periodic-skill replies (no INTENT needed)** →
+  When the user sends a Telegram message that includes a quoted reply
+  (visible in OpenClaw's "Conversation context" block as
+  `->#NNNN ... Alfred: …`), AND the quoted text contains the footer
+  `↩ reply to /<slug>` (an italic line appended to every periodic-skill
+  prompt by `send-skill-prompt.sh`), the user's reply IS the topic
+  input that skill was waiting for.
+
+  Read `~/personal-assistant/user-skills/<slug>/SKILL.md` "How it works"
+  + "Output format" sections and execute the skill with the user's
+  message as the topic input. This rule WINS over the intent-router's
+  result whenever the reply-quote signal is present — the quote is a
+  deterministic, user-driven signal (they explicitly tap-replied);
+  the router's `last-periodic-skill.json` marker can race when two
+  crons fire close together (the 2026-05-24 incident: PG cron at 15:41
+  overwrote the video-recommender marker from 11:45; the user's 16:00
+  reply to the 11:45 message would have routed to PG without this rule).
+
+  If the user's message is plain text with NO reply-quote, fall back to
+  whatever the router's INTENT says.
+
 - **INTENT=skill_periodic_reply** → STOP composing a generic reply. A
   periodic skill (e.g. `create-a-personalized-video-recommender`) asked
   the user a question on a cron; the router's `SKILL_SLUG` field tells

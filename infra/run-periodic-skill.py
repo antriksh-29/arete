@@ -148,18 +148,43 @@ def reply_footer(slug: str) -> str:
 
 
 def write_last_periodic_state(slug: str, msg: str) -> None:
-    # Deterministic backup for intent-router.sh. If the LLM misses the
-    # tag (e.g. OpenClaw doesn't render reply-quoted bodies into the
-    # turn), the router can still see "the last cron fire was N seconds
-    # ago for skill X" and route the user's next non-classified message
-    # to that skill. One-shot: router deletes this file after consuming.
+    # Deterministic backup for intent-router.sh. 2026-05-24 update:
+    # write to BOTH the legacy single-slot file (for backward compat)
+    # AND the new append-only recent-skill-prompts.jsonl. The jsonl
+    # keeps the last 30 fires so when two crons fire close together
+    # (PG at 15:41 clobbering video-recommender at 11:45 was the
+    # exact bug), the router can still see all of them and decide
+    # how to disambiguate — instead of just losing the older one.
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    state_path = STATE_DIR / "last-periodic-skill.json"
-    state_path.write_text(json.dumps({
+    now = int(time.time())
+    entry = {
         "slug": slug,
-        "sent_at": int(time.time()),
+        "sent_at": now,
+        # Pool-skill sends don't capture the Telegram message_id today
+        # (run-periodic-skill.py uses send-telegram.sh which discards
+        # the response). Leaving message_id null is fine for the
+        # router's slug-only matching; a future change could route
+        # through send-skill-prompt.sh to capture it.
+        "message_id": None,
         "message_preview": msg[:240],
-    }, indent=2))
+    }
+    # Legacy single-slot.
+    (STATE_DIR / "last-periodic-skill.json").write_text(json.dumps(entry, indent=2))
+    # Append-only jsonl, trim to last 30.
+    jsonl = STATE_DIR / "recent-skill-prompts.jsonl"
+    existing = []
+    if jsonl.is_file():
+        for line in jsonl.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                existing.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+    existing.append(entry)
+    existing = existing[-30:]
+    jsonl.write_text("\n".join(json.dumps(e) for e in existing) + "\n")
 
 
 def format_message(item: str) -> str:
