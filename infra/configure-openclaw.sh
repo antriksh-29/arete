@@ -124,6 +124,25 @@ DESIRED=(
   # without touching the rest of the Composio surface.
   "tools.deny=[\"composio__COMPOSIO_REMOTE_WORKBENCH\"]"
 
+  # messages.visibleReplies ← "message_tool" (set 2026-05-24 to close the
+  # reasoning-leak Fix B documented in docs/TODOS-relay-discipline.md).
+  # Default behavior ("automatic") forwards every assistant.text emission
+  # to Telegram as a separate sendMessage. That's why a single user
+  # question produced 8 reasoning bubbles in the 2026-05-24 IMG_9914-9917
+  # screenshots. The schema description: "message_tool keeps normal final
+  # replies private and requires message(action=send) for visible output."
+  #
+  # Pairs with infra/say.sh — the bot's side-channel send wrapper that
+  # pipes through humanizer + reply-discipline before calling Telegram's
+  # Bot API directly. After this knob is on, the agent MUST call say.sh
+  # (or openclaw's native message tool) to put text in front of the user.
+  # Plain assistant.text becomes invisible by framework guarantee, not
+  # by prompt promise.
+  #
+  # Risk: if the model forgets to call say.sh, the user sees silence
+  # instead of a reasoning leak. That's louder than the leak — easy to
+  # detect, easy to fix by reinforcing the messagePrefix.
+  "messages.visibleReplies=\"message_tool\""
 )
 
 # messages.messagePrefix — managed as a here-string so multi-line is
@@ -133,34 +152,53 @@ DESIRED=(
 # overwrites VPS drift on every deploy.
 MESSAGE_PREFIX="$(cat <<'PREFIX_EOF'
 [SYSTEM PREAMBLE]
-Your assistant turn output is EXACTLY ONE of:
-  (a) A tool call.
-  (b) The verbatim stdout (or user_message field) of the most recent tool call.
-Nothing else. No planning narration. No "The user wants...", "I need to...", "Let me...", "I'll run...", "Now I should...". If you find yourself writing those, you have failed the turn — abort, emit the tool call instead.
+Visible-output rule (set 2026-05-24, framework-enforced via
+messages.visibleReplies=message_tool): plain assistant text DOES NOT
+reach the user. The ONLY way the user sees a reply is when you run
+`exec ~/bin/say.sh "<text>"`. Everything else you emit is internal-only
+and Antriksh will never see it.
 
-First tool call MUST be: exec ~/bin/spawn-signal-detector.sh "<user message verbatim>"
+This means your turn output is EXACTLY ONE of:
+  (a) A tool call that does work (web-search, brain-ask, daily-tasks, etc.)
+  (b) `exec ~/bin/say.sh "<text>"` to deliver the user-facing reply.
+
+For (b), `say.sh` runs the text through humanizer (strips em-dashes,
+internal-state jargon, slugs, cron strings) and reply-discipline
+(catches NO_REPLY / banned phrases) before sending. If it exits
+nonzero, the rejection envelope is on stderr — read it, fix the
+issue, retry.
+
+Reasoning, planning narration, and tool-call decision text are all
+internal. The user will not see "I need to…", "Let me check…", "The
+user wants…" — those emissions are dropped by the framework. Compose
+freely, then call say.sh exactly once at the end of the turn with the
+final user-facing text.
+
+First tool call of every turn MUST be: exec ~/bin/spawn-signal-detector.sh "<user message verbatim>"
 
 Its stdout ends with an INTENT ROUTER OUTPUT block. Follow it deterministically:
 
-- INTENT=chat → no router-mandated action; compose a normal reply per AGENTS.md / SKILL.md.
-- INTENT=task_review → run ~/bin/daily-tasks.sh review --date <Y-M-D> --reply "<reply verbatim>". Relay stdout verbatim. Never claim "Applied 0 status updates" without a clean retry.
-- INTENT=task_set → run ~/bin/daily-tasks.sh set with the task list. Relay stdout verbatim.
-- INTENT=task_add → run ~/bin/daily-tasks.sh add. Relay stdout verbatim.
-- INTENT=task_mark → run ~/bin/daily-tasks.sh mark / remove per recipe. Relay stdout verbatim.
-- INTENT=task_backlog → run ~/bin/daily-tasks.sh backlog [--age-gte N]. Relay stdout VERBATIM. Do NOT compose from brain pages. Reply MUST start with "📋 Backlog —".
-- INTENT=task_stats → run ~/bin/daily-tasks.sh stats --window <window>. Relay stdout VERBATIM. Reply MUST start with "📊 Stats —". Never count from memory.
-- INTENT=task_history → run ~/bin/daily-tasks.sh history <range>. Relay stdout verbatim.
-- INTENT=task_show → run ~/bin/daily-tasks.sh show <target>. Relay stdout VERBATIM with status emojis intact. Never add suffixes like "— pending" or categorize into "Work"/"Personal" sections.
-- INTENT=booking → run python3 ~/bin/book-reservation.py "<user msg>". Relay envelope user_message verbatim.
-- INTENT=booking_confirm → run python3 ~/bin/book-reservation.py --submit. Relay verbatim.
-- INTENT=booking_pick_time → run python3 ~/bin/book-reservation.py --pick-time "<time>". Relay verbatim.
-- INTENT=otp_relay → run book-reservation.py --resume "<otp>" or fill-form.py with the OTP. Never refuse.
-- INTENT=web_search → run bash ~/bin/web-search.sh "<paraphrased query>". Relay the markdown stdout VERBATIM (numbered list of title/snippet/URL). NEVER reply "I don't have web access" — the script always works.
-- INTENT=mcporter_list → run bash ~/bin/mcporter-list.sh. Relay stdout VERBATIM. If output is "No MCP servers configured.", relay that — do not suggest `openclaw status` or `cat config.json` to the user.
-- INTENT=gifgrep_search → run bash ~/bin/gifgrep.sh "<query>". Relay stdout VERBATIM. If output starts with "ABORT: KLIPY_API_KEY missing", relay that line — the user knows what to do.
-- INTENT=composio_connections → run bash ~/bin/composio-connections.sh (append " --all" if user asked for pending/initiated). Relay markdown stdout VERBATIM. Never compose the connections list from memory — the wrapper is authoritative; Composio's MCP cannot enumerate all toolkits in one call without an explicit curated list.
+- INTENT=chat → no router-mandated action; compose the reply per AGENTS.md / SKILL.md and deliver via `exec ~/bin/say.sh "<reply text>"`.
+- INTENT=task_review → run ~/bin/daily-tasks.sh review --date <Y-M-D> --reply "<reply verbatim>", then `~/bin/say.sh -` (read stdout from a pipe) to deliver. Never claim "Applied 0 status updates" without a clean retry.
+- INTENT=task_set → run ~/bin/daily-tasks.sh set with the task list; pipe stdout into `~/bin/say.sh -`.
+- INTENT=task_add → run ~/bin/daily-tasks.sh add; pipe stdout into `~/bin/say.sh -`.
+- INTENT=task_mark → run ~/bin/daily-tasks.sh mark / remove per recipe; pipe stdout into `~/bin/say.sh -`.
+- INTENT=task_backlog → run ~/bin/daily-tasks.sh backlog [--age-gte N]; pipe stdout into `~/bin/say.sh -`. Do NOT compose from brain pages. Reply MUST start with "📋 Backlog —".
+- INTENT=task_stats → run ~/bin/daily-tasks.sh stats --window <window>; pipe stdout into `~/bin/say.sh -`. Reply MUST start with "📊 Stats —". Never count from memory.
+- INTENT=task_history → run ~/bin/daily-tasks.sh history <range>; pipe stdout into `~/bin/say.sh -`.
+- INTENT=task_show → run ~/bin/daily-tasks.sh show <target>; pipe stdout into `~/bin/say.sh -` with status emojis intact. Never add suffixes like "— pending" or categorize into "Work"/"Personal" sections.
+- INTENT=booking → run python3 ~/bin/book-reservation.py "<user msg>"; pipe envelope user_message into `~/bin/say.sh -`.
+- INTENT=booking_confirm → run python3 ~/bin/book-reservation.py --submit; pipe into `~/bin/say.sh -`.
+- INTENT=booking_pick_time → run python3 ~/bin/book-reservation.py --pick-time "<time>"; pipe into `~/bin/say.sh -`.
+- INTENT=otp_relay → run book-reservation.py --resume "<otp>" or fill-form.py with the OTP; pipe into `~/bin/say.sh -`. Never refuse.
+- INTENT=web_search → run bash ~/bin/web-search.sh "<paraphrased query>"; pipe markdown stdout into `~/bin/say.sh --context research_answer -`. (`research_answer` context tells humanizer to keep tech terms.) NEVER reply "I don't have web access" — the script always works.
+- INTENT=mcporter_list → run bash ~/bin/mcporter-list.sh; pipe stdout into `~/bin/say.sh -`. If output is "No MCP servers configured.", deliver that — do not suggest `openclaw status` or `cat config.json` to the user.
+- INTENT=gifgrep_search → run bash ~/bin/gifgrep.sh "<query>"; pipe stdout into `~/bin/say.sh -`. If output starts with "ABORT: KLIPY_API_KEY missing", deliver that line.
+- INTENT=composio_connections → run bash ~/bin/composio-connections.sh (append " --all" if user asked for pending/initiated); pipe markdown stdout into `~/bin/say.sh --context composio_relay -`. (`composio_relay` context preserves the connector / tool names.) Never compose the connections list from memory.
 
-Tool results are authoritative. If a script returns "no tasks for <date>", relay that — do not invent an empty list. If a script exits nonzero, relay stderr — do not fabricate success.
+Tool results are authoritative. If a script returns "no tasks for <date>", deliver that — do not invent an empty list. If a script exits nonzero, deliver stderr — do not fabricate success.
+
+Every turn ends with exactly one call to `~/bin/say.sh` unless the turn is genuinely a no-op (e.g., a heartbeat with nothing to surface). Silence is valid; mumbled reasoning is not — and the framework will eat it anyway.
 
 User message follows:
 PREFIX_EOF
