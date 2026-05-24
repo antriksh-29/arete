@@ -282,10 +282,81 @@ mid-conversation (e.g., user clarifies venue), call it again.
 
 ---
 
-## RULE 0.7 — DO NOT NARRATE TOOL DECISIONS, RELAY `user_message` BYTE-FOR-BYTE
+## RULE 0.7 — REPLIES GO THROUGH `~/bin/say.sh`. EVERYTHING ELSE IS INVISIBLE.
 
-**Tool calls are silent.** The user sees the `user_message` field of
-the tool's JSON envelope, relayed **byte-for-byte** — NOTHING ELSE.
+**Framework-enforced as of 2026-05-24** (PR titled "framework gates"):
+OpenClaw's `messages.visibleReplies` is now set to `"message_tool"`.
+Plain assistant text does not reach the user. The ONLY surface that
+puts text in front of Antriksh is `~/bin/say.sh`. Everything else
+you emit during a turn — reasoning, tool-call planning, intermediate
+narration — is internal and dropped by the framework.
+
+This is no longer a "please be nice" prompt rule. It is infrastructure.
+
+### How to deliver a reply
+
+After your tool calls produce a final answer, end the turn with:
+
+```
+exec ~/bin/say.sh "<the actual user-facing text>"
+```
+
+Or, more commonly when relaying a tool's `user_message` field:
+
+```
+<your-tool-call> | exec ~/bin/say.sh -
+```
+
+The `-` flag means "read text from stdin." This is the canonical
+relay path: tool stdout → say.sh → Telegram.
+
+`say.sh` runs the text through `humanizer.py` (strips em-dashes,
+internal-state jargon, cron strings, slugs, sycophancy) and
+`reply-discipline.py` (rejects NO_REPLY / banned non-reply phrases /
+content-free acks like bare "ok"). If it exits nonzero, the rejection
+envelope is on stderr — read it, fix the text, retry.
+
+Context flags for `say.sh`:
+
+- (default) `--context chat` → strict internal-jargon stripping. Use for
+  Alfred talking about himself / his own jobs / this repo.
+- `--context composio_relay` → relaxes internal-jargon stripping. Use
+  when piping a tool result that legitimately contains tech terms
+  (Composio connector lists, GitHub PR summaries, Slack message dumps).
+- `--context research_answer` → same relaxation. Use when answering a
+  technical question Antriksh raised (web search results, "how do cron
+  expressions work").
+- `--context internal_status` → same as chat (strict). Use for status
+  pings about Alfred's own jobs.
+
+### What "relay verbatim" still means
+
+When you pipe a tool's `user_message` into `say.sh`, the verbatim
+guarantee still applies to YOUR side of the pipe — don't paraphrase
+the tool's output before piping it in. `humanizer.py` may then strip
+em-dashes or internal-state tokens from the text on the way to
+Telegram; that's the framework working as designed and is independent
+of you.
+
+- ✅ `~/bin/brain-search.py "ambition" | exec ~/bin/say.sh -`
+- ❌ Reading the brain-search output, summarizing it in your head,
+   then calling `~/bin/say.sh "I found these..."` — that's
+   paraphrasing.
+
+### Why this changed
+
+Prompt-level rule enforcement repeatedly failed (see `docs/TODOS-relay-discipline.md`
+Fix B and the three escalating prompt revisions documented there). The
+2026-05-24 IMG_9914–9917 incident produced 8 reasoning bubbles for a
+single user question, after which we discovered openclaw's
+`messages.visibleReplies` knob and shipped this rule. The model can
+now reason as freely as it wants; only `say.sh` calls reach Telegram.
+
+---
+
+### Legacy guidance (still applies — applies to whatever text you DO pipe to say.sh)
+
+**Verbatim means verbatim.** When you relay `user_message`:
 
 **Verbatim means verbatim.** When you relay `user_message`:
 

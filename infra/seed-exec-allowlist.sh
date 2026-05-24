@@ -40,6 +40,11 @@ SCRIPTS=(
   "$HOME/bin/ingest-x-thread.py"
   "$HOME/bin/x-draft.py"
   "$HOME/bin/x-approve.py"
+  # 2026-05-24 — say.sh is the single allowed user-facing send path
+  # under messages.visibleReplies=message_tool. Every turn ends with
+  # an `exec ~/bin/say.sh ...` call, so it MUST be pre-approved or
+  # every reply would prompt for exec approval.
+  "$HOME/bin/say.sh"
 )
 
 CHECK_ONLY=0
