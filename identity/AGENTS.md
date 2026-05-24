@@ -117,12 +117,31 @@ REQUIRED_ACTION=<exact next action>
   3. If BOTH slug and new time are unambiguous, send EXACTLY one Telegram
      message of the form:
        "I'll change `<slug>` from `<old-cron-or-time>` to `<new-cron-or-time>` — reply yes / no."
-     STOP. Apply only after the user replies "yes". On confirmation, you
-     may then:
-       - `openclaw cron edit <job-id> --cron "<new-expr>"` for OpenClaw crons
-       - Edit `~/.openclaw/workspace/skills/<slug>/SKILL.md` frontmatter
-         `cron:` field for systemd-timer skills (skill-autosync will mirror
-         to repo + regenerate the timer).
+     STOP. Apply only after the user replies "yes".
+
+     **On confirmation, ALWAYS edit `~/.openclaw/workspace/skills/<slug>/SKILL.md`
+     frontmatter `cron:` field — regardless of whether the skill is a
+     pool skill (systemd timer) or a fetch skill (OpenClaw cron).** This
+     is the single source of truth from the agent's perspective.
+     `skill-autosync` will then:
+       1. Mirror the change to `~/personal-assistant/user-skills/<slug>/SKILL.md`
+          and commit + push to GitHub.
+       2. Regenerate the systemd timer (pool) OR update `~/.openclaw/cron/jobs.json`
+          (fetch) to match the new schedule.
+
+     **DO NOT use `openclaw cron edit ... --cron "<expr>"` as the primary
+     edit path.** It writes only to jobs.json — no file in the workspace
+     changes, so skill-autosync's inotify watch never fires, and the
+     change never reaches GitHub. This was the 2026-05-24 failure: YC
+     launches cron got changed via the OpenClaw CLI, jobs.json updated,
+     but `user-skills/yc-launches-daily-briefings/SKILL.md` stayed stale
+     and the repo never saw the change.
+
+     (As a backstop, skill-autosync now reverse-syncs jobs.json drift
+     back into SKILL.md on every pass — so if you do use `openclaw cron edit`
+     by accident, the change still reaches GitHub within ~60s. But the
+     SKILL.md edit is the preferred path because it's atomic and visible
+     in `git log` immediately.)
 
   **Anti-patterns that broke things on 2026-05-23 (do not repeat):**
   - Creating a new skill named "change-the-…", "update-the-…", etc.
