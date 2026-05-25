@@ -122,27 +122,25 @@ DESIRED=(
   # tools array) and we never call it — the other Composio tools cover
   # our workflows. Denying it shaves ~21% off the per-turn tools payload
   # without touching the rest of the Composio surface.
-  # tools.deny EXTENDED 2026-05-25 to close Bug J (tech-narration
-  # leak via native message tool). The 2026-05-25 video-recommender
-  # screenshot showed the agent emitting "The command ran successfully.
-  # The skill prompt was sent to the user (message_id=3504). The user's
-  # reply will arrive on a future turn with INTENT=skill_periodic_reply."
-  # despite visibleReplies=message_tool + say.sh + humanizer all being
-  # in place. Probe v7 confirmed agent-composed text. Probe v8 confirmed
-  # openclaw's native `message` tool was the path used (visibleReplies=
-  # message_tool LITERALLY allows message(action=send) — that's what the
-  # knob is named for). Prompt-level bans (PR #141) didn't hold.
+  # tools.deny — Composio remote workbench only.
   #
-  # The structural fix: add "message" to tools.deny so the framework
-  # itself refuses to expose the tool to the agent. The only remaining
-  # visible-output path is `~/bin/say.sh` via send-telegram.sh side-channel,
-  # which pipes through humanizer + reply-discipline.
+  # 2026-05-25 REVERT: PR #145 added "message" to this list to close
+  # Bug J (tech-narration leak via the native message tool). That fix
+  # was wrong-shaped. visibleReplies=message_tool tells openclaw "every
+  # visible reply MUST come from message(action=send)". Denying the
+  # tool created an impossible invariant: the framework expected every
+  # turn to terminate with a message(send) call but I made the tool
+  # unavailable. The result was "⚠️ Agent couldn't generate a response"
+  # appearing after every turn — usable reply landed via say.sh
+  # side-channel, but openclaw correctly reported turn-completion
+  # failure because no message(send) ever fired.
   #
-  # Channel inbound is unaffected — openclaw's channel poller runs at
-  # framework level, not as an agent tool. The agent receives inbound
-  # messages as the bootstrap context; it just can't SEND via the
-  # native tool anymore.
-  "tools.deny=[\"composio__COMPOSIO_REMOTE_WORKBENCH\", \"message\"]"
+  # The proper fix for Bug J is at the OPENCLAW HOOKS layer: wrap the
+  # message-tool send path with a humanizer/reply-discipline filter
+  # INSIDE the framework's normal flow, rather than bypassing it.
+  # Probe v4 showed `openclaw hooks` exposes that surface. Follow-up
+  # PR will implement that properly.
+  "tools.deny=[\"composio__COMPOSIO_REMOTE_WORKBENCH\"]"
 
   # messages.visibleReplies ← "message_tool" (set 2026-05-24 to close the
   # reasoning-leak Fix B documented in docs/TODOS-relay-discipline.md).
@@ -289,16 +287,13 @@ desired = desired + [
      ["openai/gpt-5.4-mini", "anthropic/claude-haiku-4-5"]),
     (["agents", "defaults", "models", "moonshot/kimi-k2.6", "params", "thinking"],
      {"type": "disabled"}),
-    # Bug J belt-and-suspenders (2026-05-25). The tools.deny entry above
-    # blocks the message tool globally. This per-agent override on
-    # agents.list[0] (the main Telegram-facing agent) sets an empty
-    # actions allowlist — so even if deny doesn't fire for some reason,
-    # the agent has no message-tool actions it can invoke. Probe v8
-    # confirmed the schema: actions.allow is an INCLUSION list, so an
-    # empty array means "no actions enabled". The main agent's `name`
-    # field is unset in the live config so we target by index 0.
-    (["agents", "list", 0, "tools", "message", "actions", "allow"],
-     []),
+    # 2026-05-25 REVERT: PR #145 set this to [] to block all message-tool
+    # actions on the main agent. Reverted for the same reason as the
+    # tools.deny revert above — broke the framework's "every turn ends
+    # with message(send)" invariant. Empty allowlist meant every turn
+    # produced "⚠️ Agent couldn't generate a response" even when the
+    # actual reply succeeded via say.sh. Proper fix via openclaw hooks
+    # is the follow-up.
     # NOTE: models.providers.moonshot.apiKey is NOT managed here.
     # OpenClaw does not interpolate ${VAR} in models.providers (only
     # SecretRef syntax in some contexts that we couldn't confirm),
