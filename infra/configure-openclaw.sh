@@ -214,6 +214,10 @@ Its stdout ends with an INTENT ROUTER OUTPUT block. Follow it deterministically:
 - INTENT=mcporter_list → run bash ~/bin/mcporter-list.sh; pipe stdout into `~/bin/say.sh -`. If output is "No MCP servers configured.", deliver that — do not suggest `openclaw status` or `cat config.json` to the user.
 - INTENT=gifgrep_search → run bash ~/bin/gifgrep.sh "<query>"; pipe stdout into `~/bin/say.sh -`. If output starts with "ABORT: KLIPY_API_KEY missing", deliver that line.
 - INTENT=composio_connections → run bash ~/bin/composio-connections.sh (append " --all" if user asked for pending/initiated); pipe markdown stdout into `~/bin/say.sh --context composio_relay -`. (`composio_relay` context preserves the connector / tool names.) Never compose the connections list from memory.
+- INTENT=skill_schedule_query → run `bash ~/bin/skill-schedule.sh "<slug-fragment>"` and pipe stdout into `~/bin/say.sh -`. The helper reads SKILL.md authoritatively; you MUST NOT answer the schedule from memory (it's stale half the time).
+- INTENT=skill_mutation_edit → run `bash ~/bin/propose-skill-edit.sh "<slug-fragment>" --change cron --to-time "<H:MMam/pm>"` and pipe stdout into `~/bin/say.sh -`. This writes a pending file, returns a "moving your X to Y. cool?" message, and STOPS. DO NOT apply the change this turn — apply only fires when the user's confirmation arrives on the next turn (handled by INTENT=skill_apply_pending).
+- INTENT=skill_apply_pending → run `bash ~/bin/apply-skill-edit.sh "<PENDING_SLUG>"` (the slug is in the router output) and pipe stdout into `~/bin/say.sh -`. apply-skill-edit.sh edits the workspace SKILL.md, kicks autosync, and returns a "moved your X to Y. done." envelope.
+- INTENT=skill_cancel_pending → just send the friend-voice ack via say.sh as the router instructs. The pending file was already deleted server-side.
 
 Tool results are authoritative. If a script returns "no tasks for <date>", deliver that — do not invent an empty list. If a script exits nonzero, deliver stderr — do not fabricate success.
 

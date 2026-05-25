@@ -121,6 +121,85 @@ fi
 # which is invoked by AGENTS.md Rule 0 — ONLY on direct Telegram user
 # turns. Ingested-content paths never reach this code path (per §15).
 
+# --- ROUTE 0a: CONFIRM a pending skill-edit (Bug D quarantine pattern) ---
+# If propose-skill-edit.sh wrote a pending file in the last 15 min AND
+# this user message is an affirmative ("yes", "go ahead", "do it",
+# "confirm", "👍"), route to apply-skill-edit.sh which actually
+# applies the mutation and pushes via autosync. Without this gate,
+# the agent has no way to "confirm" structurally — and bare "yes"
+# replies after a propose() would otherwise hit INTENT=chat and the
+# change would never apply (the 2026-05-25 IMG_9922 failure).
+#
+# The TTL on pending files (15 min) is enforced inside apply-skill-edit.sh
+# itself — here we only check existence to decide routing.
+PENDING_EDITS_DIR="$HOME/.brain-bootstrap-raw/state/pending-skill-edits"
+RECENT_PENDING=""
+if [ -d "$PENDING_EDITS_DIR" ]; then
+  # Most-recent pending file modified in the last 15 min (900s).
+  # Portable across BSD (macOS) and GNU (Linux/VPS): use stat for mtime
+  # and threshold against now. Avoids GNU-only `find -mmin -X -printf`.
+  now=$(date +%s)
+  for f in $(ls -1t "$PENDING_EDITS_DIR"/*.json 2>/dev/null); do
+    if mtime=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null); then
+      if [ $((now - mtime)) -lt 900 ]; then
+        RECENT_PENDING="$f"
+        break
+      fi
+    fi
+  done
+fi
+
+# Affirmative shape (intentionally conservative — Slack-style affirmations
+# only fire when there IS a pending edit to confirm, so false positives
+# don't matter much).
+AFFIRMATIVE_RE='^[[:space:]]*(y|yes|yep|yeah|yup|ok|okay|sure|go|go[[:space:]]+ahead|do[[:space:]]+it|confirm|confirmed|approve|approved|cool|sounds[[:space:]]+good|👍|✅)[[:space:]!.]*$'
+
+if [ -n "$RECENT_PENDING" ] && echo "$LMSG" | grep -qE "$AFFIRMATIVE_RE"; then
+  pending_slug=$(basename "$RECENT_PENDING" .json)
+  ESCAPED_MSG=$(printf '%s' "$MSG" | sed 's/"/\\"/g')
+  cat <<EOF
+INTENT=skill_apply_pending
+PENDING_SLUG=${pending_slug}
+CONFIDENCE=100
+
+REQUIRED_ACTION=The user is confirming the pending skill-edit you proposed last turn (file: ${RECENT_PENDING}). Apply it now:
+
+  bash ~/bin/apply-skill-edit.sh "${pending_slug}" | exec ~/bin/say.sh -
+
+apply-skill-edit.sh reads the pending JSON, edits the workspace SKILL.md frontmatter, kicks skill-autosync.sh --once to commit + push, and returns a friend-voice "moved your X to Y. done." envelope. say.sh auto-extracts user_message.
+
+DO NOT touch any other file. DO NOT compose a new propose-skill-edit. DO NOT call openclaw cron edit. The quarantine pattern's whole point is that this CONFIRMATION lane is the ONLY way to apply the pending edit.
+
+BANNED_RESPONSES:
+- Saying "done" or "moved it" via say.sh WITHOUT running apply-skill-edit.sh first. The 2026-05-25 IMG_9922 failure was exactly this — the agent claimed "done" without any actual mutation.
+- Re-running propose-skill-edit.sh (would create a new pending file and double-prompt).
+- Editing SKILL.md directly.
+EOF
+  exit 0
+fi
+
+# Also handle the negative shape — user said "no" / "cancel" / "scrap" /
+# "nevermind" to a pending edit. Just delete the pending file and route
+# to chat so the agent can compose a friend-voice acknowledgement.
+NEGATIVE_RE='^[[:space:]]*(n|no|nope|nah|cancel|abort|scrap[[:space:]]+(it|that)?|nevermind|never[[:space:]]+mind|forget[[:space:]]+(it|that)?|don'\''?t|skip[[:space:]]+(it|that)?)[[:space:]!.]*$'
+if [ -n "$RECENT_PENDING" ] && echo "$LMSG" | grep -qE "$NEGATIVE_RE"; then
+  rm -f "$RECENT_PENDING"
+  pending_slug=$(basename "$RECENT_PENDING" .json)
+  ESCAPED_MSG=$(printf '%s' "$MSG" | sed 's/"/\\"/g')
+  cat <<EOF
+INTENT=skill_cancel_pending
+PENDING_SLUG=${pending_slug}
+CONFIDENCE=100
+
+REQUIRED_ACTION=The user cancelled the pending skill-edit. I've already deleted the pending file. Just send a friend-voice acknowledgement via say.sh:
+
+  exec ~/bin/say.sh "ok, kept it as-is."
+
+Do nothing else this turn.
+EOF
+  exit 0
+fi
+
 # --- ROUTE 0: CONTINUE an active draft ---
 # An active draft is a JSON file under .context/skill-author-drafts/
 # with completed_questions count below the required threshold for
@@ -497,25 +576,71 @@ ORIGINAL_MESSAGE=${ESCAPED_MSG}
 CURRENT_SCHEDULED_SKILLS:
 ${SCHED_LIST}
 
-REQUIRED_ACTION=The user wants to CHANGE/EDIT a scheduled skill's timing. This is NOT a create intent — IMPLICIT_CREATE is FORBIDDEN on this turn. The skill-author pipeline is ALSO FORBIDDEN. You must:
+REQUIRED_ACTION=The user wants to CHANGE/EDIT a scheduled skill's timing. This is NOT a create intent — IMPLICIT_CREATE is FORBIDDEN on this turn. The skill-author pipeline is ALSO FORBIDDEN. You must use the QUARANTINE PATTERN (Bug D fix, 2026-05-25):
+
   1. Identify which existing scheduled skill the user is referring to (use the CURRENT_SCHEDULED_SKILLS list above + the user's message).
-  2. Identify the new time (parse from the message, e.g. "8:30pm" → "30 20 * * *").
-  3. If EITHER the target skill OR the new time is ambiguous: ask ONE short question with the candidate list, then STOP. Do not touch any file.
-  4. If BOTH are unambiguous: state the proposed change as "I will change \`<slug>\` from \`<old>\` to \`<new>\` — reply yes / no" and STOP. Apply only after the user replies yes by running \`openclaw cron edit <id> --cron "<new-expr>"\` AND editing \`~/.openclaw/workspace/skills/<slug>/SKILL.md\` frontmatter \`cron:\` field to match (the autosync watcher will mirror to repo).
+  2. Identify the new time (parse from the message, e.g. "8:30pm" → "30 20 * * *", or just pass "8:30pm" via --to-time and let the helper parse).
+  3. If EITHER the target skill OR the new time is ambiguous: ask ONE short question via say.sh and STOP. Do not call propose-skill-edit.sh.
+  4. If BOTH are unambiguous: run \`bash ~/bin/propose-skill-edit.sh "<slug-fragment>" --change cron --to-time "<H:MMam/pm>"\` and pipe its stdout into \`~/bin/say.sh -\`. The helper writes a pending file to the state dir, validates the cron, and returns a friend-voice "moving your X to Y. cool?" message. Then STOP and wait for the user's "yes".
+
+DO NOT call apply-skill-edit.sh yourself in this turn. Apply only fires on a follow-up turn when intent-router routes the user's confirmation reply to it.
 
 EXECUTION_RECIPE:
-1. If the user's message names ZERO skills from the list (typical first-turn case): reply with the list of scheduled skills and ask "which one?" Do nothing else.
-2. If the user's message names exactly ONE skill AND a parseable new time: reply with the proposed change + "yes / no" footer. Wait for confirmation.
-3. If the user's message is ambiguous (matches >1 skill, or no parseable time): ask ONE disambiguating question.
+1. If the user's message names ZERO skills from the list (typical first-turn case): reply with the list of scheduled skills via say.sh and ask "which one?" Do nothing else.
+2. If the user's message names exactly ONE skill AND a parseable new time: run propose-skill-edit.sh and pipe to say.sh. Wait for confirmation in the NEXT user turn.
+3. If the user's message is ambiguous (matches >1 skill, or no parseable time): ask ONE disambiguating question via say.sh.
 
 BANNED_RESPONSES:
 - Calling intake-from-context.ts, elicit.ts, generate-skill.ts, or commit-and-deploy.ts. NONE of these belong on an EDIT path — they create new skills.
-- Creating a skill named "change-the-…", "update-the-…", "modify-the-…", or any other slug that starts with an edit verb. (The skill-author also blacklists these at write time.)
-- Running \`openclaw cron edit\`, \`systemctl --user edit\`, or hand-editing jobs.json BEFORE the user confirms the exact (slug, new-time) pair.
-- Editing the WRONG skill's SKILL.md as collateral (the Paul Graham regression on 2026-05-23 was exactly this — autosync downgraded PG when the elicit pipeline rewrote workspace skill files during a confused turn).
-- Pretending to make the change ("Done — schedule updated to 8pm") without actually editing jobs.json.
+- Creating a skill named "change-the-…", "update-the-…", "modify-the-…", or any other slug that starts with an edit verb.
+- Editing \`~/.openclaw/workspace/skills/<slug>/SKILL.md\` directly. Use propose-skill-edit.sh.
+- Running \`openclaw cron edit\`, \`systemctl --user edit\`, or hand-editing jobs.json. They bypass the quarantine + autosync pipeline.
+- Calling apply-skill-edit.sh in the SAME turn as propose-skill-edit.sh. Apply must wait for the user's explicit "yes" on the NEXT turn.
+- Pretending to make the change ("done — schedule updated to 8pm") without actually running propose-skill-edit.sh. The 2026-05-25 IMG_9922 failure was exactly this — the agent said "done" without any file write.
 
-This route exists to PROTECT THE USER from the 2026-05-23 failure cascade. Take the extra confirmation turn. It is cheap; mis-mutations are expensive.
+This route exists to PROTECT THE USER from mis-mutations and from "said-done-didn't-do" hallucinations. Take the extra confirmation turn. It is cheap; mis-mutations are expensive.
+EOF
+  exit 0
+fi
+
+# --- ROUTE 1d: skill schedule QUERY (read-only "when does X fire?") ---
+# Catches "when do you send X" / "what time does X fire" / "what's the
+# schedule of X" / "when is X scheduled" patterns. Read-only — the
+# agent calls skill-schedule.sh to get the friend-voice answer instead
+# of hallucinating (Bug C, 2026-05-25: agent said video recommender
+# fires at 11:45am, actual cron is 50 16 = 4:50pm).
+#
+# Lead accepts contractions ("when's", "what's") and a few common
+# rephrasings ("tell me when", "what time"). The trailing word
+# boundary is on `[[:space:]'\''s]` instead of just `[[:space:]]` to
+# accept "when's" / "what's" without a hard fallback for each.
+SCHEDULE_QUERY_LEAD="^(when|what[[:space:]]+time|what.?s?[[:space:]]+(the|my)[[:space:]]+(schedule|timing)|tell[[:space:]]+me[[:space:]]+(when|the[[:space:]]+time))"
+SCHEDULE_QUERY_NOUN='\b(send|sends|sending|fire|fires|firing|run|runs|running|trigger|triggers|ping|pings|pinging|deliver|delivers|schedule|scheduled|cadence|time)\b'
+# Local SKILL_REF for this route. Includes "brief" (without -ing) and a
+# few more colloquial nouns. We don't reuse the global SKILL_REF since
+# it gates the edit-verb route and broadening it there would over-
+# match unrelated phrasings like "fix my brief".
+SKILL_REF_SCHEDQ='\b(skill|cron|job|briefing|brief|report|recommender|insight|insights|reminder|checkin|check-in|digest|alert|notification|fetch|automation|pick|picks|recommendation|recommendations|update|updates)\b'
+
+if echo "$LMSG" | grep -qE "$SCHEDULE_QUERY_LEAD" \
+   && echo "$LMSG" | grep -qE "$SCHEDULE_QUERY_NOUN" \
+   && echo "$LMSG" | grep -qE "$SKILL_REF_SCHEDQ"; then
+  ESCAPED_MSG=$(printf '%s' "$MSG" | sed 's/"/\\"/g')
+  cat <<EOF
+INTENT=skill_schedule_query
+ORIGINAL_MESSAGE=${ESCAPED_MSG}
+
+REQUIRED_ACTION=The user is ASKING when one of their scheduled skills fires. This is a READ-ONLY query — you MUST NOT touch any file. The authoritative answer comes from \`~/bin/skill-schedule.sh <slug-fragment>\` which reads the SKILL.md cron field directly and returns a friend-voice answer like "your video recommender is on for 4:50pm daily." Do NOT answer from memory — your stored timing may be stale.
+
+EXECUTION_RECIPE:
+1. Extract a slug fragment from the user's message (e.g. "video recommender", "yc launches", "PG insights", "the morning brief"). Two or three keywords is enough.
+2. Run \`bash ~/bin/skill-schedule.sh "<fragment>"\` and pipe stdout into \`~/bin/say.sh -\`. say.sh auto-extracts the user_message field.
+3. If skill-schedule.sh returns ok:false with reason:ambiguous or reason:no_match, pipe its user_message into say.sh anyway — it'll ask the user to disambiguate or list what's on.
+
+BANNED_RESPONSES:
+- Answering the schedule from memory ("I send it at 11:45am IST" without running skill-schedule.sh first). Memory is unreliable; the file is authoritative.
+- Calling list-skill-crons.sh and parsing the cron yourself. skill-schedule.sh does the translation already; reusing the same logic ad-hoc lets you slip.
+- Running edit / mutation tools — this is a READ query.
 EOF
   exit 0
 fi
