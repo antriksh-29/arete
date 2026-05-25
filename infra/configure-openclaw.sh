@@ -181,6 +181,12 @@ issue, retry.
 your input parses as `{"ok":true,"user_message":"..."}`, only the
 `user_message` value reaches Telegram. Safe to pipe raw script stdout.
 
+DO NOT use the native `message` tool / `message(action=send)` /
+`channels.telegram.send` — they bypass say.sh and skip humanizer +
+reply-discipline. Even though the framework would deliver them under
+`visibleReplies=message_tool`, you lose the jargon-stripping and
+banned-phrase gates. ALWAYS go through `~/bin/say.sh`.
+
 Reasoning, planning narration, and tool-call decision text are all
 internal. The user will not see "I need to…", "Let me check…", "The
 user wants…" — those emissions are dropped by the framework. Compose
