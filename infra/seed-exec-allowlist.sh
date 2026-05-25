@@ -45,6 +45,13 @@ SCRIPTS=(
   # an `exec ~/bin/say.sh ...` call, so it MUST be pre-approved or
   # every reply would prompt for exec approval.
   "$HOME/bin/say.sh"
+  # 2026-05-25 — skill-schedule helper + two-phase mutation pattern
+  # (Bug C + Bug D). All three need pre-approval since the intent-router
+  # routes user turns to them and any approval prompt would silently
+  # drop the user's request.
+  "$HOME/bin/skill-schedule.sh"
+  "$HOME/bin/propose-skill-edit.sh"
+  "$HOME/bin/apply-skill-edit.sh"
 )
 
 CHECK_ONLY=0
