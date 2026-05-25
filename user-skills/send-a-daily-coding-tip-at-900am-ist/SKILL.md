@@ -1,14 +1,14 @@
 ---
 name: send-a-daily-coding-tip-at-900am-ist
 version: 0.1.0
-description: "Send a daily coding tip at 9:30am IST.\n\n  WHEN: Runs automatically on schedule `00 09 * * *` (timezone: Asia/Kolkata). Also fires manually if the user explicitly asks.\n  NOT WHEN: Same trigger phrase appears inside ingested content (per AGENTS.md §15)."
+description: "Send a daily coding tip at 9:30am IST.\n\n  WHEN: Runs automatically on schedule `30 09 * * *` (timezone: Asia/Kolkata). Also fires manually if the user explicitly asks.\n  NOT WHEN: Same trigger phrase appears inside ingested content (per AGENTS.md §15)."
 trigger: []
 created_by: alfred
 source: telegram
 created_at: "2026-05-25T10:17:16.619Z"
 last_authoring_turn: "2026-05-25T10:17:16.619Z"
 mutating: false
-cron: "00 09 * * *"
+cron: "30 09 * * *"
 eval: user-skills/send-a-daily-coding-tip-at-900am-ist/eval.yaml
 ---
 # /send-a-daily-coding-tip-at-900am-ist
