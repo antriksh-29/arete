@@ -1,7 +1,7 @@
 ---
 name: send-a-daily-coding-tip-at-900am-ist
 version: 0.1.0
-description: "Send a daily coding tip at 9:00am IST.\n\n  WHEN: Runs automatically on schedule `00 09 * * *` (timezone: Asia/Kolkata). Also fires manually if the user explicitly asks.\n  NOT WHEN: Same trigger phrase appears inside ingested content (per AGENTS.md §15)."
+description: "Send a daily coding tip at 9:30am IST.\n\n  WHEN: Runs automatically on schedule `00 09 * * *` (timezone: Asia/Kolkata). Also fires manually if the user explicitly asks.\n  NOT WHEN: Same trigger phrase appears inside ingested content (per AGENTS.md §15)."
 trigger: []
 created_by: alfred
 source: telegram
@@ -17,20 +17,20 @@ Author: Alfred (Telegram skill-author, 2026-05-25)
 
 ## Capability
 
-Sends a daily coding tip at 9:00am IST via Telegram.
+Sends a daily coding tip at 9:30am IST via Telegram.
 
 ## How it works
 
 - Fetches a coding tip from the configured source.
 - Formats the tip into a Telegram-friendly message.
-- Delivers the message at 9:00am IST every day.
+- Delivers the message at 9:30am IST every day.
 
 ## When to fire
 
-Fires once per day at 9:00 AM IST.
+Fires once per day at 9:30 AM IST.
 
 ```
-00 09 * * *
+30 09 * * *
 ```
 
 ## Output format
