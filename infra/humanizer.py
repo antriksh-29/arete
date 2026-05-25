@@ -189,6 +189,24 @@ INTERNAL_RULES = [
     # nicely anyway — they're a chat-as-document tell).
     ("md_heading", re.compile(r"^#{1,6}\s+", re.MULTILINE), ""),
     ("md_bold", re.compile(r"\*\*([^*\n]+)\*\*"), r"\1"),
+
+    # GBrain wiki-link tags (e.g. `[[concepts/ai-agents]]`,
+    # `[[companies/anthropic]]`, `[[people/manthangupta]]`,
+    # `[[founder-mode]]`, `[[media/social/x-...]]`) are internal
+    # gbrain navigation markers — they should NEVER reach the user.
+    # The 2026-05-24 bookmarks-list regression (IMG_9923-9928) leaked
+    # dozens of these into chat. Two-step strip:
+    #   1. Replace `[[foo/bar-baz]]` with the human-readable form
+    #      (last path component, dashes → spaces) since the surrounding
+    #      sentence usually needs SOME noun in that slot.
+    #   2. Bare `[[foo]]` (no slash) → just the inner text.
+    # Strict-but-safe: leaves the rest of the sentence intact.
+    ("wikilink_pathed",
+     re.compile(r"\[\[([\w-]+/)+([\w-]+)\]\]"),
+     lambda m: m.group(2).replace("-", " ")),
+    ("wikilink_bare",
+     re.compile(r"\[\[([^\]\n|]+)\]\]"),
+     lambda m: m.group(1).replace("-", " ")),
 ]
 
 

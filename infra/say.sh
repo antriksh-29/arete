@@ -117,6 +117,39 @@ if [ -z "${RAW//[[:space:]]/}" ]; then
   exit 3
 fi
 
+# ── JSON envelope auto-extraction ──
+#
+# When the agent pipes a tool's full JSON envelope into say.sh
+# (e.g. `~/bin/skill-author/elicit.ts ... | ~/bin/say.sh -`), the
+# entire `{"ok":true,"user_message":"...","detail":{...}}` blob ends
+# up as `$RAW`. Without extraction it would land in Telegram, which
+# is exactly the 2026-05-24 IMG_9921 regression.
+#
+# Heuristic: if the input parses as a JSON object AND has a
+# `user_message` field, extract that. Otherwise pass through. This
+# preserves freeform text while making the pipe-envelope-direct
+# pattern safe.
+EXTRACTED=$(printf '%s' "$RAW" | python3 -c '
+import json, sys
+try:
+    raw = sys.stdin.read().strip()
+    if not (raw.startswith("{") and raw.endswith("}")):
+        sys.exit(2)  # not JSON-shaped, pass through
+    obj = json.loads(raw)
+    if isinstance(obj, dict) and "user_message" in obj:
+        msg = obj["user_message"]
+        if isinstance(msg, str):
+            sys.stdout.write(msg)
+            sys.exit(0)
+    sys.exit(2)
+except (json.JSONDecodeError, ValueError):
+    sys.exit(2)
+' 2>/dev/null)
+EXTRACT_RC=$?
+if [ $EXTRACT_RC -eq 0 ] && [ -n "${EXTRACTED//[[:space:]]/}" ]; then
+  RAW="$EXTRACTED"
+fi
+
 # ── pipeline ──
 
 # 1. humanizer (strip AI tells + internal-state jargon based on context)
