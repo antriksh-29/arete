@@ -204,6 +204,22 @@ INTERNAL_RULES = [
     ("md_heading", re.compile(r"^#{1,6}\s+", re.MULTILINE), ""),
     ("md_bold", re.compile(r"\*\*([^*\n]+)\*\*"), r"\1"),
 
+    # YAML frontmatter blocks + bare slug-shaped tokens (Bug K, 2026-05-25).
+    # If the agent ever dumps a SKILL.md file's content (instead of
+    # routing through skill-describe.sh), strip the YAML structure.
+    # Strict-but-safe: only match the literal `---\n...\n---` opener +
+    # closer with at most a few hundred chars between.
+    ("yaml_frontmatter_block",
+     re.compile(r"^---\s*\n.{1,1500}?\n---\s*\n?", re.DOTALL | re.MULTILINE),
+     ""),
+    # Bare frontmatter field lines that escaped the block matcher (e.g.
+    # when the file lacks proper closer dashes). Match individual keys
+    # we know live in our SKILL.md schema.
+    ("yaml_skill_fields",
+     re.compile(r"^(name|version|description|cron|created_by|source|created_at|last_authoring_turn|renamed_from|mutating|trigger|eval):\s*[^\n]*\n?",
+                re.MULTILINE | re.IGNORECASE),
+     ""),
+
     # GBrain wiki-link tags (e.g. `[[concepts/ai-agents]]`,
     # `[[companies/anthropic]]`, `[[people/manthangupta]]`,
     # `[[founder-mode]]`, `[[media/social/x-...]]`) are internal
