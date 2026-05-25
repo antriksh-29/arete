@@ -628,6 +628,33 @@ fi
 # values get picked up.
 step "configure openclaw.json" bash infra/configure-openclaw.sh
 
+# ── 4b-bis. disable compaction-notifier hook (Bug H, 2026-05-25) ─
+# OpenClaw ships a bundled hook called "compaction-notifier" whose
+# job is literally "Send visible chat notices when session compaction
+# starts and finishes." (See `openclaw hooks list`.) That's the source
+# of the "🔄 I rotated to a fresh session — your conversation had
+# grown to N messages..." bubble that disrupts the user's flow.
+#
+# This hook is enabled by default. Disable it. Pair with the
+# `agents.defaults.compaction.maxActiveTranscriptBytes` bump in
+# configure-openclaw.sh which makes rotations rarer in the first
+# place.
+#
+# Idempotent: `openclaw hooks disable <name>` is a no-op if already
+# disabled.
+disable_compaction_notifier() {
+  if ! command -v openclaw >/dev/null 2>&1; then
+    echo "  ${yellow}!${rst} openclaw CLI not on PATH — skipping hook disable"
+    return 0
+  fi
+  if openclaw hooks disable compaction-notifier >/dev/null 2>&1; then
+    echo "  ${green}✓${rst} compaction-notifier hook disabled (Bug H — session-rotation leak)"
+  else
+    echo "  ${yellow}!${rst} openclaw hooks disable compaction-notifier failed (may already be disabled)"
+  fi
+}
+step "disable compaction-notifier hook" disable_compaction_notifier
+
 # ── 4c. systemd drop-in: BH_DOMAIN_SKILLS=1 for the gateway ─────
 # browser-harness has a search-first learning surface: domain-skills/
 # (per-site playbooks) and interaction-skills/ (UI-mechanic docs).

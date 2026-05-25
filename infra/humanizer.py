@@ -151,9 +151,23 @@ INTERNAL_RULES = [
 
     # Internal-state vocabulary. The model loves these; users don't
     # know what they mean.
+    # Order: vocab_rotated_session must run BEFORE vocab_fresh_session,
+    # else the "fresh session" substring gets stripped first and the
+    # broader pattern can no longer match.
+    ("vocab_rotated_session", re.compile(r"\b(I )?rotated to a (fresh|new) session[^.\n]*\.?\s*", re.I), ""),
     ("vocab_fresh_session", re.compile(r"\bfresh session\b", re.I), ""),
-    ("vocab_rotated_session", re.compile(r"\b(I )?rotated to a fresh session[^.]*\.\s*", re.I), ""),
     ("vocab_context_limit", re.compile(r"\b(close to the model'?s )?context limit\b", re.I), ""),
+    # Bug H (2026-05-25): the compaction-notifier hook emits messages
+    # like "🔄 I rotated to a fresh session — your conversation had
+    # grown to N messages, close to the model's context limit. Earlier
+    # conversation is saved so I can recall it from the brain pages."
+    # Primary fix is disabling the hook (see infra/deploy-vps.sh).
+    # These are defense-in-depth in case the hook re-enables or a
+    # similar notifier surfaces later.
+    ("compaction_emoji_lead", re.compile(r"^\s*🔄\s*", re.MULTILINE), ""),
+    ("compaction_conversation_grown", re.compile(r"\byour conversation had grown to \d+ messages[^.]*\.\s*", re.I), ""),
+    ("compaction_brain_pages_recall", re.compile(r"\bEarlier conversation is saved so I can recall it from the brain pages\.\s*", re.I), ""),
+    ("compaction_session_compaction", re.compile(r"\bsession compaction (started|finished|complete)[^.]*\.\s*", re.I), ""),
     ("vocab_brain_page", re.compile(r"\bbrain page(s)?\b", re.I), "notes"),
     ("vocab_gateway_restart", re.compile(r"\bGateway was restarted[^.]*\.\s*", re.I), ""),
     # "fires at" / "to fire at" / "now fires at" — internal-cron-speak

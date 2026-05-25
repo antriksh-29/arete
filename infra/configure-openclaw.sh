@@ -143,6 +143,22 @@ DESIRED=(
   # instead of a reasoning leak. That's louder than the leak — easy to
   # detect, easy to fix by reinforcing the messagePrefix.
   "messages.visibleReplies=\"message_tool\""
+
+  # agents.defaults.compaction.maxActiveTranscriptBytes ← "80mb" (set
+  # 2026-05-25 to address Bug H: the "🔄 I rotated to a fresh session..."
+  # bubble that disrupts user flow). The default ~20mb triggers
+  # compaction every ~130 messages of a normal-density chat, which the
+  # user reports happens multiple times a day. Bumping to 80mb pushes
+  # rotation events out by ~4× — about once every few days of heavy
+  # use instead of daily. The active transcript itself is summarized
+  # by the model's own context-window machinery; this knob only
+  # controls when openclaw's local compaction kicks in.
+  #
+  # Pair this with `openclaw hooks disable compaction-notifier` (see
+  # deploy-vps.sh step) which removes the visible chat bubble that
+  # fires when compaction runs. Together: rotations are rarer AND
+  # silent.
+  "agents.defaults.compaction.maxActiveTranscriptBytes=\"80mb\""
 )
 
 # messages.messagePrefix — managed as a here-string so multi-line is
