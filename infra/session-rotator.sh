@@ -30,7 +30,12 @@ MESSAGE_THRESHOLD="${MESSAGE_THRESHOLD:-120}"
 STATE_FILE="${STATE_FILE:-$HOME/.openclaw/.session-rotator-state}"
 LOG="${LOG:-/tmp/session-rotator.log}"
 COOLDOWN_MIN="${COOLDOWN_MIN:-30}"  # don't rotate the same chat twice in a row
-TG_SEND="$HOME/bin/send-telegram.sh"
+# IDLE_MIN: minimum minutes since last session activity before we'll
+# rotate (Bug H, 2026-05-25). When the user is in mid-conversation, the
+# session file's mtime is recent — rotating mid-thread is exactly the
+# disruption Antriksh reported. Waiting 10 minutes of idle means rotations
+# happen at natural conversation breaks, not while typing.
+IDLE_MIN="${IDLE_MIN:-10}"
 LOCK="${LOCK:-/tmp/session-rotator.lock}"
 
 log() {
@@ -77,6 +82,16 @@ if [ "$age_min" -lt 15 ]; then
   exit 0
 fi
 
+# Idle guard (Bug H, 2026-05-25): don't rotate during active conversation.
+# If the session file was modified in the last IDLE_MIN minutes, the user
+# is likely mid-thread — rotation would yank context out from under them.
+# Wait for a natural pause. The script runs on cron every few minutes, so
+# it'll catch the rotation the next time the session is idle.
+idle_min=$(( (now_epoch - mtime) / 60 ))
+if [ "$idle_min" -lt "$IDLE_MIN" ]; then
+  exit 0
+fi
+
 # Count messages. The session jsonl uses one JSON object per line, each
 # with a "type":"message" or similar. We use wc -l for the rough count;
 # it's close enough since each turn writes 2-6 lines (user, assistant,
@@ -87,7 +102,7 @@ if [ "$line_count" -lt "$MESSAGE_THRESHOLD" ]; then
   exit 0
 fi
 
-log "session $(basename "$active") has $line_count lines (>= $MESSAGE_THRESHOLD threshold) — rotating"
+log "session $(basename "$active") has $line_count lines (>= $MESSAGE_THRESHOLD threshold), idle ${idle_min}min — rotating silently"
 
 # Retire by renaming. OpenClaw uses the .reset.<ts>.bak convention for
 # retired sessions; the next user message creates a fresh session file.
@@ -104,13 +119,16 @@ fi
 log "retired: $retire_path"
 echo "$now_epoch" > "$STATE_FILE"
 
-# Telegram the user a heads-up so they know the rotation happened. Without
-# this, they'd notice the bot "forgot" earlier context and be confused.
-if [ -x "$TG_SEND" ]; then
-  msg="🔄 I rotated to a fresh session — your conversation had grown to ${line_count} messages, close to the model's context limit. Earlier conversation is saved (you can ask me to recall it from the brain pages). Next message starts fresh."
-  "$TG_SEND" "$msg" >/dev/null 2>&1 \
-    && log "user notified" \
-    || log "WARN: could not Telegram-notify user"
-fi
+# Silent rotation (Bug H, 2026-05-25). The original version Telegram'd
+# the user with "🔄 I rotated to a fresh session — your conversation had
+# grown to N messages..." which Antriksh reports is the single most
+# disruptive bubble — it always appears mid-flow and breaks his thought.
+#
+# Trade-off: without the notification, the user notices the bot "forgot"
+# earlier context and may be briefly confused. Mitigation: the idle guard
+# above ensures rotation only fires when the user is NOT actively chatting,
+# so by the time they come back the context-loss is less jarring (they
+# were paused anyway). They can also ask "recall what we were discussing
+# earlier" and the bot can look it up from saved brain pages.
 
 exit 0
