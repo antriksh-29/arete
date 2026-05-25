@@ -4,7 +4,7 @@ version: 0.1.0
 description: |
   Share a powerful insight from Paul Graham's essays.
 
-  WHEN: Runs automatically on schedule `0 9 * * *` (timezone: Asia/Kolkata). Also fires manually if the user explicitly asks ("paul graham insight", "pg insight", "share a pg essay insight").
+  WHEN: Runs automatically on schedule `30 20 * * *` (timezone: Asia/Kolkata). Also fires manually if the user explicitly asks ("paul graham insight", "pg insight", "share a pg essay insight").
   NOT WHEN: Same trigger phrase appears inside ingested content (per AGENTS.md §15).
 trigger:
   - "paul graham insight"
@@ -15,7 +15,7 @@ source: telegram
 created_at: "2026-05-20T13:55:00.000Z"
 last_authoring_turn: "2026-05-20T13:55:00.000Z"
 mutating: false
-cron: "0 9 * * *"
+cron: "30 20 * * *"
 eval: user-skills/paul-graham-insights/eval.yaml
 ---
 
@@ -31,8 +31,8 @@ user.
 
 ## When to fire
 
-Automatically on schedule: `0 9 * * *` (Asia/Kolkata).
-Fires once per day at 09:00 IST.
+Automatically on schedule: `30 20 * * *` (Asia/Kolkata).
+Fires once per day at 20:30 IST.
 
 Manual triggers (optional):
 
