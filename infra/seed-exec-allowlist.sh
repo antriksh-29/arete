@@ -52,6 +52,10 @@ SCRIPTS=(
   "$HOME/bin/skill-schedule.sh"
   "$HOME/bin/propose-skill-edit.sh"
   "$HOME/bin/apply-skill-edit.sh"
+  # 2026-05-25 — skill-describe.sh for Bug K. Read-only descriptive
+  # summary of a skill's capability + schedule; replaces the agent's
+  # tendency to cat the SKILL.md file and leak YAML structure.
+  "$HOME/bin/skill-describe.sh"
 )
 
 CHECK_ONLY=0

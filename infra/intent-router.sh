@@ -645,6 +645,42 @@ EOF
   exit 0
 fi
 
+# --- ROUTE 1e: skill DESCRIBE query (read-only "tell me about X") ---
+# Catches "tell me about X" / "what is X" / "describe X" / "what does X
+# do" / "how does X work" patterns. Read-only — the agent calls
+# skill-describe.sh to get the friend-voice summary instead of `cat`ing
+# the SKILL.md file (Bug K, 2026-05-25: agent dumped raw YAML
+# frontmatter for "tell me about my video recommender skill").
+#
+# Distinct from the schedule_query route above which is just for
+# timing. This one returns a richer summary: schedule + capability +
+# what the skill actually does.
+DESCRIBE_QUERY_LEAD='^(tell[[:space:]]+me[[:space:]]+about|what([[:space:]]+is|.?s)[[:space:]]+(my|the)|describe|how[[:space:]]+does|what[[:space:]]+does)\b'
+SKILL_REF_DESCRIBEQ='\b(skill|cron|job|briefing|brief|report|recommender|insight|insights|reminder|checkin|check-in|digest|alert|notification|fetch|automation|pick|picks|recommendation|recommendations|update|updates|tip|tips)\b'
+
+if echo "$LMSG" | grep -qE "$DESCRIBE_QUERY_LEAD" \
+   && echo "$LMSG" | grep -qE "$SKILL_REF_DESCRIBEQ"; then
+  ESCAPED_MSG=$(printf '%s' "$MSG" | sed 's/"/\\"/g')
+  cat <<EOF
+INTENT=skill_describe_query
+ORIGINAL_MESSAGE=${ESCAPED_MSG}
+
+REQUIRED_ACTION=The user is ASKING for a description / capability summary of one of their scheduled skills. This is a READ-ONLY query. The authoritative answer comes from \`~/bin/skill-describe.sh <slug-fragment>\` which reads the SKILL.md frontmatter + capability section and returns a friend-voice synthesis like "your video recommender runs at 4:50pm daily. Generates a personalized video recommendation from YouTube..." DO NOT \`cat\` or \`Read\` the SKILL.md file directly — that exposes YAML, slugs, version numbers, and other internal structure (the 2026-05-25 Bug K leak).
+
+EXECUTION_RECIPE:
+1. Extract a slug fragment from the user's message (e.g. "video recommender", "yc launches", "PG insights"). Two or three keywords is enough.
+2. Run \`bash ~/bin/skill-describe.sh "<fragment>"\` and pipe stdout into \`~/bin/say.sh -\`. say.sh auto-extracts the user_message field.
+3. If skill-describe.sh returns ok:false with reason:ambiguous or reason:no_match, pipe its user_message into say.sh anyway — it'll ask the user to disambiguate or list what's on.
+
+BANNED_RESPONSES:
+- Reading SKILL.md directly via cat / Read / exec / file read. ALL skill-description queries go through skill-describe.sh which does the safe rendering. Going around it is the Bug K regression.
+- Composing the description from memory. Skills change; the file is authoritative.
+- Surfacing YAML structure / \`name:\` / \`version:\` / \`cron:\` literal strings / slug-shaped names in the reply. skill-describe.sh already strips those.
+- Running edit / mutation tools — this is a READ query.
+EOF
+  exit 0
+fi
+
 # --- Implicit create signals (natural language) ---
 # "I wish you would..." / "I wish you could..."
 # "make a skill for ..." / "let's make a skill ..."
