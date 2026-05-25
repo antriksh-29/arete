@@ -320,11 +320,14 @@ function nextRefineQuestion(draft: Draft): number | null {
 }
 
 function buildDraftSummary(draft: Draft): string {
-  // Suffix added to every summary — tells the user what to type next.
-  // No inline buttons exist in this Telegram flow, so we name the literal
-  // words: "yes" / "no" / "cancel". This is the text the user sees right
-  // before they type their confirmation message.
-  const confirmFooter = "\n\nReply **yes** to save it, **no** to start over, or **cancel** to throw it away.";
+  // Friend-voice (Bug L fix, 2026-05-25). PR #139 + #141 updated
+  // elicit.md and the Q_CREATE/Q_REFINE question tables, but the
+  // confirmFooter + the four summary templates below were missed —
+  // they still emitted the old engineer-voice menu with **bold**
+  // markdown that renders as literal asterisks in text-mode Telegram.
+  // Now: friend-voice footer, no markdown, no slug exposure, no
+  // workspace-tier references.
+  const confirmFooter = "\n\nshall I save this, or want to tweak?";
   // Refine-diff drafts carry their own pre-formatted bullet summary from
   // the LLM (change_summary array). Re-emit it verbatim on resume so the
   // user sees the same bullets they saw the first time.
@@ -332,17 +335,14 @@ function buildDraftSummary(draft: Draft): string {
     const summary = ((draft as any).change_summary ?? []) as string[];
     const bulletsText = summary.map(s => `• ${s}`).join("\n");
     const target = (draft.answers as any).target ?? draft.slug;
-    const isFork = draft.source_tier && draft.source_tier !== "user-skills";
-    const forkLine = isFork
-      ? `\n\n(This will **fork** \`${target}\` from \`${draft.source_tier}/\` into \`user-skills/\` — the original stays untouched.)`
-      : "";
-    return `Here's the change I'll make to \`${target}\`:\n\n${bulletsText}${forkLine}${confirmFooter}`;
+    const friendlyTarget = String(target).replace(/-/g, " ");
+    return `here's the change I'd make to your ${friendlyTarget}:\n\n${bulletsText}${confirmFooter}`;
   }
   if (draft.mode === "create") {
     const a = draft.answers as CreateAnswers;
     if (a.invocation_mode === "manual") {
-      const triggers = (a.triggers ?? []).map(t => `**${t}**`).join(", ");
-      return `OK, here's what I've got:\n\nWhen you say things like ${triggers}, I'll ${a.capability}, and reply with ${a.output}.${confirmFooter}`;
+      const triggers = (a.triggers ?? []).map(t => `"${t}"`).join(", ");
+      return `got it. when you say things like ${triggers}, I'll ${a.capability}, and reply with ${a.output}.${confirmFooter}`;
     } else {
       // periodic
       const sched = a.schedule!;
@@ -351,19 +351,16 @@ function buildDraftSummary(draft: Draft): string {
       else if (sched.frequency === "weekly") when = `every ${sched.day_of_week} at ${sched.time_of_day} IST`;
       else if (sched.frequency === "monthly") when = `on the ${sched.day_of_month}${ordinalSuffix(sched.day_of_month!)} of every month at ${sched.time_of_day} IST`;
       else if (sched.frequency === "hourly") when = `every hour at ${sched.time_of_day}`;
-      else if (sched.frequency === "custom") when = `on schedule \`${sched.custom_cron}\``;
-      return `OK, here's what I've got:\n\n**${when}**, I'll ${a.capability}, and reply with ${a.output}.${confirmFooter}`;
+      else if (sched.frequency === "custom") when = `on the schedule you gave`;
+      return `got it. ${when}, I'll ${a.capability}, and reply with ${a.output}.${confirmFooter}`;
     }
   } else {
     const a = draft.answers as RefineAnswers;
-    const isFork = draft.source_tier !== "user-skills";
-    const forkLine = isFork
-      ? `\n\nThis will **fork** \`${a.target}\` from \`${draft.source_tier}/\` into \`user-skills/\`. The original stays untouched.`
-      : "";
+    const friendlyTarget = String(a.target).replace(/-/g, " ");
     const newTriggersLine = (a.additional_triggers && a.additional_triggers.length > 0)
-      ? `\n\nNew triggers added: ${a.additional_triggers.map(t => `"${t}"`).join(", ")}`
+      ? `\n\nalso listening for: ${a.additional_triggers.map(t => `"${t}"`).join(", ")}`
       : "";
-    return `OK, here's the diff:\n\n**Before:** ${a.change_statement}\n\n**After:** ${a.desired_behavior}${newTriggersLine}${forkLine}${confirmFooter}`;
+    return `got it, tweaking your ${friendlyTarget}.\n\nbefore: ${a.change_statement}\nafter: ${a.desired_behavior}${newTriggersLine}${confirmFooter}`;
   }
 }
 
@@ -555,7 +552,7 @@ function handleConfirmation(draft: Draft, message: string): never {
     envelope({
       ok: true,
       phase: "elicit",
-      user_message: `Just to be clear — should I save this skill?\n\nReply **yes** to save it, **no** to start over, or **cancel** to throw it away.`,
+      user_message: `couldn't tell — yes save it, or want to start over?`,
       draft_slug: draft.slug,
       detail: { sub_phase: "confirmation_retry" },
     });
