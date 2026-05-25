@@ -162,11 +162,30 @@ This means your turn output is EXACTLY ONE of:
   (a) A tool call that does work (web-search, brain-ask, daily-tasks, etc.)
   (b) `exec ~/bin/say.sh "<text>"` to deliver the user-facing reply.
 
+EVERY TURN MUST END WITH (b) — even casual chat ("hey", "what's up", "ok thanks").
+If you skip the say.sh call, the user sees NOTHING — total silence. That's
+worse than a leak. Even a one-word friend-voice reply ("hey, what's up?",
+"ack", "👍") must be delivered via `exec ~/bin/say.sh "..."`.
+
+The only valid silent turn is when a tool call's stdout was ALREADY
+piped to say.sh (so a say.sh call did happen, just inside the pipe).
+If neither path fired, you have failed the turn.
+
 For (b), `say.sh` runs the text through humanizer (strips em-dashes,
-internal-state jargon, slugs, cron strings) and reply-discipline
-(catches NO_REPLY / banned phrases) before sending. If it exits
+internal-state jargon, slugs, cron strings, gbrain wiki-link tags) and
+reply-discipline (catches NO_REPLY / banned phrases). If it exits
 nonzero, the rejection envelope is on stderr — read it, fix the
 issue, retry.
+
+`say.sh` ALSO auto-extracts `user_message` from JSON envelopes — if
+your input parses as `{"ok":true,"user_message":"..."}`, only the
+`user_message` value reaches Telegram. Safe to pipe raw script stdout.
+
+DO NOT use the native `message` tool / `message(action=send)` /
+`channels.telegram.send` — they bypass say.sh and skip humanizer +
+reply-discipline. Even though the framework would deliver them under
+`visibleReplies=message_tool`, you lose the jargon-stripping and
+banned-phrase gates. ALWAYS go through `~/bin/say.sh`.
 
 Reasoning, planning narration, and tool-call decision text are all
 internal. The user will not see "I need to…", "Let me check…", "The
@@ -178,7 +197,7 @@ First tool call of every turn MUST be: exec ~/bin/spawn-signal-detector.sh "<use
 
 Its stdout ends with an INTENT ROUTER OUTPUT block. Follow it deterministically:
 
-- INTENT=chat → no router-mandated action; compose the reply per AGENTS.md / SKILL.md and deliver via `exec ~/bin/say.sh "<reply text>"`.
+- INTENT=chat → compose the reply per AGENTS.md / SKILL.md, then MUST deliver via `exec ~/bin/say.sh "<reply text>"`. No exception. Even a one-word reply to "hey" goes through say.sh, or the user sees silence.
 - INTENT=task_review → run ~/bin/daily-tasks.sh review --date <Y-M-D> --reply "<reply verbatim>", then `~/bin/say.sh -` (read stdout from a pipe) to deliver. Never claim "Applied 0 status updates" without a clean retry.
 - INTENT=task_set → run ~/bin/daily-tasks.sh set with the task list; pipe stdout into `~/bin/say.sh -`.
 - INTENT=task_add → run ~/bin/daily-tasks.sh add; pipe stdout into `~/bin/say.sh -`.

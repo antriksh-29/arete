@@ -208,38 +208,48 @@ function listPendingDrafts(): Draft[] {
 
 // CREATE questions. Q2 has a branch — depending on `invocation_mode`,
 // we ask either Q2a (triggers, for manual) or Q2b (schedule, for periodic).
+//
+// Friend-voice wording (PR #142, post-2026-05-24 retune). Previously
+// these strings were duplicated in meta/skill-author/prompts/elicit.md
+// (the prompt source) and never propagated here — Bug F regression.
+// The .md file is now the canonical reference for the wording.
 const Q_CREATE_BASE: Record<number, string> = {
-  1: "Got it, let's make a new skill. One line: what should this skill enable me to do?\n\n(Example: \"send me a random motivational quote every morning\", or \"when I forward you a receipt photo, log the amount + merchant + date to my expense tracker\".)",
-  2: "Should I run this when you ask me to, or automatically on a schedule?\n\n• Reply \"manual\" if you'll trigger it (you'll give me the words to listen for).\n• Reply \"periodic\" if it should run on a schedule (daily/weekly/etc).",
-  3: "What should the result look like? Reply in this chat, a file, a brain page, an email, a calendar event, something else?",
+  1: "nice, let's set this up. one line: what should I do for you?\n\n(like \"send me a motivational quote every morning\", or \"when I forward a receipt photo, log the amount, merchant, and date to my expenses\".)",
+  2: "should this run when you ask, or on a schedule?\n\n(say \"when I ask\" or \"on a schedule\".)",
+  3: "where should the result land? back here in chat, or somewhere else (file, note, email, calendar, etc)?",
 };
 
 // Q2a — when invocation_mode=manual
 const Q_CREATE_2A_MANUAL =
-  "What 2–3 phrases should I listen for? These are the words you'll type to trigger this skill.\n\n(Example: \"good morning quote\", \"give me my morning quote\", \"morning motivation\". More specific = less likely to collide with a neighbor skill.)";
+  "cool. what 2-3 phrases should I listen for? (more specific is better, so it doesn't collide with anything else I do.)\n\n(like \"morning quote\", \"give me my morning quote\", \"kick me off with a quote\".)";
 
 // Q2b — when invocation_mode=periodic
 const Q_CREATE_2B_PERIODIC =
-  "How often should I run it?\n\n• `hourly` — every hour\n• `daily` — once per day at a specific time (you'll pick the hour)\n• `weekly` — once per week on a specific day + time\n• `monthly` — once per month on a specific day + time\n• `custom` — give me a raw cron expression";
+  "how often? (say hourly, daily, weekly, or monthly, or give me a specific rhythm if it's something else.)";
 
-// Follow-up after Q2b: schedule details
+// Follow-up after Q2b: schedule details. Friend-voice wording, no
+// cron expressions in user-visible text.
 function q2bScheduleDetails(freq: string): string {
   switch (freq) {
-    case "daily":   return "What time of day? (24h format, IST. Example: \"08:00\" for 8am, \"22:30\" for 10:30pm.)";
-    case "weekly":  return "What day + time? (Example: \"monday 08:00\" or \"saturday 19:00\".)";
-    case "monthly": return "What day-of-month + time? (Example: \"1 09:00\" for 9am on the 1st of every month.)";
-    case "hourly":  return "Every hour, on the hour? Or at a specific minute past the hour? (Reply \"on the hour\" or e.g. \":15\" for quarter past.)";
-    case "custom":  return "OK, paste the raw cron expression. (5-field format: `minute hour dom month dow`. Example: `*/15 8-22 * * *` = every 15 min between 8am and 10pm.)";
+    case "daily":   return "what time? (24h, IST. like `08:00` for 8am or `22:30` for 10:30pm.)";
+    case "weekly":  return "which day and time? (like `monday 08:00` or `saturday 19:00`.)";
+    case "monthly": return "which day of the month, and what time? (like `1 09:00` for 9am on the 1st.)";
+    case "hourly":  return "on the hour, or some other minute past? (say `on the hour` or `:15`, etc.)";
+    case "custom":  return "paste the timing you want. plain English is fine, I'll figure it out, like 'every 15 min between 8am and 10pm'.";
     default:        return "";
   }
 }
 
 const Q_REFINE: Record<number, (ctx: { target: string; existingTriggers: string[] }) => string> = {
-  1: ({ target }) => `Got it, let's tweak \`${target}\`. What's wrong with how it works now — or what should it do that it doesn't?`,
-  2: () => "OK, so when this fires, what should happen instead?",
+  // Note: `target` is the slug, but we don't surface it in chat per
+  // identity/SOUL.md hard blocklist. Refer to the skill as "this one"
+  // and rely on the user remembering which skill they just asked to
+  // tweak (the prior message-id linkage handles disambiguation).
+  1: () => `on it. what's not working right now, or what should it do that it doesn't?`,
+  2: () => "got it. when it runs, what should happen instead?",
   3: ({ existingTriggers }) => {
     const list = existingTriggers.length ? existingTriggers.map(t => `"${t}"`).join(", ") : "(none)";
-    return `Keep the existing trigger phrases, or want to add new ones?\n\nExisting triggers: ${list}\n\nIf you add new ones, I'll check they don't collide with other skills.`;
+    return `keep the existing trigger phrases, or want to add new ones?\n\n(right now I'm listening for: ${list}.)`;
   },
 };
 
