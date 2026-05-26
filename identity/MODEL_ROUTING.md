@@ -57,12 +57,25 @@ overload-shaped error bodies that OpenClaw's native trigger misses.
 **Per-agent overrides** (`agents.list[]` in `openclaw.json`):
 
 - `main` → inherits the chain above.
-- `signal-detector` → **pinned** to `deepseek/deepseek-v4-pro` (per
-  user 2026-05-26). **WARNING**: bare-string override has no fallback
-  chain — if the DeepSeek tool-call schema bug fires here, every
-  Telegram turn dies. First thing to revert at any sign of trouble.
-- `feedback-learner` → pinned to `deepseek/deepseek-v4-pro` (background
-  retrospective analyser; lower blast radius than signal-detector).
+- `signal-detector` → object form with chain `deepseek/deepseek-v4-pro
+  → moonshot/kimi-k2.6 → anthropic/claude-haiku-4-5`. **Deliberately
+  omits openai/gpt-5.4-mini** even though the main agent uses it as
+  fallback-3: gpt-5.4-mini's `reasoning`-item session-format bug is
+  mitigated by the session-rotator for the main agent, but
+  signal-detector's session lifecycle is different and we haven't
+  verified the same protection applies. signal-detector runs on every
+  Telegram turn (RULE 0) so any chronic issue is multiplied — skipping
+  this link avoids the question entirely; DeepSeek → Kimi → Haiku is
+  plenty of cushion for a classification workload.
+- `feedback-learner` → object form with full chain `deepseek/deepseek-v4-pro
+  → moonshot/kimi-k2.6 → anthropic/claude-haiku-4-5 → openai/gpt-5.4-mini`.
+  Background analyser — low volume, latency-tolerant, can absorb the
+  gpt-5.4-mini risk safely.
+
+  *(Note: OpenClaw's schema explicitly supports either a bare string or
+  the `{primary, fallbacks, timeoutMs}` object at `agents.list[].model`
+  — verified via `openclaw config schema`. Earlier versions of this doc
+  claimed bare-string was the only option; that was wrong.)*
 
 ### Thinking-mode knob
 
