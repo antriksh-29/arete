@@ -24,7 +24,17 @@ set -uo pipefail
 REPO="${REPO:-$HOME/personal-assistant}"
 WORKSPACE_SKILLS="${WORKSPACE:-$HOME/.openclaw/workspace}/skills"
 PENDING_DIR="$HOME/.brain-bootstrap-raw/state/pending-skill-edits"
+# Trust-ticket directory — sanctioned writers (this script,
+# reverse_sync_skill_md_from_jobs_json in skill-autosync.sh) drop a
+# single-use ticket here BEFORE editing a workspace user-skill SKILL.md.
+# skill-autosync's mirror_to_repo() refuses to push edits that don't
+# have a matching ticket, blocking the agent's "direct exec Edit"
+# bypass path (see 2026-05-26 PG insights `30 17` regression).
+TRUST_DIR="$HOME/.brain-bootstrap-raw/state/skill-edit-trust"
+TRUST_TTL_SECONDS=300
 AUTOSYNC="$REPO/infra/skill-autosync.sh"
+
+mkdir -p "$TRUST_DIR"
 
 if [ "${1:-}" = "--smoke" ]; then
   echo '{"ok":true,"skill":"apply-skill-edit","user_message":"apply-skill-edit smoke ok"}'
@@ -102,11 +112,17 @@ if [ -z "$target_md" ]; then
 fi
 
 # Edit the frontmatter cron field in-place using python (safer than sed
-# for YAML-shaped front matter, especially around quoting).
+# for YAML-shaped front matter, especially around quoting). BEFORE
+# writing, also drop a trust ticket recording the sha256 of the
+# expected post-edit content — skill-autosync.sh's mirror_to_repo
+# requires a matching ticket before pushing user-skill edits to git.
 python3 -c '
-import sys, re
+import sys, re, hashlib, json, os, time, tempfile
 path = sys.argv[1]
 new_cron = sys.argv[2]
+slug = sys.argv[3]
+trust_dir = sys.argv[4]
+ttl = int(sys.argv[5])
 with open(path) as f:
     content = f.read()
 
@@ -133,9 +149,29 @@ else:
             lines.insert(i, f"cron: \"{new_cron}\"")
             break
 
-with open(path, "w") as f:
-    f.write("\n".join(lines))
-' "$target_md" "$to_cron"
+new_content = "\n".join(lines)
+new_bytes = new_content.encode("utf-8")
+sha = hashlib.sha256(new_bytes).hexdigest()
+
+# Drop trust ticket BEFORE the write so the autosync gate sees it
+# whichever way the inotify race resolves.
+ticket = {
+    "slug": slug,
+    "expected_sha256": sha,
+    "created_at": int(time.time()),
+    "ttl_seconds": ttl,
+    "issuer": "apply-skill-edit",
+}
+ticket_path = os.path.join(trust_dir, f"{slug}.json")
+# Atomic write so a partially-written ticket can not falsely pass the gate.
+fd, tmp = tempfile.mkstemp(dir=trust_dir, prefix=f".{slug}.", suffix=".json")
+with os.fdopen(fd, "w") as f:
+    json.dump(ticket, f)
+os.replace(tmp, ticket_path)
+
+with open(path, "wb") as f:
+    f.write(new_bytes)
+' "$target_md" "$to_cron" "$slug" "$TRUST_DIR" "$TRUST_TTL_SECONDS"
 
 # Kick autosync (if available) to mirror the workspace edit → repo →
 # commit → push immediately. Without this kick, the inotify watcher
