@@ -177,6 +177,64 @@ DESIRED=(
   # fires when compaction runs. Together: rotations are rarer AND
   # silent.
   "agents.defaults.compaction.maxActiveTranscriptBytes=\"80mb\""
+
+  # agents.defaults.compaction.* tuning (set 2026-05-26 as PR-2 of the
+  # Bug I family). Bug I (PR #149) addressed the signal-detector session
+  # growing unbounded by retiring oversized session JSONL files before
+  # each spawn. This block addresses the same failure-mode for the
+  # MAIN agent's compaction path — where 22+ failed compactions/day
+  # were burning ~$2-3 in LLM time before timing out at 60-85s.
+  #
+  # keepRecentTokens=25000 — preserve the last ~25k tokens of recent
+  # conversation verbatim across compaction, giving the model enough
+  # immediate context to keep skill-author flows / multi-turn debugs
+  # coherent. Default is lower; raising it trades summary aggression
+  # for continuity.
+  #
+  # reserveTokens=30000 — headroom reserved for reply + tool output
+  # post-compaction. Generous because Kimi K2.6 turn outputs (gbrain
+  # MCP, composio responses) can be large.
+  #
+  # midTurnPrecheck.enabled=true — Pi tool-loop precheck that catches
+  # context pressure between tool calls, before the next assistant
+  # turn balloons the request and tips into a hard 256k ceiling. Cheap
+  # to enable, prevents the "context-pressure-then-fail" pattern that
+  # gave us the 22 failed compactions.
+  #
+  # memoryFlush.enabled=true — pre-compaction memory flush writes
+  # important state to gbrain BEFORE the heavy compaction summary
+  # runs. Means if compaction times out mid-flight, we don't lose
+  # active task context — it's already persisted as brain pages.
+  #
+  # truncateAfterCompaction=true — rotate the active session JSONL
+  # after a successful compaction so subsequent turns load only the
+  # post-compaction summary instead of replaying the entire pre-
+  # compaction history. Without this, the session JSONL keeps the
+  # old turns around even after summarization, which is exactly the
+  # disk-bloat shape Bug I (in its signal-detector incarnation) hit.
+  #
+  # notifyUser=false — we already disabled the compaction-notifier
+  # hook for Bug H. This is the second layer of belt-and-braces:
+  # even if the hook re-enables itself on framework upgrade, the
+  # config-level flag keeps user-visible compaction bubbles off.
+  #
+  # timeoutSeconds=60 — hard cap on a single compaction operation.
+  # Probe v10 saw individual compaction attempts running 60-85s
+  # against a 2.95MB session. 60s is the natural cliff; setting it
+  # explicit means failures fail fast and visibly instead of hanging.
+  #
+  # All keys verified present in `openclaw config schema` output
+  # 2026-05-26. Per-agent overrides at agents.list[*].compaction are
+  # NOT supported by the schema (probe v10 confirmed), so these live
+  # in agents.defaults — which also benefits signal-detector and any
+  # subagent that runs compactions.
+  "agents.defaults.compaction.keepRecentTokens=25000"
+  "agents.defaults.compaction.reserveTokens=30000"
+  "agents.defaults.compaction.midTurnPrecheck.enabled=true"
+  "agents.defaults.compaction.memoryFlush.enabled=true"
+  "agents.defaults.compaction.truncateAfterCompaction=true"
+  "agents.defaults.compaction.notifyUser=false"
+  "agents.defaults.compaction.timeoutSeconds=60"
 )
 
 # messages.messagePrefix — managed as a here-string so multi-line is
