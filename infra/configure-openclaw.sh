@@ -397,20 +397,35 @@ desired = desired + [
 ]
 
 # Per-agent model overrides — applied after the path-based knobs.
-# Format: {"<agent.id>": "<provider/model>"}. Agents matching by id
-# in agents.list[] will have their .model field set. Missing agents
-# are reported but not added (defensive — don't invent agent rows).
+# Format: {"<agent.id>": <model_value>}. The value can be either:
+#   - a string like "provider/model" (bare pin, no fallback chain), OR
+#   - a dict {"primary": "...", "fallbacks": [...], "timeoutMs": int}
+#     matching agents.defaults.model shape (verified via `openclaw config
+#     schema` — agents.list[].model is anyOf string|object).
+# We use the dict form so per-agent pins inherit a real failover chain.
+# Agents matching by id in agents.list[] will have their .model field
+# set. Missing agents are reported but not added (defensive — don't
+# invent agent rows).
 PER_AGENT_MODEL = {
-    # 2026-05-26: moved to DeepSeek primary per user instruction.
-    # WARNING: a bare-string override has no fallback chain — if
-    # DeepSeek's intermittent tool-call schema bug (DeepSeek-V3#1244)
-    # surfaces on the signal-detector lane, every Telegram turn dies.
-    # Watch the journal for the first 24h after deploy; revert to
-    # "moonshot/kimi-k2.6" at the first sign of trouble. signal-detector
-    # is on the user's critical path (RULE 0 of AGENTS.md), so this is
-    # the highest-risk pin.
-    "signal-detector": "deepseek/deepseek-v4-pro",
-    "feedback-learner": "deepseek/deepseek-v4-pro",
+    # signal-detector runs on every Telegram turn (RULE 0) so it's the
+    # highest-volume LLM caller in the system. We deliberately OMIT
+    # openai/gpt-5.4-mini from its chain even though the main agent
+    # uses it as fallback-3: gpt-5.4-mini's `reasoning`-item
+    # session-format bug is mitigated by the session-rotator for the
+    # main agent, but signal-detector's session lifecycle is different
+    # and we haven't verified the same protection works there. Skipping
+    # it avoids the question entirely; DeepSeek → Kimi → Haiku is
+    # plenty of cushion for a classification-only workload.
+    "signal-detector": {
+        "primary": "deepseek/deepseek-v4-pro",
+        "fallbacks": ["moonshot/kimi-k2.6", "anthropic/claude-haiku-4-5"],
+    },
+    # feedback-learner is background (low volume, latency-tolerant) so
+    # it gets the full chain including gpt-5.4-mini as last resort.
+    "feedback-learner": {
+        "primary": "deepseek/deepseek-v4-pro",
+        "fallbacks": ["moonshot/kimi-k2.6", "anthropic/claude-haiku-4-5", "openai/gpt-5.4-mini"],
+    },
 }
 
 with open(config_path) as f:
