@@ -51,6 +51,13 @@ REPO_US="$REPO/user-skills"
 JOBS_JSON="${JOBS_JSON:-$HOME/.openclaw/cron/jobs.json}"
 LOG="/tmp/skill-autosync.log"
 TG_SEND="$HOME/bin/send-telegram.sh"
+# Trust-ticket dir — sanctioned writers (apply-skill-edit.sh,
+# reverse_sync_skill_md_from_jobs_json below) drop a ticket here BEFORE
+# editing a workspace user-skill SKILL.md. mirror_to_repo requires a
+# matching ticket before pushing to GitHub.
+TRUST_DIR="${TRUST_DIR:-$HOME/.brain-bootstrap-raw/state/skill-edit-trust}"
+TRUST_TTL_SECONDS=300
+mkdir -p "$TRUST_DIR"
 MODE="${1:---once}"
 
 log() {
@@ -176,6 +183,7 @@ reverse_sync_skill_md_from_jobs_json() {
   [ -f "$skill_md" ] || return 0
   [ -f "$JOBS_JSON" ] || return 0
 
+  TRUST_DIR="$TRUST_DIR" TRUST_TTL_SECONDS="$TRUST_TTL_SECONDS" \
   python3 - "$slug" "$skill_md" "$JOBS_JSON" <<'PY'
 import json, re, sys
 slug, skill_md, jobs_path = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -219,7 +227,7 @@ if not md_cron or md_cron.lower() in ("null", "none"):
 
 # Write jobs.json's expr into SKILL.md frontmatter. Preserve quoting
 # style if the existing cron field had quotes.
-import shutil
+import shutil, hashlib, json, os, time, tempfile
 shutil.copy(skill_md, skill_md + ".bak-reverse-sync")
 new_fm = re.sub(
     r'^(cron:\s*)"?[^"\n]+"?\s*$',
@@ -229,9 +237,130 @@ new_fm = re.sub(
     flags=re.M,
 )
 new_text = f"---\n{new_fm}\n---" + text[fm_m.end():]
-open(skill_md, "w").write(new_text)
+new_bytes = new_text.encode("utf-8")
+
+# Drop a trust ticket so mirror_to_repo's gate accepts this edit. Same
+# shape as apply-skill-edit.sh's ticket.
+trust_dir = os.environ.get("TRUST_DIR")
+if trust_dir:
+    os.makedirs(trust_dir, exist_ok=True)
+    sha = hashlib.sha256(new_bytes).hexdigest()
+    ticket = {
+        "slug": slug,
+        "expected_sha256": sha,
+        "created_at": int(time.time()),
+        "ttl_seconds": int(os.environ.get("TRUST_TTL_SECONDS", "300")),
+        "issuer": "reverse_sync_skill_md_from_jobs_json",
+    }
+    fd, tmp = tempfile.mkstemp(dir=trust_dir, prefix=f".{slug}.", suffix=".json")
+    with os.fdopen(fd, "w") as f:
+        json.dump(ticket, f)
+    os.replace(tmp, os.path.join(trust_dir, f"{slug}.json"))
+
+open(skill_md, "wb").write(new_bytes)
 print(f"REVERSE_SYNCED {slug}: SKILL.md cron {md_cron!r} -> {jobs_cron!r} (jobs.json was authoritative)")
 PY
+}
+
+# Gate: refuse to mirror a workspace user-skill SKILL.md unless a
+# matching trust ticket exists. apply-skill-edit.sh (the sanctioned
+# user-facing edit path) and reverse_sync_skill_md_from_jobs_json (the
+# sanctioned `openclaw cron edit` reconciliation path) both drop a
+# ticket BEFORE their write. The agent's direct-exec bypass (`exec cat
+# > .../SKILL.md`) leaves no ticket — this guard reverts the workspace
+# file from the repo and alerts the user.
+#
+# Background: 2026-05-26 PG insights cron landed as `30 17 * * *` (5:30pm)
+# instead of the user-asked `0 17 * * *` (5pm) because the agent bypassed
+# propose-skill-edit.sh and constructed the cron string by hand, keeping
+# the existing minute=30. The two-phase pipeline's deterministic Python
+# parser would have converted "5pm" correctly. This gate makes the
+# pipeline the only path that reaches GitHub.
+#
+# Returns 0 (allow) and consumes the ticket; non-zero (block) and
+# reverts workspace from repo + sends Telegram alert.
+guard_against_unsanctioned_edit() {
+  local slug="$1"
+  local ws="$WORKSPACE_SKILLS/$slug/SKILL.md"
+  local rp="$REPO_US/$slug/SKILL.md"
+  [ -f "$ws" ] || return 0       # nothing to mirror, nothing to gate
+  [ -f "$rp" ] || return 0       # first-time slug — no repo baseline yet, allow
+  if cmp -s "$ws" "$rp"; then
+    return 0                     # no drift, no edit to gate
+  fi
+  TRUST_DIR="$TRUST_DIR" TRUST_TTL="$TRUST_TTL_SECONDS" SLUG="$slug" WS="$ws" RP="$rp" \
+    python3 - <<'PY' 2>>"$LOG"
+import hashlib, json, os, shutil, subprocess, sys, time
+slug    = os.environ["SLUG"]
+ws      = os.environ["WS"]
+rp      = os.environ["RP"]
+trust_dir = os.environ["TRUST_DIR"]
+ttl     = int(os.environ.get("TRUST_TTL", "300"))
+
+ws_bytes = open(ws, "rb").read()
+ws_sha = hashlib.sha256(ws_bytes).hexdigest()
+ticket_path = os.path.join(trust_dir, f"{slug}.json")
+
+ticket = None
+if os.path.isfile(ticket_path):
+    try:
+        ticket = json.loads(open(ticket_path).read())
+    except Exception:
+        ticket = None
+
+now = int(time.time())
+reason = None
+if not ticket:
+    reason = "no ticket"
+elif (now - int(ticket.get("created_at", 0))) > int(ticket.get("ttl_seconds", ttl)):
+    reason = f"ticket expired (age={now - int(ticket.get('created_at', 0))}s)"
+elif ticket.get("expected_sha256") != ws_sha:
+    reason = "ticket sha256 mismatch (workspace content does not match sanctioned write)"
+
+if reason is None:
+    # Sanctioned. Consume the ticket and allow the mirror.
+    try:
+        os.remove(ticket_path)
+    except FileNotFoundError:
+        pass
+    sys.exit(0)
+
+# Unsanctioned. Revert workspace from repo, alert.
+ts = time.strftime("%Y-%m-%dT%H:%M:%S")
+print(f"[{ts}] UNSANCTIONED_EDIT_BLOCKED slug={slug}: {reason}", file=sys.stderr)
+# Quarantine the rogue workspace copy so investigators can inspect it.
+quarantine = ws + ".unsanctioned-quarantine." + time.strftime("%Y%m%d-%H%M%S")
+shutil.copy(ws, quarantine)
+shutil.copy(rp, ws)
+print(f"[{ts}] REVERTED slug={slug}: workspace SKILL.md restored from repo; rogue copy at {quarantine}", file=sys.stderr)
+
+# Stale ticket gets cleared so it does not poison the next legitimate edit.
+if ticket is not None:
+    try:
+        os.remove(ticket_path)
+    except FileNotFoundError:
+        pass
+
+# Best-effort Telegram alert. Friend-voice — tells the user what happened
+# without leaking internal jargon. Mentions the proper path so the user
+# can retry.
+friendly = slug.replace("-", " ")
+msg = (
+    f"⚠️ I tried to change your {friendly} skill but did it the wrong way — "
+    f"directly editing the file instead of going through the safe edit path. "
+    f"I reverted the change so nothing weird shipped. say what you wanted "
+    f"changed again ('change <skill> to <time>') and I'll do it properly."
+)
+tg = os.path.expanduser("~/bin/send-telegram.sh")
+if os.path.isfile(tg) and os.access(tg, os.X_OK):
+    try:
+        subprocess.run([tg, msg], check=False, timeout=15)
+    except Exception:
+        pass
+
+sys.exit(2)
+PY
+  return $?
 }
 
 # Update jobs.json so a SKILL.md cron field change actually fires.
@@ -457,7 +586,16 @@ PY
 # changed, 1 if no changes. Doesn't push — caller batches push.
 mirror_to_repo() {
   local slug="$1"
-  # Regression check FIRST. If the workspace copy would downgrade the
+  # Trust-ticket gate FIRST. Blocks the agent's direct-exec bypass of
+  # the propose-skill-edit/apply-skill-edit pipeline. If this fires, the
+  # workspace SKILL.md has already been reverted to the repo version by
+  # the guard, so subsequent `cmp -s` checks return identical and
+  # mirroring is a no-op for this slug.
+  if ! guard_against_unsanctioned_edit "$slug"; then
+    log "  SKIP mirror_to_repo($slug): unsanctioned-edit guard fired — workspace reverted, push refused"
+    return 1
+  fi
+  # Regression check NEXT. If the workspace copy would downgrade the
   # repo version, abort mirroring for this slug entirely — better to
   # leave the repo intact and surface the conflict than silently push
   # a regression. The error is logged so a human can investigate.
@@ -571,7 +709,12 @@ describe_cron_change() {
 # Single pass: for each managed slug, mirror workspace -> repo, sync
 # cron if changed, commit + push if anything changed. One commit per
 # pass batches multiple slug changes if they happened at once.
-one_pass() {
+#
+# IMPORTANT: this function is wrapped in a global flock (see one_pass()
+# wrapper below). All concurrent invocations serialize — the watcher's
+# inotify-triggered runs and the explicit kick from apply-skill-edit
+# can never interleave on the trust-ticket consumption step.
+_one_pass_body() {
   local slugs_changed=()
   local cron_changes=()
 
@@ -637,6 +780,21 @@ one_pass() {
   else
     log "commit_and_push returned non-zero (may be a transient git/push error)"
   fi
+}
+
+# Global serialization wrapper. Concurrent one_pass invocations (the
+# watcher's inotify-triggered runs + the explicit `--once` kick from
+# apply-skill-edit.sh) must NOT interleave on the trust-ticket
+# consumption step in mirror_to_repo's guard_against_unsanctioned_edit —
+# if process A consumes the ticket between process B's isfile() and
+# open(), B would falsely conclude no ticket exists and revert a
+# legitimate edit. flock makes that race impossible.
+ONE_PASS_LOCK="/tmp/skill-autosync.one-pass.lock"
+one_pass() {
+  (
+    flock -x 200 || { log "one_pass: failed to acquire lock"; exit 1; }
+    _one_pass_body
+  ) 200>"$ONE_PASS_LOCK"
 }
 
 watch_mode() {
