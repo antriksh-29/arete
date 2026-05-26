@@ -387,7 +387,16 @@ HARD RULES (violating any one of these makes your output rejected and the user h
 
 5. NEVER drop existing insight-pool entries, trigger phrases, eval cases, or other list items UNLESS the user's change request explicitly asks for it. When in doubt, ADD; never DELETE.
 
-6. The change_summary array must contain 1–6 short bullets, each a plain-English description of what changed. The user sees these bullets and types "yes" to accept. If you cannot honestly describe the change in <=6 bullets, the change is too big — return a single bullet saying "change too broad for one-shot refine; please use /refine ${"<slug>"} for the Q&A path".
+6. The change_summary array must contain 1–6 short bullets, each a plain-English description of what changed, written **in friend-voice for an end user**. The user sees these bullets and types "yes" to accept.
+
+   FRIEND-VOICE RULES FOR change_summary BULLETS:
+   • Write like a friend confirming a tweak in a text — lowercase fine, contractions fine, brief.
+   • NEVER use these terms: "trigger phrase", "trigger", "skill", "slug", "fork", "user-skills", "skills/", "openclaw", "eval", "SKILL.md", "frontmatter", "version", "schema", "cron expression", any file path, any backticked code token.
+   • Translate internals to outcomes: instead of "added trigger phrase 'X'", say "I'll also save notes when you say 'X'". Instead of "bumped version to 1.1.0" — don't say it at all (the user doesn't care).
+   • Translate cron-style schedules to natural time: instead of "changed cron from 15 18 * * * to 30 20 * * *", say "moved your morning brief to 8:30pm".
+   • Speak about what the bot will DO differently, not what file changed. The user knows what they asked for; restate it the way they'd describe it to a friend.
+
+   If you cannot honestly describe the change in <=6 friend-voice bullets, the change is too big — return a single bullet saying "this change is too big to do in one shot — mind walking me through it step by step?".
 
 7. Bump the version field (semver patch by default; minor if you added/changed trigger phrases).
 
@@ -560,12 +569,22 @@ function emit(env: Envelope): never {
   process.exit(0);
 }
 
-function buildSummaryMessage(target: string, summary: string[], isFork: boolean, sourceTier: Tier): string {
+function buildSummaryMessage(target: string, summary: string[], _isFork: boolean, _sourceTier: Tier): string {
+  // Bug O fix (2026-05-26): friend-voice rewrite.
+  //
+  // OLD copy leaked internal terms: "Here's the change I'll make to
+  // `note`", backticked slugs, "fork `note` from `skills/` into
+  // `user-skills/` — the original stays untouched", "Reply **yes** to
+  // save it, **no** to start over, or **cancel** to throw it away".
+  // Every one of those is internal architecture (forking, source tiers,
+  // skill slugs, multi-choice yes/no/cancel menus) and shouldn't reach
+  // chat.
+  //
+  // NEW copy: just the bullets the LLM produced (prompt is now tuned to
+  // make those bullets jargon-free too) + a one-line save prompt. No
+  // slug name, no fork plumbing, no tier paths, no menu of options.
   const bulletsText = summary.map(s => `• ${s}`).join("\n");
-  const forkLine = isFork
-    ? `\n\n(This will **fork** \`${target}\` from \`${sourceTier}/\` into \`user-skills/\` — the original stays untouched.)`
-    : "";
-  return `Here's the change I'll make to \`${target}\`:\n\n${bulletsText}${forkLine}\n\nReply **yes** to save it, **no** to start over, or **cancel** to throw it away.`;
+  return `${bulletsText}\n\nsave it?`;
 }
 
 function fallbackMessage(target: string, reason: string): string {

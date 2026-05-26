@@ -24,6 +24,32 @@ fi
 # Lowercased version for matching
 LMSG=$(echo "$MSG" | tr '[:upper:]' '[:lower:]')
 
+# ── Draft-abandonment cleanup (Bug N — 2026-05-26) ───────────────
+# Before any intent is classified, check whether the user is trying
+# to abandon an active skill-author draft (via natural language) OR
+# clearly switching to a different ask (booking, composio connect,
+# task ops). Without this, an active draft hijacks subsequent turns
+# via ROUTE 0 below and the user is trapped in "save it, or drop it?"
+# even when they say "/new", "start something new", "nevermind", or
+# "can you connect my gmail here".
+#
+# We do this early — before booking/composio/etc. — so those intents
+# fire normally on the current turn AND the draft is gone for next
+# turn. Otherwise the draft would re-hijack the very next message.
+DRAFTS_DIR_EARLY="$HOME/personal-assistant/.context/skill-author-drafts"
+if [ -d "$DRAFTS_DIR_EARLY" ]; then
+  RESET_RE_EARLY="(start over|start fresh|start something new|start again|never[[:space:]]?mind|nvm|forget (it|that|this)|drop (it|that|this)|scrap (it|that)|abandon( it| that)?|kill (it|that)|ditch (it|that)|leave (it|that)|skip (it|this)|stop (that|it)|reset|restart|redo|do over|fresh start|new topic|different topic|change of plans|moving on|let.?s move on|wait[[:space:]]+nevermind|actually[[:space:]]+nevermind)"
+  # Narrow patterns — false positives here trap the user even harder
+  # (they say something perfectly reasonable that LOOKS like an
+  # off-topic intent and their draft silently vanishes). Only the
+  # most unambiguous "I've clearly moved on" shapes belong here.
+  OFFTOPIC_RE_EARLY="((connect|setup|set[[:space:]]up|sign[[:space:]]?in|log[[:space:]]?in|hook[[:space:]]up|link)[[:space:]]+(my[[:space:]]+)?(gmail|google|email|calendar|cal|slack|asana|notion|github|linear|composio|drive|sheets|docs))|(make[[:space:]]+a[[:space:]]+(reservation|booking))|(what'?s[[:space:]]on[[:space:]]my[[:space:]]calendar)|(\\bmy[[:space:]]+tasks?\\b)|(\\btask[[:space:]]list\\b)|(\\bbacklog\\b)"
+  if echo "$LMSG" | grep -qiE "$RESET_RE_EARLY" || echo "$LMSG" | grep -qiE "$OFFTOPIC_RE_EARLY"; then
+    # Delete any draft modified in the last 10 min (matches ROUTE 0's window).
+    find "$DRAFTS_DIR_EARLY" -name '*.json' -mmin -10 -delete 2>/dev/null || true
+  fi
+fi
+
 # ── BOOKING INTENT ─────────────────────────────────────────────
 # Match patterns: book/reserve/reservation + (table|restaurant|dinner|
 # lunch|brunch|venue|hotel|room) OR explicit venue names.
@@ -209,7 +235,11 @@ ACTIVE_DRAFT=""
 ACTIVE_DRAFT_MODE=""
 DRAFTS_DIR="$HOME/personal-assistant/.context/skill-author-drafts"
 if [ -d "$DRAFTS_DIR" ]; then
-  # Find any draft files modified in the last 30 minutes that aren't done.
+  # Find any draft files modified in the last 10 minutes that aren't done.
+  # (Bug N fix 2026-05-26: window was 30 min — way too long. A draft sitting
+  # for 30 min is almost certainly abandoned, and the user moving on after
+  # that gap shouldn't get hijacked back into a confirm loop they forgot
+  # about. 10 min still covers realistic mid-conversation pauses.)
   while IFS= read -r f; do
     [ -z "$f" ] || [ ! -f "$f" ] && continue
     completed=$(jq -r '.completed_questions | length' "$f" 2>/dev/null || echo 0)
@@ -229,10 +259,17 @@ if [ -d "$DRAFTS_DIR" ]; then
       ACTIVE_DRAFT_MODE="$mode"
       break
     fi
-  done < <(find "$DRAFTS_DIR" -name '*.json' -mmin -30 -printf '%T@ %p\n' 2>/dev/null \
+  done < <(find "$DRAFTS_DIR" -name '*.json' -mmin -10 -printf '%T@ %p\n' 2>/dev/null \
            | sort -rn | awk '{print $2}')
 fi
 
+# Note: draft-abandonment for natural-language resets and obvious
+# off-topic intents (gmail connect, booking, etc.) is handled at the
+# top of this script (the "Draft-abandonment cleanup" block) BEFORE
+# any intent is classified. By the time we get here, ACTIVE_DRAFT is
+# only set if the message looks like genuine engagement with the draft
+# (e.g. "yes", "no", "tweak the wording", or an answer to a question).
+#
 # If we found an active draft, ANY non-slash-command message from the
 # user is the next answer. Slash commands (/teach, /refine, /cancel)
 # still take precedence below.

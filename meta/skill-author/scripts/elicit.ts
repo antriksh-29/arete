@@ -549,16 +549,36 @@ function parseConfirmation(text: string): ConfirmAnswer {
 function handleConfirmation(draft: Draft, message: string): never {
   const c = parseConfirmation(message);
   if (c === "ambiguous") {
+    // Bug N fix (2026-05-26): track consecutive ambiguous responses and
+    // auto-drop the draft after 2. Previously this state was a permanent
+    // trap — user types anything off-script (a new ask, a follow-up
+    // question, a typo) and gets bounced back with the same prompt
+    // forever. Auto-drop after 2 ambiguous turns frees the conversation.
+    const newCount = ((draft as any).ambiguous_count ?? 0) + 1;
+    if (newCount >= 2) {
+      try {
+        const p = draftPath(draft.slug);
+        if (existsSync(p)) require("fs").unlinkSync(p);
+      } catch { /* best-effort */ }
+      envelope({
+        ok: true,
+        phase: "done",
+        user_message: "ok, dropping that. what's up?",
+        draft_slug: draft.slug,
+        detail: { sub_phase: "ambiguous_expired" },
+      });
+    }
+    (draft as any).ambiguous_count = newCount;
+    saveDraft(draft);
     envelope({
       ok: true,
       phase: "elicit",
-      user_message: `couldn't tell — yes save it, or want to start over?`,
+      user_message: `save it, or drop it?`,
       draft_slug: draft.slug,
-      detail: { sub_phase: "confirmation_retry" },
+      detail: { sub_phase: "confirmation_retry", ambiguous_count: newCount },
     });
   }
   if (c === "cancel") {
-    // Delete the draft so the next /teach starts fresh.
     try {
       const p = draftPath(draft.slug);
       if (existsSync(p)) require("fs").unlinkSync(p);
@@ -566,14 +586,14 @@ function handleConfirmation(draft: Draft, message: string): never {
     envelope({
       ok: true,
       phase: "done",
-      user_message: "OK, threw the draft away. Say `/teach` whenever you want to make a new skill.",
+      user_message: "dropped it.",
       draft_slug: draft.slug,
       detail: { sub_phase: "cancelled" },
     });
   }
   if (c === "no") {
-    // v1: don't loop back to specific questions. Delete the draft and let
-    // the user restart with /teach. Cheaper than building a Q-picker UI.
+    // v1: don't loop back to specific questions. Delete the draft and
+    // free the conversation. Friend-voice: no slug, no /teach pointer.
     try {
       const p = draftPath(draft.slug);
       if (existsSync(p)) require("fs").unlinkSync(p);
@@ -581,7 +601,7 @@ function handleConfirmation(draft: Draft, message: string): never {
     envelope({
       ok: true,
       phase: "done",
-      user_message: "Got it — I threw that draft away. Say `/teach` to start over with the changes you want.",
+      user_message: "ok, dropped it. want to try again?",
       draft_slug: draft.slug,
       detail: { sub_phase: "rejected_restart" },
     });
