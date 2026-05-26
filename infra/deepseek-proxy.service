@@ -1,0 +1,21 @@
+[Unit]
+Description=DeepSeek API proxy with circuit breaker + moonshot-proxy failover
+# Start AFTER moonshot-proxy so the downstream fallback target is live by
+# the time this proxy starts accepting requests. PartOf so a gateway
+# restart cycles both proxies together.
+After=moonshot-proxy.service
+Before=openclaw-gateway.service
+PartOf=openclaw-gateway.service
+
+[Service]
+Type=simple
+ExecStart=%h/personal-assistant/infra/deepseek-proxy-launch.sh
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=60
+StartLimitBurst=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

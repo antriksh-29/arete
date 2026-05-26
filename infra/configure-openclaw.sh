@@ -18,42 +18,63 @@
 #       (was hitting it every few turns and silent-hanging — bug #1
 #       in docs/E2E-FINDINGS.md).
 #
-#   agents.defaults.model.primary           ← moonshot/kimi-k2.6
-#   agents.defaults.model.fallbacks         ← [haiku-4-5]
-#       NOTE: gpt-5.4-mini was REMOVED from the chain 2026-05-15 due to
-#       a session-format incompatibility: OpenClaw saves OpenAI responses
-#       that include `reasoning` items as message references, but fails
-#       to preserve the reasoning item itself in session state. The next
-#       turn then sends a dangling reference to OpenAI which rejects
-#       with `400 Item 'msg_X' was provided without its required
-#       'reasoning' item: 'rs_X'`. This poison-pills the session — once
-#       OpenAI serves a turn, every subsequent turn cascade-fails until
-#       the session resets. Cleanest fix: keep OpenAI out of the chain
-#       until OpenClaw fixes session-format normalization across
-#       provider switches. Both Kimi and Haiku use simple message
-#       format with no reasoning items, so no schema mismatch possible.
+#   agents.defaults.model.primary           ← deepseek/deepseek-v4-pro
+#   agents.defaults.model.fallbacks         ← [moonshot/kimi-k2.6,
+#                                              anthropic/claude-haiku-4-5,
+#                                              openai/gpt-5.4-mini]
+#       2026-05-26: promoted DeepSeek v4 pro to primary. Sonnet-tier
+#       benchmarks at ~5× lower cost vs Kimi K2.6 for the agent's heavy-
+#       context Telegram path. Kimi K2.6 demoted to fallback-1 — still
+#       in the chain because (a) it covers DeepSeek's reported peak-time
+#       503s and (b) it covers DeepSeek's known tool-call schema bug
+#       (DeepSeek-V3 issue #1244: intermittently emits tool_calls as
+#       plain text in `content`, non-deterministic). Both providers
+#       route through their own circuit-breaker proxies (deepseek-proxy
+#       at 127.0.0.1:18791, moonshot-proxy at 127.0.0.1:18790) for fast
+#       first-line failover that hides behind the native fallbacks chain.
+#
+#       NOTE on the historical gpt-5.4-mini session-format bug:
+#       OpenClaw saves OpenAI responses that include `reasoning` items
+#       as message references, but fails to preserve the reasoning item
+#       itself in session state — every OpenAI turn poison-pills the
+#       session with `400 Item 'msg_X' was provided without its required
+#       'reasoning' item: 'rs_X'`. To keep openai/gpt-5.4-mini as last-
+#       resort fallback without re-triggering this, the session-rotator
+#       service must rotate the session JSONL on every detected OpenAI
+#       turn (already deployed). If this bug recurs, the right move is
+#       to drop gpt-5.4-mini back out of the chain rather than
+#       re-litigate session-format.
+#
+#   agents.defaults.models["deepseek/deepseek-v4-pro"].params.thinking
+#                                           ← {type: "disabled"} (instant)
+#       Mirrors the Kimi instant-mode discipline that prevents 180s
+#       gateway timeouts. If you ever want to try thinking mode, set
+#       DEEPSEEK_THINKING=enabled on the deepseek-proxy systemd unit —
+#       no code change needed.
+#
 #   agents.defaults.models["moonshot/kimi-k2.6"].params.thinking
 #                                           ← {type: "disabled"} (instant)
 #
 #   Per-agent model pins (signal-detector, feedback-learner) ←
-#                                           ← moonshot/kimi-k2.6
-#       Originally pinned to openai/gpt-5.4-mini for cost. But OpenAI's
-#       responses-API messages include `reasoning` items that OpenClaw
-#       doesn't preserve in session state — every signal-detector turn
-#       on OpenAI poison-pills its session, surfacing as
-#       "⚠️ Something went wrong" to the user (signal-detector runs on
-#       every Telegram message via RULE 0). Pinning to Kimi keeps cost
-#       low (~same $/token as gpt-5.4-mini), eliminates the schema
-#       issue, and inherits instant-mode discipline from
-#       agents.defaults.models.
-#       Kimi K2.6 as primary with cross-provider fallback chain.
-#       Instant mode is mandatory for the Telegram path — without it,
-#       Kimi runs default thinking-mode generations that blow the 180s
-#       request timeout (verified 2026-05-15 from gateway journal:
-#       every Kimi turn timed out and fell through to gpt-5.4-mini).
-#       Instant mode also prevents reasoning_content leaking into
-#       user-facing text (the original 2026-05-14 symptom).
-#       See docs/KIMI-INTEGRATION-FINDINGS.md for the resolution.
+#                                           ← deepseek/deepseek-v4-pro
+#       Per user instruction 2026-05-26: signal-detector and
+#       feedback-learner also route via DeepSeek. signal-detector runs
+#       on every Telegram turn (RULE 0); feedback-learner is a
+#       background analyser. A bare-string override has no fallback
+#       chain — if DeepSeek's tool-call schema bug surfaces here, revert
+#       these pins to moonshot/kimi-k2.6 first before touching the main
+#       chain.
+#
+#       REVERT (if DeepSeek's reliability profile turns out worse than
+#       expected): restore Kimi as primary by reverting this file or by
+#       changing the values below to:
+#         agents.defaults.model.primary    = "moonshot/kimi-k2.6"
+#         agents.defaults.model.fallbacks  = ["openai/gpt-5.4-mini",
+#                                             "anthropic/claude-haiku-4-5"]
+#         per-agent pins (signal-detector, feedback-learner)
+#                                          = "moonshot/kimi-k2.6"
+#       See identity/MODEL_ROUTING.md for the full revert recipe.
+#       See docs/KIMI-INTEGRATION-FINDINGS.md for prior Kimi cutover.
 #
 # Usage:
 #   bash infra/configure-openclaw.sh          # apply (default)
@@ -342,13 +363,19 @@ desired = list(desired) + [("messages.messagePrefix", message_prefix)]
 # Model routing knobs — paths contain "/" (model refs) and "." inside
 # keys so we must use list-form paths to bypass the dotted split.
 desired = desired + [
-    # LOCKED 2026-05-15 by user order: Kimi K2.6 is the primary model,
-    # gpt-5.4-mini and haiku are secondary. DO NOT CHANGE without
-    # explicit user instruction.
+    # 2026-05-26: DeepSeek v4 pro promoted to primary; Kimi K2.6 demoted
+    # to fallback-1. Revert recipe in the header comment block + in
+    # identity/MODEL_ROUTING.md.
     (["agents", "defaults", "model", "primary"],
-     "moonshot/kimi-k2.6"),
+     "deepseek/deepseek-v4-pro"),
     (["agents", "defaults", "model", "fallbacks"],
-     ["openai/gpt-5.4-mini", "anthropic/claude-haiku-4-5"]),
+     ["moonshot/kimi-k2.6", "anthropic/claude-haiku-4-5", "openai/gpt-5.4-mini"]),
+    # Instant mode for DeepSeek — mirrors Kimi discipline. The proxy ALSO
+    # injects this on every request as belt-and-braces; redundancy is fine
+    # (DeepSeek treats the second of two identical `thinking` fields as
+    # the effective one, and they're identical here).
+    (["agents", "defaults", "models", "deepseek/deepseek-v4-pro", "params", "thinking"],
+     {"type": "disabled"}),
     (["agents", "defaults", "models", "moonshot/kimi-k2.6", "params", "thinking"],
      {"type": "disabled"}),
     # 2026-05-25 REVERT: PR #145 set this to [] to block all message-tool
@@ -358,13 +385,15 @@ desired = desired + [
     # produced "⚠️ Agent couldn't generate a response" even when the
     # actual reply succeeded via say.sh. Proper fix via openclaw hooks
     # is the follow-up.
-    # NOTE: models.providers.moonshot.apiKey is NOT managed here.
+    # NOTE: models.providers.{moonshot,deepseek}.apiKey is NOT managed here.
     # OpenClaw does not interpolate ${VAR} in models.providers (only
     # SecretRef syntax in some contexts that we couldn't confirm),
-    # so the key must be stored inline. It lives in openclaw.json
-    # as plaintext (file is mode 600) and is set during initial
-    # provisioning. Don't add a knob for it — version-controlling
-    # the plaintext key would leak it.
+    # so the keys must be stored inline. They live in openclaw.json
+    # as plaintext (file is mode 600) and are set during initial
+    # provisioning. Don't add a knob for them — version-controlling
+    # the plaintext keys would leak them. DEEPSEEK_API_KEY belongs in
+    # the bot-cred vault (same as MOONSHOT_API_KEY) — deploy-vps.sh
+    # reads it from there when seeding openclaw.json.
 ]
 
 # Per-agent model overrides — applied after the path-based knobs.
@@ -372,15 +401,16 @@ desired = desired + [
 # in agents.list[] will have their .model field set. Missing agents
 # are reported but not added (defensive — don't invent agent rows).
 PER_AGENT_MODEL = {
-    # 2026-05-24: comment header above ALREADY said "Pinning to Kimi"
-    # since the OpenAI session-format regression was found — but the
-    # dict still said openai/gpt-5.4-mini. Every deploy ran this script
-    # and reverted live fixes back to gpt. Today: gpt's Codex quota was
-    # exhausted, the bare-string override has no fallback chain, every
-    # user turn died on the signal-detector lane.
-    # Comment + code now in sync.
-    "signal-detector": "moonshot/kimi-k2.6",
-    "feedback-learner": "moonshot/kimi-k2.6",
+    # 2026-05-26: moved to DeepSeek primary per user instruction.
+    # WARNING: a bare-string override has no fallback chain — if
+    # DeepSeek's intermittent tool-call schema bug (DeepSeek-V3#1244)
+    # surfaces on the signal-detector lane, every Telegram turn dies.
+    # Watch the journal for the first 24h after deploy; revert to
+    # "moonshot/kimi-k2.6" at the first sign of trouble. signal-detector
+    # is on the user's critical path (RULE 0 of AGENTS.md), so this is
+    # the highest-risk pin.
+    "signal-detector": "deepseek/deepseek-v4-pro",
+    "feedback-learner": "deepseek/deepseek-v4-pro",
 }
 
 with open(config_path) as f:

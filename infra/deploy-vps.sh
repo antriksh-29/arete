@@ -717,6 +717,63 @@ point_moonshot_to_proxy() {
 }
 step "point Moonshot baseUrl at proxy" point_moonshot_to_proxy
 
+# ── 4b'. install deepseek-proxy systemd unit ────────────────────
+# Layered failover proxy: deepseek → moonshot-proxy (which already
+# handles kimi → openai). Circuit breaker prevents retry-storms when
+# DeepSeek's reported peak-time 503s hit. Default thinking mode is
+# disabled (instant) — matches Kimi discipline that prevents 180s
+# gateway timeouts. Flip via `systemctl --user edit deepseek-proxy`
+# and add Environment=DEEPSEEK_THINKING=enabled to A/B test.
+install_deepseek_proxy() {
+  local unit_src="$HOME/personal-assistant/infra/deepseek-proxy.service"
+  local unit_dst="$HOME/.config/systemd/user/deepseek-proxy.service"
+  if [ ! -f "$unit_src" ]; then
+    echo "  ${yellow}!${rst} deepseek-proxy.service not in repo — skipping"
+    return 0
+  fi
+  mkdir -p "$(dirname "$unit_dst")"
+  if [ ! -f "$unit_dst" ] || ! cmp -s "$unit_src" "$unit_dst"; then
+    cp "$unit_src" "$unit_dst"
+    systemctl --user daemon-reload
+    echo "  installed/updated deepseek-proxy.service"
+  fi
+  if ! systemctl --user is-enabled deepseek-proxy.service >/dev/null 2>&1; then
+    systemctl --user enable deepseek-proxy.service
+  fi
+  systemctl --user restart deepseek-proxy.service 2>/dev/null || true
+  sleep 2
+  if systemctl --user is-active deepseek-proxy.service >/dev/null 2>&1; then
+    echo "  ${green}✓${rst} deepseek-proxy active on 127.0.0.1:18791"
+  else
+    echo "  ${yellow}!${rst} deepseek-proxy not active — check journalctl --user -u deepseek-proxy"
+    return 0
+  fi
+}
+step "install deepseek-proxy systemd unit" install_deepseek_proxy
+
+# ── 4b''. point DeepSeek baseUrl at the proxy ───────────────────
+# Same pattern as Moonshot: OpenClaw reaches DeepSeek via
+# models.providers.deepseek.baseUrl. Swap to the local proxy so all
+# DeepSeek calls route through the circuit-breaker + failover layer.
+point_deepseek_to_proxy() {
+  local cfg="$HOME/.openclaw/openclaw.json"
+  if [ ! -f "$cfg" ]; then
+    echo "  ${yellow}!${rst} openclaw.json missing — skipping deepseek proxy wiring"
+    return 0
+  fi
+  local current
+  current=$(jq -r '.models.providers.deepseek.baseUrl // ""' "$cfg" 2>/dev/null)
+  local target="http://127.0.0.1:18791/v1"
+  if [ "$current" = "$target" ]; then
+    echo "  DeepSeek baseUrl already → $target"
+    return 0
+  fi
+  echo "  rewriting DeepSeek baseUrl: $current → $target"
+  jq ".models.providers.deepseek.baseUrl = \"$target\"" "$cfg" > "$cfg.new" && \
+    mv "$cfg.new" "$cfg"
+}
+step "point DeepSeek baseUrl at proxy" point_deepseek_to_proxy
+
 # ── 4c. install skill-write-audit daemon ───────────────────────
 # Structural enforcement for the skill-author pipeline. Watches the
 # skill directories (repo + workspace) and reverts any SKILL.md /
