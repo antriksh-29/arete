@@ -40,6 +40,38 @@ LOG="$LOG_DIR/$(date +%Y-%m-%d).log"
 export PATH="/home/botuser/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 if [ "$SKIP_DETECTOR" -eq 0 ]; then
+  # Bug I fix (2026-05-26): retire the signal-detector session if it has
+  # grown past RETIRE_AT_BYTES. The signal-detector is conceptually
+  # stateless — it writes findings to brain pages, not to its own
+  # session. Letting the session grow unbounded breaks compaction past
+  # Kimi K2.6's 256k context (probe v9 found the session at 2.95MB /
+  # ~738k tokens, broken for 20+ hours, burning ~$3/day in failed
+  # compaction attempts).
+  #
+  # Retire at ~50k tokens (200KB at ~4 bytes/token). Brain captures
+  # from prior sessions live in the brain itself; nothing is lost.
+  # Openclaw recreates the session jsonl on next `openclaw agent`
+  # invocation, so the rename is the entire fix.
+  RETIRE_AT_BYTES="${SD_RETIRE_AT_BYTES:-200000}"
+  SD_SESSIONS="$HOME/.openclaw/agents/signal-detector/sessions"
+  if [ -d "$SD_SESSIONS" ]; then
+    for s in "$SD_SESSIONS"/*.jsonl; do
+      [ -f "$s" ] || continue
+      # Skip already-retired and trajectory files
+      case "$s" in *.reset.*|*.trajectory.*) continue;; esac
+      size=$(stat -c %s "$s" 2>/dev/null || stat -f %z "$s" 2>/dev/null || echo 0)
+      if [ "$size" -gt "$RETIRE_AT_BYTES" ]; then
+        rts=$(date -u +%Y%m%dT%H%M%S)
+        mv "$s" "${s}.reset.${rts}.bak" 2>/dev/null || true
+        # Also retire the matching trajectory file if it exists, so the
+        # audit log doesn't dangle pointing at a non-existent session.
+        traj="${s%.jsonl}.trajectory.jsonl"
+        [ -f "$traj" ] && mv "$traj" "${traj}.reset.${rts}.bak" 2>/dev/null || true
+        echo "[$TS] retired oversized signal-detector session $(basename "$s") (${size}B > ${RETIRE_AT_BYTES}B)" >> "$LOG"
+      fi
+    done
+  fi
+
   echo "[$TS] spawning capture for: ${USER_MSG:0:120}" >> "$LOG"
   # Background detached run — main agent's exec returns immediately.
   # nohup + & + redirect = fire-and-forget.
