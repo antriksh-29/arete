@@ -68,3 +68,8 @@ the bypass can't recur.
 
 - **Change requested:** change the timing of the paul graham insights to 5pm daily
 - **New behavior:** moved your daily Paul Graham insights to 5pm
+
+## Refinement turn (2026-05-26, commit `f0f8ecf`)
+
+- **Change requested:** please change the paul graham insights timing to 6:30 daily
+- **New behavior:** moved your daily Paul Graham insights to 6:30pm
