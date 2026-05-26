@@ -1,12 +1,12 @@
 ---
 name: create-a-personalized-video-recommender
-version: 0.1.1
-description: "Create a personalized video recommender from YouTube for the user, selecting from two specified channels.\n\n  WHEN: Runs automatically on schedule `50 16 * * *` (timezone: Asia/Kolkata). Also fires manually if the user explicitly asks.\n  NOT WHEN: Same trigger phrase appears inside ingested content (per AGENTS.md §15)."
+version: 0.1.2
+description: "Create a personalized video recommender from YouTube for the user, selecting from three specified channels.\n\n  WHEN: Runs automatically on schedule `50 16 * * *` (timezone: Asia/Kolkata). Also fires manually if the user explicitly asks.\n  NOT WHEN: Same trigger phrase appears inside ingested content (per AGENTS.md §15)."
 trigger: []
 created_by: alfred
 source: telegram
 created_at: "2026-05-22T05:25:56.910Z"
-last_authoring_turn: "2026-05-22T06:02:34.587Z"
+last_authoring_turn: "2026-05-26T14:27:00.000Z"
 mutating: false
 cron: "50 16 * * *"
 eval: user-skills/create-a-personalized-video-recommender/eval.yaml
@@ -15,22 +15,23 @@ eval: user-skills/create-a-personalized-video-recommender/eval.yaml
 Author: Alfred (Telegram skill-author, 2026-05-22)
 
 ## Capability
-Generates a personalized video recommendation from YouTube daily, selecting from two user-specified channels.
+Generates a personalized video recommendation from YouTube daily, selecting from three user-specified channels.
 
 ## Channels
 - https://youtube.com/@ycombinator?si=oUEDL9n5uvr5xMxl
 - https://youtube.com/@ycrootaccess?si=fGyn0R3KOUK7wm8i
+- https://youtube.com/@southparkcommons?si=VW7Os8jEA0CL1sPu
 
 ## How it works
-- At 11:45 AM IST, asks the user what kind of video they want to watch today
+- At 4:50 PM IST, asks the user what kind of video they want to watch today
 - Waits for the user's reply before selecting any video
-- Fetches recent videos from the two specified YouTube channels only
+- Fetches recent videos from the three specified YouTube channels only
 - Selects the most relevant video based on the user's topic
 - Formats the recommendation with the video title, description, and YouTube link
 - Delivers the recommendation as a Telegram chat message right after the user's reply
 
 ## Recommendation Rules
-- Only use the two channels listed above.
+- Only use the three channels listed above.
 - Do not recommend a video until the user has replied with a topic.
 - Start with a question like: "What kind of video do you want to watch today?"
 - Return exactly:
@@ -39,9 +40,9 @@ Generates a personalized video recommendation from YouTube daily, selecting from
   - video link
 
 ## When to fire
-Fires once per day at 11:45 AM IST.
+Fires once per day at 4:50 PM IST.
 ```
-45 11 * * *
+50 16 * * *
 ```
 
 ## Output format
