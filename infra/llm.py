@@ -1,20 +1,42 @@
 #!/usr/bin/env python3
 # Shared LLM caller with cross-provider failover.
 #
-# Policy (per identity/MODEL_ROUTING.md):
-#   tier="mini"   → openai/gpt-5.4-mini   → fallback: anthropic/claude-haiku-4-5
-#   tier="full"   → openai/gpt-5.4         → fallback: anthropic/claude-sonnet-4-6
-#   tier="nano"   → openai/gpt-5.4-nano    → fallback: anthropic/claude-haiku-4-5
-#   tier="vision" → openai/gpt-5.4-mini (vision) → fallback: openai/gpt-5.4 (vision)
+# Policy (per identity/MODEL_ROUTING.md — 2026-05-26 DeepSeek experiment):
+#   tier="mini"   → deepseek/deepseek-v4-pro
+#                   → moonshot/kimi-k2.6
+#                   → anthropic/claude-haiku-4-5
+#                   → openai/gpt-5.4-mini
+#   tier="full"   → deepseek/deepseek-v4-pro
+#                   → moonshot/kimi-k2.6
+#                   → anthropic/claude-sonnet-4-6
+#                   → openai/gpt-5.4
+#   tier="nano"   → openai/gpt-5.4-nano
+#                   → anthropic/claude-haiku-4-5
+#     (nano is reserved/unused — kept on a cheap chain that doesn't
+#      involve DeepSeek so the experiment surface is contained)
+#   tier="vision" → moonshot/kimi-k2.6
+#                   → anthropic/claude-haiku-4-5
+#                   → openai/gpt-5.4-mini
+#     (DeepSeek v4 pro is TEXT-ONLY — explicitly excluded from this tier)
 #
 # Failover triggers on:
-#   - HTTP 401/403/429 (auth, billing, rate-limit)
+#   - HTTP 401/402/403/429 (auth, billing, rate-limit)
 #   - HTTP 5xx (provider outage)
 #   - Network error
+# Anything else surfaces as a hard failure on that step (still falls
+# through to the next link).
 #
-# Anthropic's Messages API and OpenAI's Responses API have different shapes;
-# this module hides the difference. Callers pass system_prompt + user_msg
-# and get back text.
+# Anthropic's Messages API, OpenAI's Responses API, DeepSeek's OpenAI-
+# compatible chat API, and Moonshot's OpenAI-compatible chat API all
+# have different shapes; this module hides the difference. Callers pass
+# system_prompt + user_msg and get back text.
+#
+# REVERT PATH: to back out the DeepSeek experiment and restore the
+# 2026-05-15 chain, replace _CHAINS below with:
+#   "mini":   [("openai", "gpt-5.4-mini"),   ("anthropic", "claude-haiku-4-5")],
+#   "full":   [("openai", "gpt-5.4"),         ("anthropic", "claude-sonnet-4-6")],
+#   "nano":   [("openai", "gpt-5.4-nano"),    ("anthropic", "claude-haiku-4-5")],
+#   "vision": [("openai", "gpt-5.4-mini"),    ("openai",    "gpt-5.4")],
 
 import json
 import os
@@ -26,11 +48,32 @@ import urllib.request
 os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
 
 
-_PROVIDER_MAP = {
-    "mini":   ("openai", "gpt-5.4-mini",   "anthropic", "claude-haiku-4-5"),
-    "full":   ("openai", "gpt-5.4",         "anthropic", "claude-sonnet-4-6"),
-    "nano":   ("openai", "gpt-5.4-nano",    "anthropic", "claude-haiku-4-5"),
-    "vision": ("openai", "gpt-5.4-mini",    "openai",    "gpt-5.4"),
+# Chain definition: each tier maps to an ordered list of (provider, model)
+# tuples. The runtime walks the chain top-to-bottom, falling over on the
+# triggers below. First successful link wins; if all links fail, raises.
+_CHAINS = {
+    "mini": [
+        ("deepseek",  "deepseek-v4-pro"),
+        ("moonshot",  "kimi-k2.6"),
+        ("anthropic", "claude-haiku-4-5"),
+        ("openai",    "gpt-5.4-mini"),
+    ],
+    "full": [
+        ("deepseek",  "deepseek-v4-pro"),
+        ("moonshot",  "kimi-k2.6"),
+        ("anthropic", "claude-sonnet-4-6"),
+        ("openai",    "gpt-5.4"),
+    ],
+    "nano": [
+        ("openai",    "gpt-5.4-nano"),
+        ("anthropic", "claude-haiku-4-5"),
+    ],
+    "vision": [
+        # DeepSeek v4 pro is text-only — must NOT appear here.
+        ("moonshot",  "kimi-k2.6"),
+        ("anthropic", "claude-haiku-4-5"),
+        ("openai",    "gpt-5.4-mini"),
+    ],
 }
 
 _FALLBACK_HTTP = {401, 402, 403, 429, 500, 502, 503, 504}
@@ -126,48 +169,147 @@ def _call_anthropic(model, system, user, max_tokens, image_url=None, image_base6
     raise RuntimeError(f"Anthropic returned no text block: {json.dumps(resp)[:300]}")
 
 
+def _call_openai_compat_chat(model, system, user, max_tokens, base_url, api_key_var,
+                             extra_payload=None, image_url=None, image_base64=None,
+                             reject_images=False):
+    """Generic OpenAI-chat-compatible caller — used for DeepSeek and Moonshot.
+    Both providers expose /v1/chat/completions with the standard messages-array
+    shape. `extra_payload` lets the caller inject provider-specific fields
+    (e.g. DeepSeek's `thinking: {type: disabled}`)."""
+    key = _vault_get(api_key_var)
+    if not key:
+        raise RuntimeError(f"{api_key_var} missing")
+
+    if image_url or image_base64:
+        if reject_images:
+            raise RuntimeError(f"{model} is text-only; vision tier must not route here")
+        # OpenAI chat-completions vision shape (Moonshot accepts this)
+        content = []
+        if user:
+            content.append({"type": "text", "text": user})
+        if image_url:
+            content.append({"type": "image_url", "image_url": {"url": image_url}})
+        elif image_base64:
+            content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}})
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": content}]
+    else:
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+    payload = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+    }
+    if extra_payload:
+        payload.update(extra_payload)
+
+    req = urllib.request.Request(
+        f"{base_url.rstrip('/')}/v1/chat/completions",
+        data=json.dumps(payload).encode(),
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=180) as r:
+        resp = json.loads(r.read())
+    for choice in resp.get("choices", []):
+        msg = choice.get("message") or {}
+        text = msg.get("content")
+        if text:
+            return text.strip()
+    raise RuntimeError(f"{base_url} returned no message content: {json.dumps(resp)[:300]}")
+
+
+def _call_deepseek(model, system, user, max_tokens, image_url=None, image_base64=None):
+    # Instant mode by default — matches Kimi discipline that prevents 180s
+    # gateway timeouts. To experiment with thinking mode from Python, set
+    # the env var DEEPSEEK_THINKING=enabled before running.
+    thinking_mode = os.environ.get("DEEPSEEK_THINKING", "disabled").lower()
+    extra = {"thinking": {"type": "enabled" if thinking_mode == "enabled" else "disabled"}}
+    if thinking_mode == "enabled":
+        effort = os.environ.get("DEEPSEEK_REASONING_EFFORT", "")
+        if effort:
+            extra["reasoning_effort"] = effort
+    return _call_openai_compat_chat(
+        model, system, user, max_tokens,
+        base_url="https://api.deepseek.com",
+        api_key_var="DEEPSEEK_API_KEY",
+        extra_payload=extra,
+        image_url=image_url, image_base64=image_base64,
+        reject_images=True,  # text-only — defense in depth
+    )
+
+
+def _call_moonshot(model, system, user, max_tokens, image_url=None, image_base64=None):
+    extra = {"thinking": {"type": "disabled"}}
+    return _call_openai_compat_chat(
+        model, system, user, max_tokens,
+        base_url="https://api.moonshot.ai",
+        api_key_var="MOONSHOT_API_KEY",
+        extra_payload=extra,
+        image_url=image_url, image_base64=image_base64,
+    )
+
+
+def _dispatch(provider, model, system, user, max_tokens, tools, image_url, image_base64):
+    if provider == "openai":
+        return _call_openai(model, system, user, max_tokens,
+                            tools=tools, image_url=image_url, image_base64=image_base64)
+    if provider == "anthropic":
+        return _call_anthropic(model, system, user, max_tokens,
+                               image_url=image_url, image_base64=image_base64)
+    if provider == "deepseek":
+        return _call_deepseek(model, system, user, max_tokens,
+                              image_url=image_url, image_base64=image_base64)
+    if provider == "moonshot":
+        return _call_moonshot(model, system, user, max_tokens,
+                              image_url=image_url, image_base64=image_base64)
+    raise ValueError(f"unknown provider: {provider}")
+
+
 def call(system_prompt, user_msg, tier="mini", max_tokens=4000, tools=None, image_url=None, image_base64=None):
-    """Call an LLM with primary provider + automatic fallback.
+    """Call an LLM, walking the tier's chain top-to-bottom on failover.
 
-    Returns (text, provider_used) where provider_used is "openai" or "anthropic".
-    Raises if BOTH providers fail.
+    Returns (text, provider_used). Raises RuntimeError if every link fails.
     """
-    if tier not in _PROVIDER_MAP:
+    if tier not in _CHAINS:
         raise ValueError(f"unknown tier: {tier}")
-    primary_provider, primary_model, fallback_provider, fallback_model = _PROVIDER_MAP[tier]
+    chain = _CHAINS[tier]
 
-    if tools and primary_provider != "openai":
-        _log(f"tools requested but primary is {primary_provider}; skipping tools on fallback")
+    if tools:
+        # Tools currently only flow into the OpenAI Responses API call. If
+        # we fall over to a non-OpenAI link, the request loses tools. That
+        # matches prior behavior (the previous 2-tuple impl also stripped
+        # tools on fallback). Loud log so callers can see it happen.
+        non_openai = [p for p, _ in chain if p != "openai"]
+        if non_openai:
+            _log(f"tools requested; non-openai links {non_openai} will receive request without tools")
 
-    try:
-        if primary_provider == "openai":
-            text = _call_openai(primary_model, system_prompt, user_msg, max_tokens,
-                                tools=tools, image_url=image_url, image_base64=image_base64)
-        else:
-            text = _call_anthropic(primary_model, system_prompt, user_msg, max_tokens,
-                                    image_url=image_url, image_base64=image_base64)
-        return text, primary_provider
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")[:500]
-        _log(f"primary {primary_provider}/{primary_model} failed HTTP {e.code}: {body}")
-        if e.code not in _FALLBACK_HTTP:
-            raise
-    except Exception as e:
-        _log(f"primary {primary_provider}/{primary_model} failed: {e}")
-
-    _log(f"falling back to {fallback_provider}/{fallback_model}")
-    try:
-        if fallback_provider == "openai":
-            tools_for_fallback = tools if primary_provider == "openai" else None
-            text = _call_openai(fallback_model, system_prompt, user_msg, max_tokens,
-                                tools=tools_for_fallback, image_url=image_url, image_base64=image_base64)
-        else:
-            text = _call_anthropic(fallback_model, system_prompt, user_msg, max_tokens,
-                                    image_url=image_url, image_base64=image_base64)
-        return text, fallback_provider
-    except Exception as e:
-        _log(f"fallback {fallback_provider}/{fallback_model} also failed: {e}")
-        raise RuntimeError(f"both primary and fallback failed: {e}")
+    last_err = None
+    for i, (provider, model) in enumerate(chain):
+        # Strip tools when the link isn't openai
+        effective_tools = tools if provider == "openai" else None
+        try:
+            text = _dispatch(provider, model, system_prompt, user_msg, max_tokens,
+                             effective_tools, image_url, image_base64)
+            if i > 0:
+                _log(f"chain[{i}] {provider}/{model} answered after {i} fallback(s)")
+            return text, provider
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")[:500]
+            _log(f"chain[{i}] {provider}/{model} HTTP {e.code}: {body}")
+            last_err = e
+            if e.code not in _FALLBACK_HTTP:
+                # Non-failover code: still try the next link (the user paid
+                # to set up a chain; surface the error only if everything
+                # fails). This is more aggressive than the old 2-tuple impl
+                # which raised immediately on non-failover codes from the
+                # primary. Justified: with a 4-link chain, more aggressive
+                # failover is closer to user intent. If this causes noise,
+                # tighten back to `raise` here.
+                continue
+        except Exception as e:
+            _log(f"chain[{i}] {provider}/{model} failed: {e}")
+            last_err = e
+    raise RuntimeError(f"all {len(chain)} links in tier={tier} failed; last error: {last_err}")
 
 
 if __name__ == "__main__":
