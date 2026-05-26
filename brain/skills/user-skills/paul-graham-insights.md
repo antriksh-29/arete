@@ -63,3 +63,8 @@ the bypass can't recur.
 
 - **Change requested:** can you please make paul-graham-insights also include the source URL for each insight going forward
 - **New behavior:** Include the source URL for each Paul Graham insight in the output
+
+## Refinement turn (2026-05-26, commit `f4d44f2`)
+
+- **Change requested:** change the timing of the paul graham insights to 5pm daily
+- **New behavior:** moved your daily Paul Graham insights to 5pm
