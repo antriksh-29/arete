@@ -103,15 +103,17 @@ for i in 1 2 3 4 5; do
 done
 
 # ── 3. Clone into volume ─────────────────────────────────────────────────────
+# CRITICAL: The container's agent user is UID 1001 (set in Dockerfile). The volume
+# must be owned by 1001:1001 — not host arete (UID 1000) — or every git op inside
+# the container fails with "fatal: detected dubious ownership".
 log "cloning into ${VOLUME_PATH}"
-install -d -m 0755 -o arete -g arete "$VOLUME_PATH"
+install -d -m 0755 "$VOLUME_PATH"
 AUTH_URL="https://x-access-token:${GITHUB_PAT}@github.com/${GHCR_USER}/${REPO_NAME}.git"
 if [ ! -d "${VOLUME_PATH}/.git" ]; then
-  sudo -u arete git clone "$AUTH_URL" "$VOLUME_PATH"
+  git clone "$AUTH_URL" "$VOLUME_PATH"
 else
   log "volume already has .git — skipping clone"
 fi
-chown -R arete:arete "$VOLUME_PATH"
 
 # ── 4. Render templates with tenant data ─────────────────────────────────────
 log "rendering meta.json + USER.md"
@@ -133,6 +135,26 @@ META
 if [ -f "${VOLUME_PATH}/identity/USER.md" ]; then
   perl -i -pe "s|_to be set during onboarding_|${NAME}|" "${VOLUME_PATH}/identity/USER.md"
 fi
+
+# Commit + push the rendered files so they're TRACKED in the remote. Otherwise the
+# entrypoint's `git pull` sees an untracked meta.json colliding with the template's
+# tracked meta.json and aborts the merge.
+log "committing rendered files"
+git -c safe.directory="${VOLUME_PATH}" -C "${VOLUME_PATH}" add meta.json identity/USER.md 2>/dev/null || true
+if ! git -c safe.directory="${VOLUME_PATH}" -C "${VOLUME_PATH}" diff --cached --quiet; then
+  git -c safe.directory="${VOLUME_PATH}" -C "${VOLUME_PATH}" \
+      -c user.email="provisioner@arete.local" \
+      -c user.name="Arete Provisioner" \
+      commit -m "provision: render tenant ${TENANT_UUID} meta + identity" >/dev/null
+  git -c safe.directory="${VOLUME_PATH}" -C "${VOLUME_PATH}" push origin HEAD:main 2>&1 \
+    || warn "push failed; entrypoint will retry on container start"
+else
+  log "nothing new to commit"
+fi
+
+# Final chown: every git op above ran as root, leaving root-owned files. The
+# container's agent runs as UID 1001 and must own the entire tree.
+chown -R 1001:1001 "$VOLUME_PATH"
 
 # ── 5. INSERT into Postgres ─────────────────────────────────────────────────
 log "inserting tenants row"

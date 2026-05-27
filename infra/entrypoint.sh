@@ -12,6 +12,10 @@
 
 set -euo pipefail
 
+# Belt-and-braces: even though the image sets safe.directory='*' system-wide,
+# add it per-user in case /etc/gitconfig isn't picked up. Idempotent.
+git config --global --add safe.directory '*' || true
+
 # --- 1. Validate required env ---
 : "${TENANT_ID:?TENANT_ID is required}"
 : "${TENANT_REPO_URL:?TENANT_REPO_URL is required (e.g. https://github.com/antriksh-29/arete-acme-assistant.git)}"
@@ -31,7 +35,17 @@ AUTH_REPO_URL="$(echo "${TENANT_REPO_URL}" | sed "s|https://|https://x-access-to
 if [ -d "${STATE_HOME}/.git" ]; then
   echo "[arete] state repo present — pulling latest"
   git -C "${STATE_HOME}" remote set-url origin "${AUTH_REPO_URL}"
-  git -C "${STATE_HOME}" pull --rebase --autostash
+  # --autostash only handles TRACKED modifications. The provisioner can leave
+  # untracked files (e.g. a freshly-rendered meta.json that the template also
+  # ships), and those collide with the merge. Stash --include-untracked first,
+  # then pop after the pull so the working tree is preserved.
+  if [ -n "$(git -C "${STATE_HOME}" status --porcelain)" ]; then
+    git -C "${STATE_HOME}" stash push --include-untracked -m "entrypoint-autostash-$(date +%s)" || true
+    git -C "${STATE_HOME}" pull --rebase || true
+    git -C "${STATE_HOME}" stash pop || true
+  else
+    git -C "${STATE_HOME}" pull --rebase || true
+  fi
 else
   echo "[arete] cloning tenant state repo"
   # tmpdir + move so we don't fight an existing volume mount
