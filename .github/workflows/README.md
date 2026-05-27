@@ -1,92 +1,32 @@
-# GitHub Actions — auto-deploy to VPS
+# Arete CI workflows
 
-`deploy.yml` runs on every push to `main` and SSHes into the bot VPS to
-run `git pull && bash infra/deploy-vps.sh`. The pre-push hook
-(`infra/install-pre-push-hook.sh`) gates the *push*; this workflow
-gates the *deploy*.
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `build-image.yml` | `push` to `main`, tagged releases, PRs touching image inputs | Builds `infra/Dockerfile`, pushes to `ghcr.io/antriksh-29/arete`. PR builds verify-only (no push). |
 
-## One-time setup
+## GHCR authentication
 
-Add these four GitHub repository secrets under Settings → Secrets and
-variables → Actions → Repository secrets:
+The workflow uses the built-in `GITHUB_TOKEN`. No additional secrets needed. The first successful push will create the package at `ghcr.io/antriksh-29/arete`. **After the first push**, go to the package page on GitHub and set the visibility to **Private** (default is Private but worth confirming).
 
-| Secret name | Value |
-|---|---|
-| `VPS_HOST` | `{{platform.domain}}` |
-| `VPS_USER` | `agent` |
-| `VPS_SSH_KEY` | A *new* dedicated deploy SSH key's **private** half. **Do NOT reuse your personal key.** Generate with `ssh-keygen -t ed25519 -f ~/.ssh/id_personal_assistant_deploy -N "" -C "github-actions deploy"`. Add the **public** half (`~/.ssh/id_personal_assistant_deploy.pub`) to `~/.ssh/authorized_keys` on the VPS as `agent`. |
-| `VPS_KNOWN_HOSTS` | Output of `ssh-keyscan -t ed25519,rsa {{platform.domain}}` run from your Mac. Pin the host key so MITM is impossible from a hijacked GitHub runner. |
+## Image tags
 
-### Generating the deploy key (one-time)
+- `latest` — most recent `main`
+- `<short-sha>` — pinned to a specific commit (use this in prod)
+- `vMAJOR.MINOR.PATCH` — released versions (created when you push a `v*` git tag)
 
-On your Mac:
+## Local build (no CI required)
 
 ```bash
-ssh-keygen -t ed25519 \
-  -f ~/.ssh/id_personal_assistant_deploy \
-  -N "" \
-  -C "github-actions personal-assistant deploy"
-
-# Show the public key so you can paste it onto the VPS:
-cat ~/.ssh/id_personal_assistant_deploy.pub
-
-# Show the private key — copy this into the VPS_SSH_KEY secret:
-cat ~/.ssh/id_personal_assistant_deploy
+docker compose build
+# or directly:
+docker build -f infra/Dockerfile -t arete:local .
 ```
 
-On the VPS (one-time, while still SSHed in as `agent` from your Mac):
+## Cache
 
-```bash
-echo '<paste public key here>' >> ~/.ssh/authorized_keys
-chmod 600 ~/.ssh/authorized_keys
-```
+GitHub Actions cache (`type=gha`) is used to speed up subsequent builds. The `apt-get install` layer + Bun/uv install layer are the slowest; they get cached between runs.
 
-For the known-hosts pin (run on your Mac):
+## Future workflows (not yet implemented)
 
-```bash
-ssh-keyscan -t ed25519,rsa {{platform.domain}}
-# Copy the output verbatim into the VPS_KNOWN_HOSTS secret.
-```
-
-## What the workflow does
-
-1. **Single-flight concurrency** — a new push to `main` cancels any older
-   deploy still in flight, so two pushes don't race.
-2. **Set up SSH** — writes the deploy key + known-hosts pin into the
-   runner; configures the `bot` host alias.
-3. **`ssh bot 'cd ~/personal-assistant && git fetch && git reset --hard
-   origin/main && bash infra/deploy-vps.sh'`** — the real deploy.
-   Hard reset (not pull) so a divergent local state on the VPS can't
-   block the deploy.
-4. **Post-deploy smoke probe** — confirms `openclaw-gateway.service`
-   is `active` after the deploy. If it crashed, the workflow fails
-   with a `::error::` annotation.
-
-## What it does NOT do
-
-- **No rollback.** If the deploy lands but the bot misbehaves, you SSH
-  in and `git reset --hard <previous-sha>` manually.
-- **No DB migrations.** If we ever add stateful migrations, that's a
-  separate workflow step.
-- **No Slack/Telegram notify on success.** Only failures notify (via
-  GitHub's built-in workflow failure email).
-
-## Manual deploy fallback
-
-If GitHub Actions is down (rare) or you want to test a deploy script
-change without merging it first:
-
-```bash
-ssh bot
-cd ~/personal-assistant
-git fetch
-git checkout <branch>
-bash infra/deploy-vps.sh
-```
-
-Or from your Mac with one command:
-
-```bash
-ssh bot 'cd ~/personal-assistant && git pull && bash infra/deploy-vps.sh'
-```
-// triggered by GHA deploy verification — 2026-05-10
+- `release.yml` — triggers fleet rolling-update on the host when a new image tag ships (Phase G)
+- `e2e.yml` — spins up a test tenant in CI and runs end-to-end webhook tests (Phase C)

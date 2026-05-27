@@ -1,0 +1,100 @@
+name: Build & push container image
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infra/Dockerfile'
+      - 'infra/entrypoint.sh'
+      - 'infra/syncer.sh'
+      - 'eval/run-injection-fixture.py'
+      - 'eval/injection-fixture.yaml'
+      - 'skills/**'
+      - 'identity/**'
+      - 'tools/**'
+      - 'meta/**'
+      - 'openclaw/**'
+      - '.dockerignore'
+
+# One build at a time per ref. New pushes cancel older in-flight builds.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}   # antriksh-29/arete
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write    # required to push to GHCR
+      id-token: write    # for attestation in the future
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Boot-gate sanity: offline schema-check the injection fixture BEFORE the
+      # heavy image build. If the fixture is malformed, fail fast.
+      - name: Boot-gate offline sanity
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 eval/run-injection-fixture.py --fixture eval/injection-fixture.yaml --offline
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags + labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            # main → both 'latest' and the short SHA
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=,format=short,enable={{is_default_branch}}
+            # tagged releases (v1.2.3) → semver tags
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            # PRs → ephemeral pr-N tag (only pushed when authorized, currently not)
+            type=ref,event=pr
+
+      - name: Build (and push if not a PR)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: Summary
+        run: |
+          {
+            echo "## Image build"
+            echo ""
+            echo "**Tags:**"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo ""
+              echo "_Not pushed (PR build — verify-only)._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
