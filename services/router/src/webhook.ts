@@ -103,6 +103,13 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
       return;
     }
 
+    // Touch last_active_at IMMEDIATELY so the hibernation tick doesn't decide
+    // this tenant is idle and kill the container while an agent turn is still
+    // in flight. (Previously we only touched at the end of the handler — for
+    // a 30-90s agent turn, the 60s hibernation tick would fire mid-turn and
+    // docker-stop the container, returning silent failure to Telegram.)
+    await touchLastActive(tenant.id);
+
     // Ensure container is up + healthy
     await ensureRunning(tenant);
     if (tenant.status === "hibernated") {
@@ -118,13 +125,22 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Run one agent turn inside the container and relay the reply via Telegram.
+    log.info(
+      { tenant: tenant.id, telegram_user_id: from.id, msg_len: messageText.length },
+      "running agent turn",
+    );
     const reply = await runAgentTurn(tenant, messageText, from.id);
     if (reply && reply.trim()) {
+      log.info(
+        { tenant: tenant.id, reply_len: reply.length },
+        "sending reply to telegram",
+      );
       await sendPlainReply(chatId, reply);
     } else {
       log.warn({ tenant: tenant.id }, "agent returned empty reply — nothing to send");
     }
+    // Touch again at the end so idle calculation reflects turn-completion,
+    // not turn-start (matters for back-to-back conversation flows).
     await touchLastActive(tenant.id);
   } catch (err) {
     log.error({ err, telegram_user_id: from.id }, "webhook handling failed");
