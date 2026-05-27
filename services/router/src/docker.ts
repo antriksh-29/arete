@@ -1,9 +1,39 @@
 import Dockerode from "dockerode";
+import { spawn } from "child_process";
 import { config } from "./config.js";
 import { log } from "./log.js";
 import type { Tenant } from "./db.js";
 
 const docker = new Dockerode({ socketPath: config.DOCKER_SOCKET });
+
+/**
+ * Shell out to `docker exec` via child_process. Used by health probes (and
+ * could be used by other exec paths) because dockerode's stream-event handling
+ * adds 3-5s of overhead and was the root cause of PRs #23's incomplete fix —
+ * `openclaw gateway health` runs in 1.5-2s via docker CLI but our dockerode-
+ * based probe was timing out at 5s in every iteration. Local repro shows docker
+ * CLI is consistently 1.5-7s; dockerode-mediated exec is consistently >5s.
+ */
+function dockerCliExec(
+  containerName: string,
+  cmd: string[],
+  timeoutMs: number,
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const p = spawn("docker", ["exec", containerName, ...cmd], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    p.stdout.on("data", (d: Buffer) => (stdout += d.toString("utf8")));
+    p.stderr.on("data", (d: Buffer) => (stderr += d.toString("utf8")));
+    const killer = setTimeout(() => p.kill("SIGKILL"), timeoutMs);
+    p.on("close", (code) => {
+      clearTimeout(killer);
+      resolve({ exitCode: code ?? -1, stdout, stderr });
+    });
+  });
+}
 
 export async function ensureRunning(tenant: Tenant): Promise<void> {
   if (!tenant.container_name) {
@@ -46,57 +76,37 @@ export async function waitHealthy(
   tenant: Tenant,
   timeoutMs = 60_000,
 ): Promise<void> {
-  // The container exposes a WebSocket Gateway on loopback (default port 18789).
-  // Probe it from inside the container via `openclaw gateway health`.
+  // Use docker CLI (via child_process) for the health probe instead of dockerode.
+  // PR #23 tried to make dockerode work and failed: local reproduction showed
+  // dockerode-mediated `c.exec({...}).start({hijack:true})` consistently times
+  // out at 5s even though the underlying command completes in 1.5-2s. We
+  // tested both with and without AttachStdout — neither was reliable.
+  // docker CLI is what works (manually tested on the VPS) so we use that.
   //
-  // IMPORTANT (bug fix): we MUST set AttachStdout/Stderr=true. With both false,
-  // dockerode returns an empty stream and the "end" event never fires — the
-  // outer while-loop's deadline check never re-runs, and waitHealthy hangs
-  // forever despite the underlying command completing in <2s. Attaching the
-  // streams (even though we discard the data) makes dockerode emit "end"
-  // properly when the exec process exits.
-  //
-  // Also: each iteration has its own per-attempt watchdog so a single stuck
-  // exec can't pin the whole loop. The watchdog is loose (5s per probe vs.
-  // the 1.8s typical runtime) and only fires on genuine hangs.
-  const c = docker.getContainer(tenant.container_name!);
+  // Per-probe timeout: 12s (worst-case observed locally: 7.2s when the gateway
+  // is in early startup; typical is <2s). Outer deadline: 60s (room for ~5
+  // probe attempts including 1s sleep between).
+  if (!tenant.container_name) {
+    throw new Error(`tenant ${tenant.id} has no container_name`);
+  }
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    const attemptOk = await runOneHealthProbe(c).catch(() => false);
-    if (attemptOk) return;
+    const r = await dockerCliExec(
+      tenant.container_name,
+      ["openclaw", "gateway", "health"],
+      12_000,
+    );
+    if (r.exitCode === 0) return;
+    log.debug(
+      { tenant: tenant.id, exit: r.exitCode, stderr: r.stderr.slice(0, 200) },
+      "gateway health probe non-zero — will retry",
+    );
     await new Promise((r) => setTimeout(r, 1000));
   }
   throw new Error(
     `tenant ${tenant.id} did not become healthy within ${timeoutMs}ms (gateway health probe failed)`,
   );
-}
-
-async function runOneHealthProbe(c: Dockerode.Container): Promise<boolean> {
-  const exec = await c.exec({
-    Cmd: ["openclaw", "gateway", "health"],
-    AttachStdout: true,
-    AttachStderr: true,
-  });
-  const stream = await exec.start({ Detach: false, hijack: true });
-  // Drain the stream so the "end" event fires reliably. We don't care about
-  // the content; just want the EOF.
-  const { PassThrough } = require("stream");
-  const sink = new PassThrough();
-  sink.resume(); // discard data
-  docker.modem.demuxStream(stream, sink, sink);
-  // Race: stream end vs. 5s watchdog (in case dockerode still wedges)
-  await Promise.race([
-    new Promise<void>((resolve, reject) => {
-      stream.on("end", () => resolve());
-      stream.on("error", reject);
-    }),
-    new Promise<void>((_, reject) =>
-      setTimeout(() => reject(new Error("health probe watchdog 5s")), 5000),
-    ),
-  ]);
-  const info = await exec.inspect();
-  return info.ExitCode === 0;
 }
 
 /**
