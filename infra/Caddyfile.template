@@ -1,0 +1,57 @@
+# Caddyfile template for Arete.
+# Rendered by infra/bootstrap-host.sh with ${PLATFORM_DOMAIN} substituted.
+# Final file lives at /etc/caddy/Caddyfile on the VPS.
+# Caddy auto-fetches a Let's Encrypt cert on first request.
+#
+# Arete topology:
+#   Telegram → ${PLATFORM_DOMAIN} → Caddy (TLS) → router (localhost:8080) → tenant containers
+#
+# Caddy reverse-proxies to the router service (Phase C). The router owns the
+# Telegram webhook endpoint and forwards each inbound update to the right
+# tenant container's internal port.
+
+${PLATFORM_DOMAIN} {
+    reverse_proxy localhost:8080 {
+        # Telegram webhooks need the original Host header preserved
+        header_up Host {host}
+        # Router uses this for allowlist logging + abuse defense
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+    }
+
+    # Generous timeouts for long-running agent loops on Telegram webhooks
+    # (multi-step skill execution can take 30-60s)
+    @longrunning path /telegram/webhook /admin/*
+    handle @longrunning {
+        reverse_proxy localhost:8080 {
+            transport http {
+                read_timeout 120s
+                write_timeout 120s
+                dial_timeout 5s
+            }
+        }
+    }
+
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 100mb
+            roll_keep 5
+        }
+        format json
+    }
+
+    # Security headers — webhook endpoint, not a browser app
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy no-referrer
+        -Server
+    }
+
+    encode gzip zstd
+}
+
+# Plain HTTP → HTTPS (Caddy does this by default; explicit doesn't hurt)
+http://${PLATFORM_DOMAIN} {
+    redir https://${PLATFORM_DOMAIN}{uri} permanent
+}
