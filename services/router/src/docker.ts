@@ -1,5 +1,6 @@
 import Dockerode from "dockerode";
 import { spawn } from "child_process";
+import { PassThrough } from "stream";
 import { config } from "./config.js";
 import { log } from "./log.js";
 import type { Tenant } from "./db.js";
@@ -156,7 +157,6 @@ export async function runAgentTurn(
   await new Promise<void>((resolve, reject) => {
     // dockerode multiplexes stdout/stderr on a single stream; we use docker's
     // demuxStream helper to split them into two Writable buffers.
-    const { PassThrough } = require("stream");
     const outBuf = new PassThrough();
     const errBuf = new PassThrough();
     outBuf.on("data", (d: Buffer) => (stdout += d.toString("utf8")));
