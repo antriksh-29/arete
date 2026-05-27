@@ -1,7 +1,6 @@
 import type { Request, Response } from "express";
 import { findTenantByTelegramId, touchLastActive, markStatus } from "./db.js";
-import { ensureRunning, waitHealthy } from "./docker.js";
-import { proxyWebhook } from "./proxy.js";
+import { ensureRunning, waitHealthy, runAgentTurn } from "./docker.js";
 import { config } from "./config.js";
 import { log } from "./log.js";
 
@@ -111,8 +110,21 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
     }
     await waitHealthy(tenant);
 
-    // Forward the webhook to the container
-    await proxyWebhook(tenant, update);
+    // No message text? Nothing to send to the agent (e.g. callback_query, edit
+    // without text). Acknowledge but skip the turn. Telegram already got 200.
+    const messageText = update.message?.text;
+    if (!messageText) {
+      log.debug({ update_id: update.update_id }, "non-text update — skipping agent turn");
+      return;
+    }
+
+    // Run one agent turn inside the container and relay the reply via Telegram.
+    const reply = await runAgentTurn(tenant, messageText, from.id);
+    if (reply && reply.trim()) {
+      await sendPlainReply(chatId, reply);
+    } else {
+      log.warn({ tenant: tenant.id }, "agent returned empty reply — nothing to send");
+    }
     await touchLastActive(tenant.id);
   } catch (err) {
     log.error({ err, telegram_user_id: from.id }, "webhook handling failed");
