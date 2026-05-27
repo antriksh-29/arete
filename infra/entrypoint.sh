@@ -114,12 +114,12 @@ echo "[arete] syncer started (pid $!)"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${SHARED_ANTHROPIC_KEY}}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-${SHARED_OPENAI_KEY:-}}"
 
-# Create baseline OpenClaw config if it doesn't exist yet. --non-interactive
-# skips prompts; --workspace points at the tenant state dir. Idempotent so it
-# safely re-runs on every container start. Best-effort: --allow-unconfigured
-# below tolerates a missing or partial config.
-openclaw setup --non-interactive --workspace "${STATE_HOME}" || \
-  echo "[arete] openclaw setup returned non-zero (continuing — gateway runs with --allow-unconfigured)"
+# Create baseline OpenClaw config if it doesn't exist yet. The real command
+# is `openclaw onboard --non-interactive --accept-risk` (not `setup`); `setup`
+# bails with "Non-interactive setup requires explicit risk acknowledgement."
+# Idempotent so it safely re-runs on every container start.
+openclaw onboard --non-interactive --accept-risk --workspace "${STATE_HOME}" || \
+  echo "[arete] openclaw onboard returned non-zero (continuing — gateway runs with --allow-unconfigured)"
 
 # OpenClaw defaults the gateway port to 18789. The `openclaw gateway health` /
 # `openclaw agent` clients also default to that port when reading config — so
