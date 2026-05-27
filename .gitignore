@@ -1,6 +1,7 @@
 # Secrets — never commit
 *.env
 .env.*
+!.env.example
 *.key
 *.pem
 *credentials*.json
@@ -59,3 +60,5 @@ __pycache__/
 # Telethon session (user creds — never commit)
 
 .gstack/
+.env
+fixtures/local-dev/

@@ -1,0 +1,42 @@
+# Keep the image lean. Everything not explicitly needed at runtime stays out.
+
+# VCS + editor cruft
+.git
+.github
+.gitignore
+.DS_Store
+*.swp
+
+# Local dev artifacts
+.context/
+.envrc
+.env
+.env.*
+!.env.example
+
+# Docs (not needed at runtime; reduce image size + leak surface)
+docs/
+README.md
+PROGRESS.md
+
+# Tests (not needed at runtime)
+tests/
+
+# Eval fixtures are needed at runtime (boot gate) — explicitly NOT excluded.
+# !eval/
+
+# Local-dev fixtures
+fixtures/local-dev/
+
+# Build artifacts
+*.pyc
+__pycache__/
+node_modules/
+dist/
+build/
+
+# Compose itself (not needed inside the image)
+docker-compose.yml
+docker-compose.*.yml
+.dockerignore
+infra/Dockerfile
