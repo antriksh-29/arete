@@ -89,7 +89,7 @@ HTTP_CODE=$(curl -sS -o /tmp/repo.json -w '%{http_code}' \
 
 if [ "$HTTP_CODE" = "201" ]; then
   log "repo created"
-elif [ "$HTTP_CODE" = "422" ] && grep -q 'name already exists' /tmp/repo.json; then
+elif [ "$HTTP_CODE" = "422" ] && grep -qi 'name already exists' /tmp/repo.json; then
   warn "repo already exists — reusing"
 else
   die "github repo create failed (HTTP ${HTTP_CODE}): $(cat /tmp/repo.json)"
