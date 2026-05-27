@@ -21,8 +21,9 @@ COPY --from=oven/bun:1.1-debian /usr/local/bin/bun /usr/local/bin/bun
 RUN curl -fsSL https://astral.sh/uv/install.sh | sh \
     && ln -s /root/.local/bin/uv /usr/local/bin/uv
 
-# OpenClaw runtime
-RUN npm install -g @anthropic-ai/openclaw
+# OpenClaw runtime (public npm package — unscoped)
+ARG OPENCLAW_VERSION=2026.5.22
+RUN npm install -g openclaw@${OPENCLAW_VERSION}
 
 # GBrain (pinned via tools/.gbrain-pin in the platform repo)
 ARG GBRAIN_SHA=0fb0c83
