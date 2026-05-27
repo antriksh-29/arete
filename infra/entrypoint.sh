@@ -83,10 +83,35 @@ fi
 nohup /opt/arete/infra/syncer.sh > /tmp/syncer.log 2>&1 &
 echo "[arete] syncer started (pid $!)"
 
-# --- 6. Start OpenClaw daemon (foreground) ---
-exec openclaw daemon \
-  --workspace "${STATE_HOME}" \
-  --port "${TELEGRAM_INTERNAL_PORT}" \
-  --channel internal-webhook \
-  --identity /opt/arete/identity \
-  --identity-overlay "${STATE_HOME}/identity"
+# --- 6. Start OpenClaw Gateway (foreground) ---
+# Reality check on the OpenClaw CLI (openclaw@2026.5.22):
+#   - `openclaw daemon` is a SERVICE-MANAGEMENT subcommand group (systemd
+#     install/start/stop), NOT a "run a daemon" command. The previous invocation
+#     `openclaw daemon --workspace ... --channel internal-webhook ...` was speculative
+#     and silently exited.
+#   - The real "run a foreground daemon" command is `openclaw gateway run`. It
+#     starts a WebSocket Gateway that subsequent CLI commands (`openclaw agent`,
+#     `openclaw skills`, etc.) connect to.
+#   - We DO NOT add a Telegram channel inside the container. The router owns the
+#     shared bot and proxies user turns via `docker exec ... openclaw agent`. So
+#     the container's gateway only needs to accept loopback connections.
+#
+# OpenClaw expects ANTHROPIC_API_KEY (standard) — alias from our SHARED_ANTHROPIC_KEY.
+export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${SHARED_ANTHROPIC_KEY}}"
+export OPENAI_API_KEY="${OPENAI_API_KEY:-${SHARED_OPENAI_KEY:-}}"
+
+# Create baseline OpenClaw config if it doesn't exist yet. --non-interactive
+# skips prompts; --workspace points at the tenant state dir. Idempotent so it
+# safely re-runs on every container start. Best-effort: --allow-unconfigured
+# below tolerates a missing or partial config.
+openclaw setup --non-interactive --workspace "${STATE_HOME}" || \
+  echo "[arete] openclaw setup returned non-zero (continuing — gateway runs with --allow-unconfigured)"
+
+OPENCLAW_GATEWAY_PORT="${TELEGRAM_INTERNAL_PORT}"
+echo "[arete] starting openclaw gateway on :${OPENCLAW_GATEWAY_PORT}"
+exec openclaw gateway run \
+  --port "${OPENCLAW_GATEWAY_PORT}" \
+  --bind loopback \
+  --auth none \
+  --allow-unconfigured \
+  --force

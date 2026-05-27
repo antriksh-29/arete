@@ -76,9 +76,12 @@ ENV STATE_HOME=/home/agent/state \
 # - SUPABASE_DB_URL (shared, but every query scoped by tenant_id)
 # - TELEGRAM_INTERNAL_PORT (router proxies inbound to this port)
 
-# Container healthcheck — router uses this to know when a cold-start is ready
-HEALTHCHECK --interval=10s --timeout=3s --retries=3 --start-period=15s \
-  CMD curl -sf http://localhost:${TELEGRAM_INTERNAL_PORT:-8787}/health || exit 1
+# Container healthcheck — uses the OpenClaw CLI to query the local Gateway.
+# Note: the gateway speaks WebSocket on port 8787, NOT HTTP. The previous
+# `curl /health` check would never have succeeded. `openclaw gateway health`
+# does an in-process WS query against the local gateway and exits 0 if healthy.
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=30s \
+  CMD openclaw gateway health > /dev/null 2>&1 || exit 1
 
 # tini for proper signal forwarding (graceful shutdown / hibernation)
 ENTRYPOINT ["/usr/bin/tini", "--", "/opt/arete/infra/entrypoint.sh"]
