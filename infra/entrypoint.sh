@@ -27,6 +27,12 @@ git config --global --add safe.directory '*' || true
 
 TELEGRAM_INTERNAL_PORT="${TELEGRAM_INTERNAL_PORT:-8787}"
 
+# Pin the boot-gate's injection-fixture runner to Haiku. Defaults to Sonnet
+# upstream — 30 API calls per container start is ~5× more expensive than Haiku
+# for no meaningful safety gain on this fixture (the patterns are easy refusals).
+# Operators can override by setting INJECTION_MODEL=<id> at docker create time.
+export INJECTION_MODEL="${INJECTION_MODEL:-claude-haiku-4-5}"
+
 echo "[arete] starting tenant=${TENANT_ID}"
 
 # --- 2. Clone or pull the tenant state repo ---

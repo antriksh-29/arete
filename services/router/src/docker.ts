@@ -90,6 +90,8 @@ export async function runAgentTurn(
   // Per-user session key so memory is continuous across turns.
   const sessionKey = `agent:arete:tg-${telegramUserId}`;
 
+  // Pin to Haiku for cost. Override per-call later via tenant config if needed.
+  const model = process.env.ARETE_AGENT_MODEL || "claude-haiku-4-5";
   const exec = await c.exec({
     Cmd: [
       "openclaw",
@@ -99,6 +101,8 @@ export async function runAgentTurn(
       messageText,
       "--session-key",
       sessionKey,
+      "--model",
+      model,
       "--timeout",
       "90",
     ],
