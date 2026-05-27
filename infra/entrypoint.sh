@@ -107,7 +107,12 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-${SHARED_OPENAI_KEY:-}}"
 openclaw setup --non-interactive --workspace "${STATE_HOME}" || \
   echo "[arete] openclaw setup returned non-zero (continuing — gateway runs with --allow-unconfigured)"
 
-OPENCLAW_GATEWAY_PORT="${TELEGRAM_INTERNAL_PORT}"
+# OpenClaw defaults the gateway port to 18789. The `openclaw gateway health` /
+# `openclaw agent` clients also default to that port when reading config — so
+# using anything else means we'd have to write a config file to point them at
+# the custom port. Just use the default; the gateway is loopback-only anyway
+# (router talks to it via `docker exec`, not over the network).
+OPENCLAW_GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
 echo "[arete] starting openclaw gateway on :${OPENCLAW_GATEWAY_PORT}"
 exec openclaw gateway run \
   --port "${OPENCLAW_GATEWAY_PORT}" \
