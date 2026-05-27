@@ -62,3 +62,4 @@ __pycache__/
 .gstack/
 .env
 fixtures/local-dev/
+!services/router/package-lock.json
