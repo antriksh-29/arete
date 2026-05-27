@@ -24,7 +24,7 @@ RUN curl -fsSL https://astral.sh/uv/install.sh | sh \
 # Boot-gate runtime deps (eval/run-injection-fixture.py imports yaml; httpx is the
 # LLM client). pip --break-system-packages required because Debian's PEP 668 marker
 # otherwise blocks site-packages writes.
-RUN pip3 install --break-system-packages --no-cache-dir pyyaml httpx
+RUN pip3 install --break-system-packages --no-cache-dir pyyaml httpx anthropic
 
 # Trust bind-mounted git repos regardless of UID ownership. The per-tenant volume
 # is created on the host (root/UID 1000) then bind-mounted where agent is UID 1001;
