@@ -189,7 +189,7 @@ the call succeeded.
 
 The agent can still drive x.com via the persistent headless Chrome
 *if* the user has imported their x.com cookies via /site-login. Check
-with `bot-cred list | grep SITE_COOKIES__x` — if present:
+with `arete-cred list | grep SITE_COOKIES__x` — if present:
 
 ```bash
 python3 ~/bin/browser-login.py inject x.com
@@ -236,6 +236,6 @@ overhead per call vs. one Composio MCP call).
 ## Brain capture
 
 When the user posts a meaningful tweet via the bot, OPTIONALLY append
-it to `~/.brain/originals/x-posts.md` so the voice corpus stays
+it to `{{user.brain_path}}/originals/x-posts.md` so the voice corpus stays
 current. Not required for every tweet — only when the agent recognizes
 genuine original thinking (per the signal-detector pattern).

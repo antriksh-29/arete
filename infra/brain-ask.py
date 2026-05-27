@@ -10,14 +10,14 @@
 # invoke, so there's no excuse to improvise from summary.
 #
 # Resolution order for the source content:
-#   1. ~/.brain/_raw/<slug-basename>.raw.txt           (Layer 2 sidecar — verbatim rendered page from browser-harness)
-#   2. ~/.brain/<slug>.md                               (the brain page itself — agent analysis + Raw thread section)
+#   1. ${BRAIN_PATH}/_raw/<slug-basename>.raw.txt           (Layer 2 sidecar — verbatim rendered page from browser-harness)
+#   2. ${BRAIN_PATH}/<slug>.md                               (the brain page itself — agent analysis + Raw thread section)
 #   3. gbrain get <slug>                                (fallback if the file is missing on disk)
 #
 # Usage:
 #   brain-ask.py <slug-or-pointer> "<question>"
 #     slug-or-pointer  →  "media/social/x-nishank-20260512"
-#                          OR "last"  (reads ~/.brain/.last-bookmark.json)
+#                          OR "last"  (reads ${BRAIN_PATH}/.last-bookmark.json)
 #                          OR a URL we have bookmarked (looked up in lists/to-read)
 #
 # Prints a single-line JSON envelope on stdout:
@@ -41,10 +41,10 @@ from pathlib import Path
 BRAIN_DIR = Path.home() / ".brain"
 RAW_DIR = BRAIN_DIR / "_raw"
 LAST_BOOKMARK_PATH = BRAIN_DIR / ".last-bookmark.json"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 TODAY = date.today().isoformat()
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 
 def log(msg):
@@ -58,7 +58,7 @@ Rules:
 2. When the user asks for quotes, attribution, or exact phrasing, quote VERBATIM from the Raw source section. Wrap quotes in straight quotes. Do not paraphrase.
 3. When you cite, cite the section. Format: (Brain page §The argument) or (Raw source ¶N) where ¶N is the rough paragraph number. Inline, not as footnotes.
 4. Keep answers tight. Bulleted lists when the user asks for "top N" or "key points". Continuous prose when they ask "what does X say" or "explain".
-5. The user's name is Antriksh. Address him directly when the answer is opinion-shaped ("you might want to…"). Never call him "the user".
+5. The user's name is the user. Address him directly when the answer is opinion-shaped ("you might want to…"). Never call him "the user".
 
 Output format: just the answer. No preamble, no "Here are the key points:", no closing summary. Just the substantive content."""
 
@@ -138,7 +138,7 @@ def _resolve_via_brain_find(query):
     here = Path(__file__).resolve().parent
     bf = here / "brain-find.py"
     if not bf.exists():
-        bf = Path("/home/botuser/bin/brain-find.py")
+        bf = Path("${STATE_HOME}/bin/brain-find.py")
     if not bf.exists():
         return "", [], False
     try:
@@ -163,7 +163,7 @@ def _resolve_via_brain_find(query):
 def _resolve_pointer(pointer):
     """Map the CLI argument to a brain page slug. Accepts:
       - a literal slug ("media/social/x-nishank-20260512")
-      - "last" — read ~/.brain/.last-bookmark.json
+      - "last" — read ${BRAIN_PATH}/.last-bookmark.json
       - a URL — look it up in lists/to-read.md
       - free-text — delegated to brain-find.py (since 2026-05-14
         when the v100 follow-up probe showed `last` was a bad default
@@ -191,7 +191,7 @@ def _resolve_pointer(pointer):
 
 def _load_persona(persona_slug):
     """Load a brain entity page as the reader's frame (Pattern 6 —
-    contextual explanation). Defaults to people/antriksh.md so the
+    contextual explanation). Defaults to people/.md so the
     bot can pitch answers calibrated to who is asking. Returns the
     page body or empty string if missing."""
     if not persona_slug:
@@ -233,7 +233,7 @@ def ask(slug, question, persona_slug=""):
     user_msg = "\n\n".join(parts)
 
     # Import llm lazily so unit tests can stub before import.
-    sys.path.insert(0, "/home/botuser/bin")
+    sys.path.insert(0, "${STATE_HOME}/bin")
     import llm  # type: ignore
     text, provider = llm.call(
         system_prompt=SYSTEM_PROMPT,
@@ -270,7 +270,7 @@ def main():
     # Args:
     #   brain-ask.py <pointer> <question>
     #   brain-ask.py <pointer> <question> --persona <persona-slug>
-    # Persona defaults to people/antriksh when --persona is passed
+    # Persona defaults to people/ when --persona is passed
     # with no value or with "self".
     argv = sys.argv[1:]
     persona_slug = ""
@@ -282,10 +282,10 @@ def main():
             persona_slug = argv[idx + 1]
             del argv[idx:idx + 2]
         else:
-            persona_slug = "people/antriksh"
+            persona_slug = "people/"
             del argv[idx:idx + 1]
         if persona_slug == "self":
-            persona_slug = "people/antriksh"
+            persona_slug = "people/"
 
     if len(argv) < 2:
         sys.exit('Usage: brain-ask.py <slug|"last"|url> "<question>" [--persona [people/...]]')

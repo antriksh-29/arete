@@ -3,6 +3,6 @@ Description=Daily brain + config backup to Cloudflare R2
 
 [Service]
 Type=oneshot
-ExecStartPre=/bin/mkdir -p /home/botuser/.brain-bootstrap-raw/logs
-ExecStart=/home/botuser/bin/brain-backup-r2.sh
+ExecStartPre=/bin/mkdir -p ${STATE_HOME}/.brain-bootstrap-raw/logs
+ExecStart=${STATE_HOME}/bin/brain-backup-r2.sh
 TimeoutStartSec=600

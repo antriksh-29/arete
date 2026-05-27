@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# brain-autosync.sh — periodic auto-commit + push for ~/.brain/.
+# brain-autosync.sh — periodic auto-commit + push for ${BRAIN_PATH}/.
 #
 # Motivating bug (2026-05-22, image-v36): user asked the bot to modify
 # the youtube-subscriptions-complete brain page. Either Kimi forgot to
@@ -10,7 +10,7 @@
 # Existing pattern: domain-specific scripts (reading-checkin.sh,
 # water-log.sh, youtube-subs-categorize.py) each call `git add/commit/push`
 # themselves. That works for THOSE scripts. It fails for any path that
-# touches ~/.brain/ without going through them — including the agent
+# touches ${BRAIN_PATH}/ without going through them — including the agent
 # editing files via raw exec.
 #
 # This script is the safety net: runs every 60s via systemd timer,
@@ -24,7 +24,7 @@
 # loop converges deterministically without serialization complexity.
 # Latency: ≤60s from edit to GitHub. Acceptable for a brain repo.
 #
-# Commit message: "alfred-autosync: <comma-separated changed files> @ <ts>"
+# Commit message: "arete-autosync: <comma-separated changed files> @ <ts>"
 # so the git history is informative without a separate commit per file.
 #
 # Conflict handling: if `git push` fails (concurrent push from a script
@@ -67,7 +67,7 @@ n_files=$(echo "$changed" | wc -l | tr -d ' ')
 ts=$(date '+%Y-%m-%d %H:%M IST' 2>/dev/null || date)
 
 # Stage everything — brain edits are always intentional (no .env / no
-# build artifacts) so `add -A` is safe here. Verified ~/.brain/.gitignore
+# build artifacts) so `add -A` is safe here. Verified ${BRAIN_PATH}/.gitignore
 # already excludes non-content files.
 git add -A 2>/dev/null
 
@@ -78,9 +78,9 @@ if [ -z "$staged" ]; then
 fi
 
 if [ "$n_files" -le 5 ]; then
-  msg="alfred-autosync: $files @ $ts"
+  msg="arete-autosync: $files @ $ts"
 else
-  msg="alfred-autosync: $files +$((n_files - 5)) more @ $ts"
+  msg="arete-autosync: $files +$((n_files - 5)) more @ $ts"
 fi
 
 if ! git commit -m "$msg" >>"$LOG" 2>&1; then

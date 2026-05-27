@@ -32,9 +32,9 @@ import uuid
 from datetime import datetime, timedelta, timezone, date
 from html import escape
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
-sys.path.insert(0, "/home/botuser/bin")
+sys.path.insert(0, "${STATE_HOME}/bin")
 import llm  # type: ignore
 import composio_client  # type: ignore
 
@@ -46,12 +46,12 @@ TODAY_IST = datetime.now(IST).date()
 # naming chosen during OAuth) and no-alias (→ personal email — we use the
 # stable account ID for that one).
 GMAIL_ACCOUNTS = [
-    {"composio": "personal", "email": "antriksh1980@gmail.com"},
-    {"composio": "work",     "email": "antriksh@getarete.co"},
+    {"composio": "personal", "email": "${USER_EMAIL}"},
+    {"composio": "work",     "email": ""},
 ]
 CALENDAR_ACCOUNTS = [
-    {"composio": "googlecalendar_casse-wikeno", "email": "antriksh1980@gmail.com"},
-    {"composio": "personal",                    "email": "antriksh@getarete.co"},
+    {"composio": "googlecalendar_casse-wikeno", "email": "${USER_EMAIL}"},
+    {"composio": "personal",                    "email": ""},
 ]
 # Legacy alias for sections that still reference a flat list of email
 # addresses (logging, filenames, "from N accounts" counts).
@@ -67,7 +67,7 @@ def log(msg):
 
 def vault_get(key):
     return subprocess.run(
-        ["bot-cred", "get", key], capture_output=True, text=True, check=True
+        ["arete-cred", "get", key], capture_output=True, text=True, check=True
     ).stdout.strip()
 
 
@@ -167,7 +167,7 @@ def fmt_calendar(events, cap):
 # -------------------- 2. Weather --------------------
 
 def fetch_weather():
-    out = run(["python3", "/home/botuser/bin/weather-snapshot.py"], timeout=30)
+    out = run(["python3", "${STATE_HOME}/bin/weather-snapshot.py"], timeout=30)
     if not out:
         return None
     # Drop the first line (the heading like "🌦️ Bangalore — Wed 06 May") since
@@ -183,7 +183,7 @@ def fetch_tasks(cap=5):
     queue (`later`-parked). Returned as a single flat list of bullets
     for backward compatibility with old briefing format. The newer
     fetch_carryover/fetch_stuck split below is preferred."""
-    out = run("/home/botuser/bin/daily-tasks-briefing-append.sh", timeout=20)
+    out = run("${STATE_HOME}/bin/daily-tasks-briefing-append.sh", timeout=20)
     if not out:
         return None
     items = []
@@ -205,7 +205,7 @@ def fetch_stuck_backlog(age_gte=14, cap=3):
         "• (15d) refactor onboarding flow — since 2026-04-29"
     or None if backlog is empty.
     """
-    out = run(f"/home/botuser/bin/daily-tasks.sh backlog --age-gte {age_gte}", timeout=20)
+    out = run(f"${STATE_HOME}/bin/daily-tasks.sh backlog --age-gte {age_gte}", timeout=20)
     if not out:
         return None
     items = []
@@ -227,10 +227,10 @@ def fetch_stuck_backlog(age_gte=14, cap=3):
 
 # -------------------- 4. Email triage (LLM) --------------------
 
-EMAIL_TRIAGE_SYSTEM = """You are triaging Antriksh's overnight email for his morning briefing. Return ONLY the genuinely action-worthy items.
+EMAIL_TRIAGE_SYSTEM = """You are triaging the user's overnight email for his morning briefing. Return ONLY the genuinely action-worthy items.
 
 HIGH importance — surface these:
-- Direct response/action needed from Antriksh (replies awaited, decisions to make)
+- Direct response/action needed from the user (replies awaited, decisions to make)
 - Bills DUE soon (utility, broadband, mobile, insurance premium, credit card statement with a due date)
 - Payment REMINDERS for upcoming dues (e.g. "your bill is due in 3 days", "EMI due tomorrow")
 - Government / tax / regulatory notices (IT department, GST, MCA, RBI)
@@ -393,7 +393,7 @@ def fmt_emails(items, cap):
 # -------------------- 5. Markets --------------------
 
 def fetch_markets():
-    out = run(["python3", "/home/botuser/bin/market-snapshot.py"], timeout=30)
+    out = run(["python3", "${STATE_HOME}/bin/market-snapshot.py"], timeout=30)
     if not out:
         return None
     lines = [l for l in out.split("\n") if l.startswith("•")]
@@ -403,7 +403,7 @@ def fetch_markets():
 # -------------------- 6. Fitness --------------------
 
 def fetch_fitness():
-    out = run(["python3", "/home/botuser/bin/fitness-snapshot.py"], timeout=15)
+    out = run(["python3", "${STATE_HOME}/bin/fitness-snapshot.py"], timeout=15)
     if not out:
         return None
     # First line is the headline, rest are bullets. We'll keep all of it but

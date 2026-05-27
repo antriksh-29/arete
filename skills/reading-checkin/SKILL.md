@@ -92,7 +92,7 @@ reading-checkin/run-stats-eval.py` enforces the math via the gate.
 ### The chain
 
 ```
-~/.brain/habits/book-reading.md  ← canonical state (Markdown table)
+{{user.brain_path}}/habits/book-reading.md  ← canonical state (Markdown table)
         ▲                                    │
         │                                    │ recompute_stats
         │ log_entry / verify                 ▼

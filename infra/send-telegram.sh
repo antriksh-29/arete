@@ -13,8 +13,8 @@
 # any user-supplied &, <, > characters before passing them in.
 
 set -e
-TOKEN="$(/usr/local/bin/bot-cred get TELEGRAM_BOT_TOKEN)"
-USER_ID="$(/usr/local/bin/bot-cred get TELEGRAM_USER_ID)"
+TOKEN="$(/usr/local/bin/arete-cred get TELEGRAM_BOT_TOKEN)"
+USER_ID="$(/usr/local/bin/arete-cred get TELEGRAM_USER_ID)"
 
 if [ -z "$TOKEN" ] || [ -z "$USER_ID" ]; then
   echo "ABORT: TELEGRAM_BOT_TOKEN or TELEGRAM_USER_ID missing from vault" >&2

@@ -34,7 +34,7 @@ Exit 0 iff every step passed. See `eval/schemas/skill.schema.md` and
 
 ### What each audit catches
 
-- **`check-resolvable.mjs`** — every `skills/*/SKILL.md` has the required frontmatter, a real `script:`, and a real `eval:` pointer. Brain dirs in `writes_to:` / `brain_dirs_read:` exist in the canonical brain (`antriksh-29/antriksh-brain` via `gh api`).
+- **`check-resolvable.mjs`** — every `skills/*/SKILL.md` has the required frontmatter, a real `script:`, and a real `eval:` pointer. Brain dirs in `writes_to:` / `brain_dirs_read:` exist in the canonical brain (`{{user.brain_repo}}` via `gh api`).
 - **`dry-audit.mjs`** — no two skills claim the same trigger phrase. Substring overlaps surfaced as warnings.
 - **`run-skill-eval.mjs <skill-dir>`** — runs the skill's smoke + structural output check + LLM-resolver routing (≥ 90% top-1) + (with `--judge`) gpt-5.4-nano scoring against `judge_rubric:` (≥ 8/10).
 

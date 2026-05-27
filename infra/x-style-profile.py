@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Compile the X corpora into identity/X_VOICE.md — the master voice profile
 # used by /x-draft. Distills voice fingerprints per handle and locks in the
-# default blend recipe (20% Antriksh / 80% admired averaged) plus the
+# default blend recipe (20% the user / 80% admired averaged) plus the
 # handle-override behavior.
 #
 # Run after x-corpus-collect.py, and again whenever new approved drafts have
@@ -15,15 +15,15 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 BRAIN_DIR = Path.home() / ".brain"
 WORKSPACE = Path.home() / ".openclaw" / "workspace"
 IDENTITY_DIR = WORKSPACE / "identity"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 TODAY = date.today().isoformat()
 
-OWN_HANDLE = "antriksssh"
+OWN_HANDLE = "myself"
 ADMIRED = ["paulg", "naval", "sama", "garrytan", "vkhosla"]
 
 
@@ -32,7 +32,7 @@ def log(msg):
 
 
 def vault_get(key):
-    return subprocess.run(["bot-cred", "get", key], capture_output=True, text=True, check=True).stdout.strip()
+    return subprocess.run(["arete-cred", "get", key], capture_output=True, text=True, check=True).stdout.strip()
 
 
 def load_corpus(handle):
@@ -57,7 +57,7 @@ For each handle, capture:
 Output STRICT JSON only. Schema:
 
 {
-  "antriksssh": {
+  "myself": {
     "fingerprint": "multi-line markdown describing the voice as bullet points with concrete examples drawn from the corpus",
     "exemplar_tweet_ids": ["1-3 tweet excerpts that best capture this voice"]
   },
@@ -118,12 +118,12 @@ def render(profiles):
         "",
         "## Default blend (locked)",
         "",
-        "- **@antriksssh: 20%** (own voice)",
+        "- **@myself: 20%** (own voice)",
         f"- **Admired (averaged across {', '.join('@' + h for h in ADMIRED)}): 80%**",
         "",
         "When generating a draft, the LLM should:",
         "1. Anchor in admired-voice patterns (80% of the texture)",
-        "2. Layer Antriksh's own signatures on top (20% — vocabulary, openers, closers)",
+        "2. Layer the user's own signatures on top (20% — vocabulary, openers, closers)",
         "3. Keep it under 280 chars",
         "",
         "## Override behavior",
@@ -132,10 +132,10 @@ def render(profiles):
         '"in paulg style"), shift the blend:',
         "",
         "- Named handle: 60%",
-        "- Antriksh: 20%",
+        "- the user: 20%",
         "- Other admired (averaged): 20%",
         "",
-        "If the user invokes \"pure antriksh\" or \"sound like me\", shift to 100% own voice.",
+        "If the user invokes \"pure me\" or \"sound like me\", shift to 100% own voice.",
         "",
         "---",
         "",

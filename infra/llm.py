@@ -45,7 +45,7 @@ import sys
 import urllib.error
 import urllib.request
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 
 # Chain definition: each tier maps to an ordered list of (provider, model)
@@ -80,7 +80,7 @@ _FALLBACK_HTTP = {401, 402, 403, 429, 500, 502, 503, 504}
 
 
 def _vault_get(key):
-    r = subprocess.run(["bot-cred", "get", key], capture_output=True, text=True)
+    r = subprocess.run(["arete-cred", "get", key], capture_output=True, text=True)
     return r.stdout.strip() if r.returncode == 0 else os.environ.get(key, "")
 
 

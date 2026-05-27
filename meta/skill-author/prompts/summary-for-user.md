@@ -1,7 +1,7 @@
 # User-facing message templates (Telegram replies)
 
 All templates compose into the `user_message` field of the skill's
-output envelope. Rule 0.7 says Alfred relays `user_message` byte-for-byte
+output envelope. Rule 0.7 says Arete relays `user_message` byte-for-byte
 to Telegram; these templates are the actual final wording.
 
 ## Cardinal rule (per product feedback)
@@ -97,7 +97,7 @@ without it. want me to retry in a couple min, or scrap this for now?
 
 **Empty string.** The user already saw "Creating this new skill for you…"
 — routing-eval is a backend gate, not a user-visible phase. The script
-emits `user_message: ""` and Alfred relays nothing.
+emits `user_message: ""` and Arete relays nothing.
 
 ## Phase: routing — collision (user decision needed)
 
@@ -164,7 +164,7 @@ want me to try again, look into it, or scrap and start over?
 
 Translate the gate-failure detail into plain English. Don't surface
 the gate name, the workflow file path, or the failing job ID — those
-are internal-state per identity/SOUL.md. If Antriksh explicitly asks
+are internal-state per identity/SOUL.md. If the user explicitly asks
 "what failed?", then mirror his register and answer with the technical
 detail.
 
@@ -187,7 +187,7 @@ sounds like something you'd want me to do automatically next time. want
 me to set it up? takes about a minute.
 ```
 
-If the user says no (any of "no", "nope", "just this once", etc.), Alfred
+If the user says no (any of "no", "nope", "just this once", etc.), Arete
 proceeds with the one-off action and does NOT create a skill. If yes, the
 elicit flow starts at Q1.
 

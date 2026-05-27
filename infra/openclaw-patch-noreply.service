@@ -5,7 +5,7 @@ PartOf=openclaw-gateway.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 /home/botuser/bin/patch-openclaw-noreply.py
+ExecStart=/usr/bin/python3 ${STATE_HOME}/bin/patch-openclaw-noreply.py
 RemainAfterExit=true
 
 [Install]

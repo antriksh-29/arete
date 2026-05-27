@@ -7,7 +7,7 @@
 #
 # Usage:
 #   ingest-pdf.py <url-or-path>
-# Reads OPENAI_API_KEY from bot-cred vault.
+# Reads OPENAI_API_KEY from arete-cred vault.
 # Writes brain page, prints a short JSON envelope to stdout for the agent
 # to relay to Telegram. Diagnostic info goes to stderr.
 
@@ -23,12 +23,12 @@ from pathlib import Path
 
 BRAIN_DIR = Path.home() / ".brain"
 SOURCES_DIR = BRAIN_DIR / "sources"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 TODAY = date.today().isoformat()
 
 # gbrain's shebang is `#!/usr/bin/env bun`. When openclaw invokes this script,
 # bun isn't on PATH and every gbrain call silently exits 127. Force PATH.
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 
 def log(msg):
@@ -37,7 +37,7 @@ def log(msg):
 
 def vault_get(key):
     return subprocess.run(
-        ["bot-cred", "get", key], capture_output=True, text=True, check=True
+        ["arete-cred", "get", key], capture_output=True, text=True, check=True
     ).stdout.strip()
 
 
@@ -86,17 +86,17 @@ def slugify(s):
     return re.sub(r"[-\s]+", "-", s)[:80]
 
 
-SYSTEM_PROMPT = """You are analyzing a document for Antriksh's personal knowledge brain.
+SYSTEM_PROMPT = """You are analyzing a document for the user's personal knowledge brain.
 
-Antriksh values: connections to what he already knows, sharp insights that re-frame the topic, specific quotes with their context. He does NOT want a summary.
+the user values: connections to what he already knows, sharp insights that re-frame the topic, specific quotes with their context. He does NOT want a summary.
 
-Produce a brain page in this exact structure (markdown). Reference existing brain entities via [[slug]] syntax wherever the document mentions a person, company, or concept Antriksh might already track. Use plausible slugs (people/<first-last>, companies/<name>, concepts/<topic>) — the indexer resolves them.
+Produce a brain page in this exact structure (markdown). Reference existing brain entities via [[slug]] syntax wherever the document mentions a person, company, or concept the user might already track. Use plausible slugs (people/<first-last>, companies/<name>, concepts/<topic>) — the indexer resolves them.
 
 # {title}
 **Author:** {author} | **Source:** {source}
 
-## Why this matters (Antriksh's frame)
-2-4 sentences: central claim, why it's interesting given what Antriksh already cares about (AI agents, founder-mode, personal-assistant building, brain-as-memory). Reference [[slug]] where natural.
+## Why this matters (the user's frame)
+2-4 sentences: central claim, why it's interesting given what the user already cares about (AI agents, founder-mode, personal-assistant building, brain-as-memory). Reference [[slug]] where natural.
 
 ## Key arguments (in order)
 Bulleted list, each bullet 1-3 sentences. Cover EVERY major argument the document makes, in the order it presents them. Do not skip sections. Use direct quotes sparingly when phrasing matters.
@@ -115,7 +115,7 @@ No preamble. No "this document discusses…" filler. No closing summary. Land th
 
 
 def analyze(title, author, source, body):
-    sys.path.insert(0, "/home/botuser/bin")
+    sys.path.insert(0, "${STATE_HOME}/bin")
     import llm  # type: ignore
     body_capped = body[:80000]
     user_msg = (

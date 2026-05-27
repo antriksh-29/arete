@@ -33,7 +33,7 @@ COOLDOWN_MIN="${COOLDOWN_MIN:-30}"  # don't rotate the same chat twice in a row
 # IDLE_MIN: minimum minutes since last session activity before we'll
 # rotate (Bug H, 2026-05-25). When the user is in mid-conversation, the
 # session file's mtime is recent — rotating mid-thread is exactly the
-# disruption Antriksh reported. Waiting 10 minutes of idle means rotations
+# disruption the user reported. Waiting 10 minutes of idle means rotations
 # happen at natural conversation breaks, not while typing.
 IDLE_MIN="${IDLE_MIN:-10}"
 LOCK="${LOCK:-/tmp/session-rotator.lock}"
@@ -63,7 +63,7 @@ if [ -f "$STATE_FILE" ]; then
 fi
 
 # Find the active session — most recently modified .jsonl that's not a
-# trajectory/reset/checkpoint variant. For single-tenant (Antriksh's
+# trajectory/reset/checkpoint variant. For single-tenant (the user's
 # personal bot), there's effectively one main session at a time.
 active=$(ls -t "$SESSIONS_DIR"/*.jsonl 2>/dev/null \
          | grep -v -E '\.(trajectory|reset|checkpoint)\.' \
@@ -121,7 +121,7 @@ echo "$now_epoch" > "$STATE_FILE"
 
 # Silent rotation (Bug H, 2026-05-25). The original version Telegram'd
 # the user with "🔄 I rotated to a fresh session — your conversation had
-# grown to N messages..." which Antriksh reports is the single most
+# grown to N messages..." which the user reports is the single most
 # disruptive bubble — it always appears mid-flow and breaks his thought.
 #
 # Trade-off: without the notification, the user notices the bot "forgot"

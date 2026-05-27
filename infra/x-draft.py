@@ -9,7 +9,7 @@
 #   x-draft.py quote <tweet-url> "<raw>"      [--style <handle>]
 #
 # Prints a single-line JSON envelope. Pending-draft state stored at
-# ~/.brain-bootstrap-raw/state/x-draft-pending.json.
+# ${BRAIN_PATH}-bootstrap-raw/state/x-draft-pending.json.
 
 import json
 import os
@@ -21,16 +21,16 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 BRAIN_DIR = Path.home() / ".brain"
 WORKSPACE = Path.home() / ".openclaw" / "workspace"
 STATE_DIR = Path.home() / ".brain-bootstrap-raw" / "state"
 STATE_FILE = STATE_DIR / "x-draft-pending.json"
 VOICE_PATH = WORKSPACE / "identity" / "X_VOICE.md"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 
-OWN_HANDLE = "antriksssh"
+OWN_HANDLE = "myself"
 ADMIRED = ["paulg", "naval", "sama", "garrytan", "vkhosla"]
 MAX_CHARS = 280
 
@@ -40,7 +40,7 @@ def log(msg):
 
 
 def vault_get(key):
-    return subprocess.run(["bot-cred", "get", key], capture_output=True, text=True, check=True).stdout.strip()
+    return subprocess.run(["arete-cred", "get", key], capture_output=True, text=True, check=True).stdout.strip()
 
 
 def load_voice_profile():
@@ -96,11 +96,11 @@ def build_blend_directive(style_override):
     if not style_override:
         return (
             f"Default blend: 20% @{OWN_HANDLE} (own voice), 80% averaged across "
-            f"@{', @'.join(ADMIRED)}. Anchor in admired-voice texture; layer Antriksh's "
+            f"@{', @'.join(ADMIRED)}. Anchor in admired-voice texture; layer the user's "
             f"openers, vocabulary, and closers on top."
         )
     sh = style_override.lower().lstrip("@")
-    if sh in ("antriksh", "antriksssh", "self", "me"):
+    if sh in ("", "myself", "self", "me"):
         return f"Override: pure @{OWN_HANDLE} voice. 100% own voice — no admired blend."
     if sh in ADMIRED:
         others = [h for h in ADMIRED if h != sh]
@@ -135,7 +135,7 @@ def mode_directive(mode, target):
     return "Mode: UNKNOWN."
 
 
-SYSTEM_PROMPT_BASE = """You are drafting an X (Twitter) post in Antriksh's voice, blended with the voices of accounts he admires.
+SYSTEM_PROMPT_BASE = """You are drafting an X (Twitter) post in the user's voice, blended with the voices of accounts he admires.
 
 The voice profile below is the master spec. Follow the blend recipe in it. Look at the corpus excerpts to ground each pattern in actual examples — don't drift into generic LLM-tweet style (no "🚀", no "Let's go!", no "Here's a thread", no hashtags unless the corpus shows them).
 
@@ -144,12 +144,12 @@ Hard rules:
 2. Output ONLY the tweet text. No preamble, no explanation, no quotes around it, no markdown.
 3. Do NOT use em dashes (—). Use hyphens, periods, or rewrite the sentence.
 4. Do NOT invent facts, statistics, @-handles, or URLs not present in the input.
-5. Match the tone: Antriksh + admired-voice patterns, NOT corporate-LLM polish.
+5. Match the tone: the user + admired-voice patterns, NOT corporate-LLM polish.
 6. If the raw thought has profanity or strong opinions, KEEP THEM — don't sanitize."""
 
 
 def generate(prompt_user_msg):
-    sys.path.insert(0, "/home/botuser/bin")
+    sys.path.insert(0, "${STATE_HOME}/bin")
     import llm  # type: ignore
     text, provider = llm.call(
         system_prompt=SYSTEM_PROMPT_BASE,
@@ -195,7 +195,7 @@ def build_prompt(mode, raw, target, style_override):
         "## MODE",
         mode_dir,
         "",
-        "## OWN CORPUS EXCERPT (@antriksssh)",
+        "## OWN CORPUS EXCERPT (@myself)",
         own_corpus,
         "",
         "## ADMIRED CORPUS EXCERPTS",

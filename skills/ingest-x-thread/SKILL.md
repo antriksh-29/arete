@@ -98,9 +98,9 @@ Failure modes (relay `user_message` verbatim):
 
 ## Pre-flight
 
-`X_API_BEARER_TOKEN` must be in the bot-cred vault. If absent:
+`X_API_BEARER_TOKEN` must be in the arete-cred vault. If absent:
 ```
-bot-cred set X_API_BEARER_TOKEN <token>
+arete-cred set X_API_BEARER_TOKEN <token>
 ```
 Get the token from console.x.com (pay-per-use, ~$0.005/post).
 

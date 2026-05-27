@@ -269,7 +269,7 @@ Visible-output rule (set 2026-05-24, framework-enforced via
 messages.visibleReplies=message_tool): plain assistant text DOES NOT
 reach the user. The ONLY way the user sees a reply is when you run
 `exec ~/bin/say.sh "<text>"`. Everything else you emit is internal-only
-and Antriksh will never see it.
+and the user will never see it.
 
 This means your turn output is EXACTLY ONE of:
   (a) A tool call that does work (web-search, brain-ask, daily-tasks, etc.)
@@ -392,7 +392,7 @@ desired = desired + [
     # as plaintext (file is mode 600) and are set during initial
     # provisioning. Don't add a knob for them — version-controlling
     # the plaintext keys would leak them. DEEPSEEK_API_KEY belongs in
-    # the bot-cred vault (same as MOONSHOT_API_KEY) — deploy-vps.sh
+    # the arete-cred vault (same as MOONSHOT_API_KEY) — deploy-vps.sh
     # reads it from there when seeding openclaw.json.
 ]
 

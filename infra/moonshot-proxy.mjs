@@ -27,7 +27,7 @@
  *   This proxy is the only place that needs to know about Moonshot's quirks.
  *
  * Env vars:
- *   MOONSHOT_API_KEY    — from bot-cred vault, set by systemd unit
+ *   MOONSHOT_API_KEY    — from arete-cred vault, set by systemd unit
  *   OPENAI_API_KEY      — same; used for fallback
  *   PROXY_PORT          — listen port (default 18790)
  *   FALLBACK_MODEL      — OpenAI model name to swap to (default gpt-5.4-mini)

@@ -6,8 +6,8 @@ config). We just stop telling the model to use it in the first place.
 """
 import re, sys, os
 
-F1 = "/home/botuser/.bun/install/cache/openclaw@2026.4.26@@@1/dist/system-prompt-Ble5uzBt.js"
-F2 = "/home/botuser/.bun/install/cache/openclaw@2026.4.26@@@1/dist/get-reply-eY9NJdyX.js"
+F1 = "${STATE_HOME}/.bun/install/cache/openclaw@2026.4.26@@@1/dist/system-prompt-Ble5uzBt.js"
+F2 = "${STATE_HOME}/.bun/install/cache/openclaw@2026.4.26@@@1/dist/get-reply-eY9NJdyX.js"
 
 REPLACEMENT_BLOCK = '"## Reply Discipline", "Always produce a real, contextual reply on every direct conversation turn. Never emit a silent-reply sentinel like NO_REPLY; never leave a turn empty.", ""'
 

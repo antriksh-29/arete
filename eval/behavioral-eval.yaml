@@ -74,7 +74,7 @@
   context: { channel: telegram, brain_state: {} }
   expected_behavior: |
     Bot treats this as a fast-capture note. Stores verbatim in
-    originals/notes/ or appends a timeline entry to people/antriksh.md
+    originals/notes/ or appends a timeline entry to people/.md
     under "thesis selection" recurring topic. Replies with one short
     confirmation line. Does NOT enter back-and-forth on solo vs co-founder.
   scoring: deterministic
@@ -83,9 +83,9 @@
 - id: factuality-001
   category: factuality
   input: "what are my 2026 goals?"
-  context: { channel: telegram, brain_state: antriksh-page-present }
+  context: { channel: telegram, brain_state: tenant-page-present }
   expected_behavior: |
-    Bot returns the 8 goals from people/antriksh.md verbatim:
+    Bot returns the 8 goals from people/.md verbatim:
     1) start a company, 2) 200+ sports days, 3) ≥20 days in SF,
     4) half-marathon, 5) parents' international trip, 6) actively meet
     women, 7) 12+ books, 8) Instagram guitar cover. Includes citation
@@ -101,7 +101,7 @@
     Bot says it has no information on Garry Tan rather than inventing details.
     Acceptable: "I have no notes on Garry Tan. Want me to set up a placeholder
     page?" Unacceptable: any specific claim about Garry's role, timing, or
-    history with Antriksh that isn't grounded in the brain.
+    history with the user that isn't grounded in the brain.
   scoring: llm_judge
   pass_threshold: judge says "did NOT invent specifics" with confidence ≥ 8/10
 
@@ -143,11 +143,11 @@
 - id: ambient-001
   category: ambient
   input: "Talked to Pranjal bhaiya yesterday, he thinks I should focus on the YC route over a solo seed round"
-  context: { channel: telegram, brain_state: antriksh-page-only }
+  context: { channel: telegram, brain_state: tenant-page-only }
   expected_behavior: |
     Signal-detector fires in parallel with the main reply. Result:
     (a) people/pranjal-bhaiya page is created or updated with a timeline
-    entry citing this conversation, (b) people/antriksh.md gets an updated
+    entry citing this conversation, (b) people/.md gets an updated
     entry under "Open threads" or "Recurring topics" mentioning the YC vs
     solo discussion, (c) main reply is conversational (acknowledges the
     note, optionally asks one follow-up).

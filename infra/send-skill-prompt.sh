@@ -11,7 +11,7 @@
 # the router can disambiguate by Telegram message_id (captured below
 # from the sendMessage API response).
 #
-# State file: ~/.brain-bootstrap-raw/state/recent-skill-prompts.jsonl
+# State file: ${BRAIN_PATH}-bootstrap-raw/state/recent-skill-prompts.jsonl
 # Format (one JSON object per line, append-only, oldest first):
 #   {"slug":"...","sent_at":1779600000,"message_id":12345,"chat_id":"775188536"}
 # We keep the last 30 entries (trim on every append). 30 ≈ enough for
@@ -58,8 +58,8 @@ ${FOOTER}"
 
 # Send via Telegram's sendMessage API directly so we can capture the
 # message_id. send-telegram.sh discards the response and we need it.
-TOKEN="$(/usr/local/bin/bot-cred get TELEGRAM_BOT_TOKEN)"
-CHAT_ID="$(/usr/local/bin/bot-cred get TELEGRAM_USER_ID)"
+TOKEN="$(/usr/local/bin/arete-cred get TELEGRAM_BOT_TOKEN)"
+CHAT_ID="$(/usr/local/bin/arete-cred get TELEGRAM_USER_ID)"
 if [ -z "$TOKEN" ] || [ -z "$CHAT_ID" ]; then
   echo "ABORT: TELEGRAM_BOT_TOKEN or TELEGRAM_USER_ID missing from vault" >&2
   exit 1

@@ -34,7 +34,7 @@ def _load_reading_list():
     here = Path(__file__).resolve().parent
     rl_path = here / "reading-list.py"
     if not rl_path.exists():
-        rl_path = Path("/home/botuser/bin/reading-list.py")
+        rl_path = Path("${STATE_HOME}/bin/reading-list.py")
     spec = importlib.util.spec_from_file_location("reading_list", rl_path)
     assert spec is not None and spec.loader is not None
     rl = importlib.util.module_from_spec(spec)
@@ -44,7 +44,7 @@ def _load_reading_list():
 
 
 def _vault_get(key):
-    r = subprocess.run(["bot-cred", "get", key], capture_output=True, text=True)
+    r = subprocess.run(["arete-cred", "get", key], capture_output=True, text=True)
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
@@ -80,7 +80,7 @@ def _write_last_bookmark_pointer(row):
     """Persist the slug of the most recently completed bookmark so the
     agent's follow-up questions ("what does that article say?",
     "quote from it") can resolve to a brain page without the user
-    naming the slug. brain-ask.py reads ~/.brain/.last-bookmark.json
+    naming the slug. brain-ask.py reads ${BRAIN_PATH}/.last-bookmark.json
     when invoked with the literal pointer string `last`.
 
     Best-effort — failures don't tank the worker, just mean the
@@ -107,7 +107,7 @@ def _write_last_bookmark_pointer(row):
 def _drain_xref_queue():
     drainer = Path(__file__).resolve().parent / "xref-drainer.py"
     if not drainer.exists():
-        drainer = Path("/home/botuser/bin/xref-drainer.py")
+        drainer = Path("${STATE_HOME}/bin/xref-drainer.py")
     if not drainer.exists():
         return
     # Best-effort, short timeout — the systemd timer is the real drain.

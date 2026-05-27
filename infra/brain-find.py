@@ -40,9 +40,9 @@ from pathlib import Path
 
 BRAIN_DIR = Path.home() / ".brain"
 LIST_PATH = BRAIN_DIR / "lists" / "to-read.md"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 
 def log(msg):

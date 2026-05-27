@@ -11,7 +11,7 @@ tests/test_brain_ask.py / tests/test_brain_find.py / tests/test_note.py.
 
 The fixture below mirrors a small but realistic brain state — one
 X-thread bookmark each from Nishank and Tobi, a Paul Graham essay,
-plus a note Antriksh has written about Nishank's argument. Many of
+plus a note the user has written about Nishank's argument. Many of
 the tests deliberately reuse the same brain state so we exercise
 cross-cutting behaviors (search → graph → compare flow).
 """
@@ -71,7 +71,7 @@ updated: 2026-05-12
 
 **Author:** Nishank Singla (@nishanksingla) | **Date:** 2026-05-12
 
-## Why this matters (Antriksh's frame)
+## Why this matters (the user's frame)
 A founder-mode self-portrait. Connects to [[concepts/founder-mode]]
 and [[concepts/survivorship-bias]].
 
@@ -108,7 +108,7 @@ NOTE_PAGE = f"""---
 type: note
 created: 2026-05-13
 updated: 2026-05-13
-author: antriksh
+author: 
 source: {NISHANK_SLUG}
 ---
 
@@ -256,7 +256,7 @@ def test_graph_returns_forward_links_and_backlinks(tmp_path, monkeypatch):
 
 
 def test_graph_skips_raw_sidecar_dir(tmp_path, monkeypatch):
-    """The _raw/ sidecars live as plain text files under ~/.brain/_raw/
+    """The _raw/ sidecars live as plain text files under ${BRAIN_PATH}/_raw/
     — they MUST be excluded from the backlink scan so the citation
     inside the raw text doesn't show up as a fake backlink."""
     mod = _import("brain-graph.py")
@@ -380,10 +380,10 @@ def test_edit_append_preserves_trailing_connections(tmp_path, monkeypatch):
     mod = _import("brain-edit.py")
     _seed_brain(tmp_path)
     monkeypatch.setattr(mod, "BRAIN_DIR", tmp_path)
-    r = mod.cmd_append(NISHANK_SLUG, "## Antriksh's reaction\nThe stage axis matters more than the topic axis.")
+    r = mod.cmd_append(NISHANK_SLUG, "## the user's reaction\nThe stage axis matters more than the topic axis.")
     assert r["ok"] is True
     written = (tmp_path / f"{NISHANK_SLUG}.md").read_text()
-    reaction_idx = written.find("## Antriksh's reaction")
+    reaction_idx = written.find("## the user's reaction")
     conn_idx = written.find("## Connections")
     assert reaction_idx > 0 and conn_idx > reaction_idx
 
@@ -428,7 +428,7 @@ def test_edit_missing_page_reports_not_found(tmp_path, monkeypatch):
 
 def test_brain_ask_persona_loads_reader_frame_into_prompt(tmp_path, monkeypatch):
     """When --persona is passed, brain-ask must load the persona page
-    (defaulting to people/antriksh) and inject it into the LLM prompt
+    (defaulting to people/) and inject it into the LLM prompt
     as 'READER FRAME'. The system prompt and verbatim-quote discipline
     are unchanged."""
     mod = _import("brain-ask.py")
@@ -436,10 +436,10 @@ def test_brain_ask_persona_loads_reader_frame_into_prompt(tmp_path, monkeypatch)
     monkeypatch.setattr(mod, "BRAIN_DIR", tmp_path)
     monkeypatch.setattr(mod, "RAW_DIR", tmp_path / "_raw")
     monkeypatch.setattr(mod, "LAST_BOOKMARK_PATH", tmp_path / ".last-bookmark.json")
-    # Seed an Antriksh entity page
+    # Seed an the user entity page
     (tmp_path / "people").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "people" / "antriksh.md").write_text(
-        "---\ntype: person\n---\n# Antriksh\n"
+    (tmp_path / "people" / "test-user.md").write_text(
+        "---\ntype: person\n---\n# the user\n"
         "Founder building AI agents and personal assistant. Thinks in "
         "[[founder-mode]] terms. Current focus: brain compounding.\n"
     )
@@ -448,14 +448,14 @@ def test_brain_ask_persona_loads_reader_frame_into_prompt(tmp_path, monkeypatch)
     fake_llm = mock.MagicMock()
     def call(system_prompt, user_msg, **kw):
         captured["user"] = user_msg
-        return ("Calibrated answer using Antriksh's context.", "openai")
+        return ("Calibrated answer using the user's context.", "openai")
     fake_llm.call = call
     monkeypatch.setitem(sys.modules, "llm", fake_llm)
 
     r = mod.ask(NISHANK_SLUG, "explain Nishank's thesis given who I am",
-                persona_slug="people/antriksh")
+                persona_slug="people/")
     assert r["ok"] is True
-    assert r["persona"] == "people/antriksh"
+    assert r["persona"] == "people/"
     assert "READER FRAME" in captured["user"]
     assert "Founder building AI agents" in captured["user"]
     # Question and brain page also present

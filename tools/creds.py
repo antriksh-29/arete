@@ -3,18 +3,18 @@
 Personal AI assistant credential vault.
 
 Encrypted SQLite database storing credentials behind a single master key.
-Every access is logged to /var/log/bot-creds/access.log with timestamp,
+Every access is logged to /var/log/arete-creds/access.log with timestamp,
 action, credential name, and caller.
 
 Storage layout:
-    /var/lib/bot-creds/vault.db        — encrypted credentials, mode 600
-    /etc/bot-secrets/master.key        — master key (32 bytes base64), mode 600
-    /var/log/bot-creds/access.log      — audit log, mode 640
+    /var/lib/arete-creds/vault.db        — encrypted credentials, mode 600
+    /etc/arete-secrets/master.key        — master key (32 bytes base64), mode 600
+    /var/log/arete-creds/access.log      — audit log, mode 640
 
 Threat model (single-tenant, single-user):
-    - VPS process compromise as botuser → can read vault.db AND master.key
+    - VPS process compromise as agent → can read vault.db AND master.key
       → can decrypt all credentials. Acceptable: matches what an attacker
-      that fully compromised botuser would have anyway.
+      that fully compromised agent would have anyway.
     - Filesystem snapshot / backup leak → vault.db alone is encrypted blob,
       master.key is what unlocks it. Master key is backed up separately to
       1Password (offline). So a backup-only leak (R2 snapshot, cloud-init
@@ -25,13 +25,13 @@ Threat model (single-tenant, single-user):
       per-skill scope enforcement.
 
 Operations:
-    bot-cred init               — generate master key, init empty vault
-    bot-cred set NAME           — interactively prompt for value, encrypt, store
-    bot-cred get NAME           — print decrypted value to stdout (no newline)
-    bot-cred list               — list credential names (no values), with creation timestamps
-    bot-cred delete NAME        — remove a credential
-    bot-cred audit              — print the audit log
-    bot-cred check              — sanity-check vault integrity (decrypt every cred)
+    arete-cred init               — generate master key, init empty vault
+    arete-cred set NAME           — interactively prompt for value, encrypt, store
+    arete-cred get NAME           — print decrypted value to stdout (no newline)
+    arete-cred list               — list credential names (no values), with creation timestamps
+    arete-cred delete NAME        — remove a credential
+    arete-cred audit              — print the audit log
+    arete-cred check              — sanity-check vault integrity (decrypt every cred)
 
 Optional flag:
     --skill SKILLNAME           — record which skill is requesting (for audit)
@@ -40,7 +40,7 @@ Optional flag:
 Exit codes:
     0   success
     1   credential not found / decrypt failure / unknown command
-    2   vault not initialized (run `bot-cred init`)
+    2   vault not initialized (run `arete-cred init`)
 """
 
 import argparse
@@ -59,9 +59,9 @@ except ImportError:
     sys.exit(2)
 
 
-VAULT_PATH = "/var/lib/bot-creds/vault.db"
-MASTER_KEY_PATH = "/etc/bot-secrets/master.key"
-LOG_PATH = "/var/log/bot-creds/access.log"
+VAULT_PATH = "/var/lib/arete-creds/vault.db"
+MASTER_KEY_PATH = "/etc/arete-secrets/master.key"
+LOG_PATH = "/var/log/arete-creds/access.log"
 
 
 def _audit(action: str, name: str, skill: str | None = None, status: str = "ok") -> None:
@@ -82,7 +82,7 @@ def _load_key() -> Fernet:
     """Load the master key from disk and return a Fernet instance."""
     if not os.path.exists(MASTER_KEY_PATH):
         sys.stderr.write(
-            f"ERROR: master key not found at {MASTER_KEY_PATH}. Run `bot-cred init` first.\n"
+            f"ERROR: master key not found at {MASTER_KEY_PATH}. Run `arete-cred init` first.\n"
         )
         sys.exit(2)
     with open(MASTER_KEY_PATH, "rb") as f:
@@ -304,7 +304,7 @@ def cmd_check() -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        prog="bot-cred",
+        prog="arete-cred",
         description="Personal AI assistant credential vault.",
     )
     parser.add_argument(

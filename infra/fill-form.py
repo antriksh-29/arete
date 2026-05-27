@@ -11,7 +11,7 @@ Usage:
     python3 ~/bin/fill-form.py <url> <answers-json-file> [--submit] [--screenshot <path>]
 
 Answers JSON shape (keys matched fuzzily against question labels):
-    {"Full Name": "Antriksh Jain", "Email": "...", ...}
+    {"Full Name": "the user Jain", "Email": "...", ...}
 """
 
 import json
@@ -21,9 +21,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:/home/botuser/.local/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:${STATE_HOME}/.local/bin:" + os.environ.get("PATH", "")
 
-BH = os.environ.get("BROWSER_HARNESS", "/home/botuser/.local/bin/browser-harness")
+BH = os.environ.get("BROWSER_HARNESS", "${STATE_HOME}/.local/bin/browser-harness")
 ENV = {**os.environ, "BU_CDP_URL": os.environ.get("BU_CDP_URL", "http://127.0.0.1:9222")}
 SHOT_DEFAULT = "/tmp/fill-form-result.png"
 

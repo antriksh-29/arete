@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# xref-drainer.py — drains ~/.brain/.xref-queue.jsonl, the entity
+# xref-drainer.py — drains ${BRAIN_PATH}/.xref-queue.jsonl, the entity
 # cross-reference work that ingest-x-thread / ingest-youtube /
 # ingest-html now defer instead of doing inline.
 #
@@ -35,12 +35,12 @@ BRAIN_DIR = Path.home() / ".brain"
 QUEUE_PATH = BRAIN_DIR / ".xref-queue.jsonl"
 PROCESSED_PATH = BRAIN_DIR / ".xref-processed.jsonl"
 LOCK_PATH = BRAIN_DIR / ".xref-queue.lock"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 TODAY = datetime.now(timezone.utc).date().isoformat()
 
 # Match the PATH shim used by every other script — gbrain's shebang is
 # `#!/usr/bin/env bun`, so bun must be on PATH or every call exits 127.
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 
 def log(msg):

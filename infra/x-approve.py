@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Approve / edit / reject the most recent /x-draft output. The pending draft
-# lives at ~/.brain-bootstrap-raw/state/x-draft-pending.json.
+# lives at ${BRAIN_PATH}-bootstrap-raw/state/x-draft-pending.json.
 #
 # Usage:
 #   x-approve.py approve
@@ -22,14 +22,14 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 BRAIN_DIR = Path.home() / ".brain"
 STATE_DIR = Path.home() / ".brain-bootstrap-raw" / "state"
 STATE_FILE = STATE_DIR / "x-draft-pending.json"
 FEEDBACK_LOG = STATE_DIR / "x-draft-feedback.jsonl"
 OWN_CORPUS = BRAIN_DIR / "corpus" / "x-antriksssh.md"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 TODAY = datetime.now(timezone.utc).date().isoformat()
 
 

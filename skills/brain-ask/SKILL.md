@@ -11,7 +11,7 @@ description: |
   Loads the brain page body + verbatim raw sidecar (when present),
   asks the LLM with a "quote from the source, cite the slug" prompt.
   Optional --persona flag injects a reader frame (defaults to
-  people/antriksh) so the answer is calibrated to who's asking.
+  people/{{user.slug}}) so the answer is calibrated to who's asking.
   WHEN: User asks a content question that names a specific source —
   "what does Nishank say about X", "quote the top 3 takeaways",
   "summarize that article", "explain Nishank's thesis in my context".
@@ -29,7 +29,7 @@ writes_to: []
 brain_dirs_read:
   - "<slug>"        # the brain page being asked about
   - _raw/           # verbatim sidecar from browser-harness, if present
-  - people/         # only when --persona is set (default people/antriksh)
+  - people/         # only when --persona is set (default people/{{user.slug}})
 trigger_guard: free_text
 ---
 
@@ -39,7 +39,7 @@ Single-source Q&A. Resolves the pointer via the same shapes every
 Layer 3 script accepts:
 
 - a literal slug (`media/social/x-nishank-20260512`)
-- `last` — reads `~/.brain/.last-bookmark.json` (set by reading-list
+- `last` — reads `{{user.brain_path}}/.last-bookmark.json` (set by reading-list
   worker after each completed ingest). Only use for unambiguous
   deictic references ("that article", "this one").
 - a URL (looked up in `lists/to-read`)
@@ -51,7 +51,7 @@ Layer 3 script accepts:
 ## --persona
 
 Adds a `READER FRAME` block to the LLM prompt loaded from the
-persona page (default `people/antriksh`). Use when the user asks
+persona page (default `people/{{user.slug}}`). Use when the user asks
 for an explanation calibrated to their context: "explain X to me
 in my context", "given my background, what should I take from X",
 "what does X mean for someone in my role". Without --persona the
@@ -97,7 +97,7 @@ source in mind, you don't have a persona-ask.
 
 X tweets, YouTube videos, PDFs, HTML articles — they all have brain
 pages and (when browser-harness ran successfully at ingest) raw
-sidecars at `~/.brain/_raw/<slug>.raw.txt`. Don't refuse with "I don't
+sidecars at `{{user.brain_path}}/_raw/<slug>.raw.txt`. Don't refuse with "I don't
 have the article text" or "paste the thread text or a screenshot" —
 brain-ask.py reads the raw sidecar; run it. Only if it returns
 `ok: false` with `reason: not_found` may you ask the user for the

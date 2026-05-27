@@ -256,7 +256,7 @@ function generateCreateSkillMd(slug: string, draft: Draft): string {
   const bodyLines = [
     `# /${slug}`,
     "",
-    `Author: Alfred (Telegram skill-author, ${new Date().toISOString().slice(0, 10)})`,
+    `Author: Arete (Telegram skill-author, ${new Date().toISOString().slice(0, 10)})`,
     "",
     "## Capability",
     "",
@@ -307,7 +307,7 @@ function generateCreateSkillMd(slug: string, draft: Draft): string {
     version: "0.1.0",
     description,
     trigger: triggers,
-    created_by: "alfred",
+    created_by: "arete",
     source: "telegram",
     created_at: new Date().toISOString(),
     last_authoring_turn: new Date().toISOString(),
@@ -491,7 +491,7 @@ function writeBrainPage(slug: string, draft: Draft, commitSha: string): void {
     `type: user-skill`,
     `created: ${new Date().toISOString().slice(0, 10)}`,
     `updated: ${new Date().toISOString().slice(0, 10)}`,
-    `tags: [user-skill, alfred-authored]`,
+    `tags: [user-skill, arete-authored]`,
     "---",
     `# user-skill: ${slug}`,
     "",
@@ -617,7 +617,7 @@ async function main() {
         version: "0.1.0",
         description,
         trigger: triggers,
-        created_by: "alfred",
+        created_by: "arete",
         source: "telegram",
         created_at: new Date().toISOString(),
         last_authoring_turn: new Date().toISOString(),
@@ -654,7 +654,7 @@ async function main() {
         skillMdText = rewriteFrontmatter(draft.proposed_skill_md, {
           name: slug,
           version: "0.1.0",                // reset on fork
-          created_by: "alfred",
+          created_by: "arete",
           source: "telegram",
           forked_from: `${src!.tier}/${draft.answers.target}@${draft.source_sha ?? "unknown"}`,
           created_at: new Date().toISOString(),
@@ -680,7 +680,7 @@ async function main() {
         baseSkill = rewriteFrontmatter(cloned.skillMdOriginal, {
           name: slug,
           version: "0.1.0",                // reset on fork
-          created_by: "alfred",
+          created_by: "arete",
           source: "telegram",
           forked_from: `${src!.tier}/${draft.answers.target}@${draft.source_sha ?? "unknown"}`,
           created_at: new Date().toISOString(),

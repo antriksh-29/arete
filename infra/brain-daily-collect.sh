@@ -1,7 +1,7 @@
 #!/bin/bash
 # Daily Phase 6 collector: pulls last 2d Gmail + last 14d Calendar from
 # both accounts via ClawVisor, writes raw JSON + digests under
-# ~/.brain-bootstrap-raw/, then commits any changed pages and runs gbrain sync.
+# ${BRAIN_PATH}-bootstrap-raw/, then commits any changed pages and runs gbrain sync.
 #
 # 2d Gmail window has intentional overlap with previous day (idempotent — same
 # message IDs dedupe in gbrain).
@@ -26,15 +26,15 @@ log() { echo "[$(date -Iseconds)] $*" | tee -a "$LOG"; }
 log "=== brain-daily-collect start ==="
 
 # Load secrets from vault (same pattern as gbrain-mcp-wrapper.sh — avoids
-# sourcing /etc/bot-secrets/gateway.env which corrupts $-bearing passwords).
+# sourcing /etc/arete-secrets/gateway.env which corrupts $-bearing passwords).
 # Post-2026-05-16: Composio is the Gmail/Calendar source. ClawVisor env
 # vars retired (collectors no longer read them; composio_client picks up
 # COMPOSIO_API_KEY itself via the vault).
-export PATH="/home/botuser/.bun/bin:$PATH"
-export OPENAI_API_KEY="$(/usr/local/bin/bot-cred get OPENAI_API_KEY 2>/dev/null)"
-export ANTHROPIC_API_KEY="$(/usr/local/bin/bot-cred get ANTHROPIC_API_KEY 2>/dev/null)"
+export PATH="${STATE_HOME}/.bun/bin:$PATH"
+export OPENAI_API_KEY="$(/usr/local/bin/arete-cred get OPENAI_API_KEY 2>/dev/null)"
+export ANTHROPIC_API_KEY="$(/usr/local/bin/arete-cred get ANTHROPIC_API_KEY 2>/dev/null)"
 
-if ! /usr/local/bin/bot-cred list 2>/dev/null | grep -q "^COMPOSIO_API_KEY "; then
+if ! /usr/local/bin/arete-cred list 2>/dev/null | grep -q "^COMPOSIO_API_KEY "; then
   log "ABORT: COMPOSIO_API_KEY missing from vault (composio Gmail/Calendar required since 2026-05-16 migration)"
   exit 1
 fi
@@ -56,7 +56,7 @@ cd "$HOME/.brain"
 if [ -n "$(git status --porcelain)" ]; then
   log "brain changes detected — committing + syncing"
   git add -A
-  git -c user.email='antriksh.bot@getarete.co' -c user.name='Alfred' \
+  git -c user.email='arete-bot@${PLATFORM_ROOT_DOMAIN}' -c user.name='Arete' \
     commit -m "feat(daily): $(date +%Y-%m-%d) collector run" 2>&1 | tee -a "$LOG"
   gbrain sync --repo "$HOME/.brain" 2>&1 | tee -a "$LOG"
   git push origin main 2>&1 | tee -a "$LOG" || log "push failed (non-fatal — try again next run)"

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Activity tracker — Strava nightly sync + manual-log + brain rebuild.
 #
-# Single source of truth: ~/.brain/habits/activity-tracker.md (rebuilt
+# Single source of truth: ${BRAIN_PATH}/habits/activity-tracker.md (rebuilt
 # on every sync from activities.tsv + manual.tsv). fitness-snapshot.py
 # and any other reader pull from this brain page only.
 #
@@ -25,7 +25,7 @@ MANUAL_FILE="$STATE_DIR/manual.tsv"
 BRAIN_DIR="$HOME/.brain"
 BRAIN_PAGE="$BRAIN_DIR/habits/activity-tracker.md"
 BRAIN_SLUG="habits/activity-tracker"
-GBRAIN="/home/botuser/.bun/bin/gbrain"
+GBRAIN="${STATE_HOME}/.bun/bin/gbrain"
 STRAVA_CLIENT_ID="236081"
 touch "$MANUAL_FILE"
 
@@ -192,7 +192,7 @@ tags: [fitness, strava, tracker]
 # Activity Tracker
 
 Auto-rebuilt by \`~/bin/activity-tracker.sh\`. Source of truth is
-the merge of \`~/.brain-bootstrap-raw/state/activity-tracker/activities.tsv\`
+the merge of \`${BRAIN_PATH}-bootstrap-raw/state/activity-tracker/activities.tsv\`
 (Strava sync) and \`manual.tsv\` (non-Strava entries). DO NOT
 hand-edit this page — changes are overwritten on every sync /
 manual-log call.
@@ -238,7 +238,7 @@ EOF
       cd "$BRAIN_DIR"
       git add habits/activity-tracker.md 2>/dev/null
       if ! git diff --cached --quiet 2>/dev/null; then
-        git -c user.email='alfred@bot' -c user.name='Alfred' \
+        git -c user.email='arete@bot' -c user.name='Arete' \
           commit -m "activity-tracker: rebuild $today" >/dev/null 2>&1 || true
       fi
       # Push immediately so GitHub reflects state in real time.

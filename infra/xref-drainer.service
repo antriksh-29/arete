@@ -1,9 +1,9 @@
 [Unit]
-Description=Drain ~/.brain/.xref-queue.jsonl — entity stub / link / timeline-add work deferred by ingestors
+Description=Drain ${BRAIN_PATH}/.xref-queue.jsonl — entity stub / link / timeline-add work deferred by ingestors
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 /home/botuser/bin/xref-drainer.py --once
+ExecStart=/usr/bin/python3 ${STATE_HOME}/bin/xref-drainer.py --once
 TimeoutStartSec=180
 # bun is on PATH because gbrain's shebang needs it
-Environment=PATH=/home/botuser/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PATH=${STATE_HOME}/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

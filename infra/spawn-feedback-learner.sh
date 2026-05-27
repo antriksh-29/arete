@@ -28,7 +28,7 @@ mkdir -p "$LOG_DIR" "$QUEUE_DIR" "$QUEUE_DIR/applied" "$QUEUE_DIR/discarded"
 TS=$(date -Iseconds)
 LOG="$LOG_DIR/$(date +%Y-%m-%d).log"
 
-export PATH="/home/botuser/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+export PATH="${STATE_HOME}/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 echo "[$TS] spawning feedback-learner for: ${USER_MSG:0:120}" >> "$LOG"
 

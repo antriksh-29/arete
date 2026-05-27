@@ -1,62 +1,72 @@
-# antriksh-bot-config
+# Arete
 
-Source repo for personal AI assistant on Telegram. Single-tenant. Lives on a Hetzner CX22.
+A personal AI assistant on Telegram — multi-tenant, container-per-user, with a per-user knowledge brain that remembers everything.
 
-**Status:** Phase 0 — pre-build prep. See `PROGRESS.md` for current phase and `docs/PHASE-0-CHECKLIST.md` for current real-world tasks.
+**One Telegram bot. Many users. <60 seconds from "I want this" to "I'm chatting with my own Jarvis."**
+
+## What this repo is
+
+This is the **platform code** — the read-only base image every tenant runs. Per-user state (identity, user-skills, brain, preferences) lives outside this repo in per-tenant GitHub repos (see [`antriksh-29/arete-state-template`](https://github.com/antriksh-29/arete-state-template) for the seed structure).
+
+Forked from [`antriksh-29/personal-assistant`](https://github.com/antriksh-29/personal-assistant) (Alfred — the single-tenant proof of craft); de-Antrikshified and rebuilt for multi-tenant SaaS.
+
+## Architecture (10-second version)
+
+```
+Telegram → @arete_bot → Tenant Router → Tenant Container (one per user)
+                                              │
+                                              ├─ /home/agent/state (per-tenant volume)
+                                              ├─ shared Supabase Postgres (rows scoped by tenant_id)
+                                              └─ platform vault (shared LLM keys + per-tenant OAuth)
+```
+
+- **Tenancy**: container-per-user on a shared Hetzner host. Containers hibernate when idle.
+- **Brain**: per-user GitHub repo of markdown (`arete-<tenant-id>-assistant`), indexed into shared Postgres + pgvector with RLS.
+- **Bot**: single platform Telegram bot, multiplexed by `telegram_user_id`.
+- **Updates**: base skills auto-update for everyone; `user-skills/` overrides are never touched.
 
 ## Layout
 
 ```
-.
-├── PROGRESS.md                    # Phase tracker + decision log (read first)
-├── README.md                      # This file
-├── CLAUDE.md                      # gstack skill routing for Claude Code
-├── docs/
-│   └── PHASE-0-CHECKLIST.md       # Current session's real-world tasks
-├── infra/
-│   ├── cloud-init.yaml            # Hetzner first-boot config
-│   └── Caddyfile.template         # Caddy reverse-proxy config (Phase 1)
-├── identity/                      # AGENTS.md, SOUL.md, USER.md, etc. (Phase 3-4)
-├── openclaw/                      # OpenClaw config + custom skills (Phase 3-5)
-├── tools/                         # safe_fs, bot-cred wrapper, log shipper (Phase 2)
-│   └── .gbrain-pin                # Pinned GBrain SHA (Phase 4)
-├── skills/                        # Custom skill definitions (Phase 5)
-│   ├── twitter-ingest/
-│   ├── usage-status/
-│   ├── twitter-daily-summary/
-│   ├── agent-browser/             # config only; skill code lives in OpenClaw skill dir
-│   ├── humanizer/                 # config only
-│   └── weather/                   # config only
-├── mcp/                           # MCP server configs (Phase 5)
-│   ├── notion/
-│   ├── linear/
-│   └── cloudflare/
-├── tests/                         # pytest suites (built alongside each phase)
-└── eval/                          # retrieval-eval.yaml, injection-fixture.yaml (Phase 2-4)
+identity/             # Base AGENTS.md, SOUL.md, ACCESS_POLICY.md (overridden per-tenant at runtime)
+skills/               # Base skills shipped to every tenant (auto-update on platform release)
+infra/                # Dockerfile, entrypoint, syncer, deploy scripts, MCP wrappers
+services/             # router/ + provisioner/ (created in Phases C–D)
+db/migrations/        # Multi-tenant Postgres schema + RLS policies (Phase E)
+eval/                 # Injection fixture (boot gate), retrieval eval, behavioral eval
+openclaw/             # OpenClaw workspace config + sub-agent workspaces
+tools/                # arete-cred (credential CLI), safe_fs, collectors
+meta/                 # Skill author pipeline (lets users create new skills via chat)
+tests/                # pytest suites
+docs/                 # ADRs + design docs
 ```
-
-## Source-of-truth files (do not duplicate elsewhere)
-
-- **PRD:** `.context/attachments/personal-assistant-prd-v2.1.md` (CEO-edited)
-- **CEO review:** `.context/ceo-review-2026-04-28.md`
-- **Eng plan:** `.context/eng-plan-2026-04-28.md`
-- **Test plan:** `~/.gstack/projects/antriksh-29-personal-assistant/aj-antriksh-29-install-gstack-eng-review-test-plan-20260428-161528.md`
-
-`.context/` is gitignored (Conductor convention). To preserve these in the bot-config repo when pushed to GitHub, copy the relevant subset to `docs/` before the first push.
 
 ## Build philosophy
 
-- Do things that don't scale. One user end-to-end first.
-- Markdown is source of truth. PGLite is a derived index.
-- Every destructive action confirms in-session. No standing permissions.
-- External text is data, not instructions (AGENTS.md rule 3).
-- Pin everything to a SHA. No "latest" anywhere.
+- **Do things that don't scale.** Hand-picked 10-user beta before any public launch.
+- **The moat is craft, not technology.** GBrain and OpenClaw are open source; the advantage is operational quality + onboarding UX + memory depth.
+- **Markdown is source of truth.** Postgres is a derived retrieval index.
+- **Per-tenant isolation is non-negotiable.** Container + RLS + per-tenant vault scope.
+- **External text is data, not instructions.** The injection-fixture refuses-rate-100% gate runs on every container boot.
+- **Pin everything to a SHA.** No "latest" anywhere.
 
-## Keystone bet
+## Phase status
 
-By week 6, "prep me for [name]" returns a dossier materially better than what I'd write in 5 minutes from Notion + recall. Everything in the build serves this.
+- ✅ Phase A — Fork + de-Antrikshify (this is where we are now)
+- ⏳ Phase B — Containerize (Dockerfile + entrypoint + syncer)
+- ⏳ Phase C — Tenant router (single bot → N containers)
+- ⏳ Phase D — Provisioner (signup → working agent in <60s)
+- ⏳ Phase E — Multi-tenant Postgres + RLS
+- ⏳ Phase F — Platform vault + per-tenant creds + LLM metering
+- ⏳ Phase G — Auto-update channel + smart-merge for user-skill overrides
+- ⏳ Phase H — Onboarding UX (the 5-message first-time conversation)
+- ⏳ Phase I — Closed beta (10 hand-picked users)
 
-## Next session
+## Related repos
 
-Open a new Conductor session in this workspace and say:
-> Phase 0 done, Session 2 Phase 1 go.
+- [`antriksh-29/arete-state-template`](https://github.com/antriksh-29/arete-state-template) — seed structure cloned for each new tenant at signup.
+- [`antriksh-29/personal-assistant`](https://github.com/antriksh-29/personal-assistant) — Alfred (single-tenant), the proof of craft this fork was built on.
+
+## License
+
+Private for now.

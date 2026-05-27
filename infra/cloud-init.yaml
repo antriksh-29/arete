@@ -1,12 +1,12 @@
 #cloud-config
 # Hetzner first-boot config for personal AI assistant VPS.
 # Tested on CX23 (x86, eu-central / Falkenstein). CX22 also fine.
-# Sets timezone, hardens SSH/UFW/fail2ban, creates botuser, installs core packages,
+# Sets timezone, hardens SSH/UFW/fail2ban, creates agent, installs core packages,
 # pre-creates dirs for vault + logs.
 # See docs/HETZNER-SETUP.md for the full provisioning walkthrough.
 #
 # Pasted into Hetzner "Cloud config" field on server creation.
-# After provisioning: ssh botuser@<vps-ip> should succeed (key-based, no password).
+# After provisioning: ssh agent@<vps-ip> should succeed (key-based, no password).
 #
 # What it does NOT do:
 # - Install Bun (done in Phase 1 — depends on user verifying SSH first)
@@ -40,12 +40,12 @@ packages:
   - gnupg
 
 users:
-  - name: botuser
+  - name: agent
     sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
     groups: [sudo]
     ssh_authorized_keys:
-      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFUVpoJ2io/NqpketRS2QKw7igmU4pw/mE6lWaoLIyQQ antriksh1980@gmail.com
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFUVpoJ2io/NqpketRS2QKw7igmU4pw/mE6lWaoLIyQQ ${USER_EMAIL}
 
 write_files:
   # SSH hardening — disable password auth, root login, restrict to ed25519/rsa
@@ -58,7 +58,7 @@ write_files:
       KbdInteractiveAuthentication no
       PubkeyAuthentication yes
       X11Forwarding no
-      AllowUsers botuser
+      AllowUsers agent
       MaxAuthTries 3
       LoginGraceTime 30
 
@@ -89,11 +89,11 @@ runcmd:
   - systemctl enable --now fail2ban
 
   # Pre-create directories per PRD §A.1
-  - mkdir -p /etc/bot-secrets && chmod 700 /etc/bot-secrets && chown botuser:botuser /etc/bot-secrets
-  - mkdir -p /var/lib/bot-creds && chmod 700 /var/lib/bot-creds && chown botuser:botuser /var/lib/bot-creds
-  - mkdir -p /var/log/bot-creds && chmod 750 /var/log/bot-creds && chown botuser:botuser /var/log/bot-creds
-  - touch /var/log/bot-creds/access.log && chmod 640 /var/log/bot-creds/access.log && chown botuser:botuser /var/log/bot-creds/access.log
-  - mkdir -p /var/log/openclaw && chmod 750 /var/log/openclaw && chown botuser:botuser /var/log/openclaw
+  - mkdir -p /etc/arete-secrets && chmod 700 /etc/arete-secrets && chown agent:agent /etc/arete-secrets
+  - mkdir -p /var/lib/arete-creds && chmod 700 /var/lib/arete-creds && chown agent:agent /var/lib/arete-creds
+  - mkdir -p /var/log/arete-creds && chmod 750 /var/log/arete-creds && chown agent:agent /var/log/arete-creds
+  - touch /var/log/arete-creds/access.log && chmod 640 /var/log/arete-creds/access.log && chown agent:agent /var/log/arete-creds/access.log
+  - mkdir -p /var/log/openclaw && chmod 750 /var/log/openclaw && chown agent:agent /var/log/openclaw
   # NOTE: /var/log/caddy is intentionally NOT pre-created here. The caddy user does
   # not exist until `apt install caddy` runs (Phase 1), and pre-creating the dir as
   # root causes permission-denied when caddy reloads with a config that writes logs.
@@ -107,7 +107,7 @@ runcmd:
   - echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) cloud-init complete" > /var/log/cloud-init-bot-marker.log
 
 # After this completes, expect:
-#   ssh botuser@<vps-ip>  → shell prompt
+#   ssh agent@<vps-ip>  → shell prompt
 #   sudo -n true           → no password prompt
-#   ls /var/lib/bot-creds  → empty dir owned by botuser
+#   ls /var/lib/arete-creds  → empty dir owned by agent
 #   ufw status             → 22/80/443 allowed, all else denied

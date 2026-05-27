@@ -282,7 +282,7 @@ sync_user_skills() {
   printf '%s\n' $current_names > "$tracker"
 
   # Note: PR #113's chattr +i locking is removed (#114). The bot was
-  # able to `sudo chattr -i` its way around immutability since botuser
+  # able to `sudo chattr -i` its way around immutability since agent
   # has NOPASSWD sudo. Switched to the brain-style autosync approach:
   # skill-autosync.sh watches workspace edits and pushes them to the
   # repo + GitHub. Bot edits are preserved instead of fought.
@@ -552,7 +552,7 @@ install_dtr_unit() {
 step "install daily-tasks-review unit" install_dtr_unit
 
 # ── 3c-ter. install xref-drainer timer + service ──────────────────
-# Drains ~/.brain/.xref-queue.jsonl every 60s. Ingestors now defer
+# Drains ${BRAIN_PATH}/.xref-queue.jsonl every 60s. Ingestors now defer
 # the per-entity gbrain link / timeline-add fan-out (~2s per entity)
 # to this queue so the user-facing add path doesn't push past the
 # 120s per-turn Telegram budget. Without this timer entity stubs
@@ -904,7 +904,7 @@ install_spool_stall_watchdog() {
 step "install spool-stall watchdog" install_spool_stall_watchdog
 
 # ── 4d.6 install brain-autosync timer ────────────────────────────────
-# 60s polling: any uncommitted changes in ~/.brain/ get staged,
+# 60s polling: any uncommitted changes in ${BRAIN_PATH}/ get staged,
 # committed, pushed to GitHub. Catches the case where an agent or
 # domain-specific script writes a brain file but forgets to commit
 # (observed 2026-05-22 image-v36: bot modified a brain page but
@@ -1068,8 +1068,8 @@ notify_user_skill_deploys() {
     return 0
   fi
   local bot_token chat_id
-  bot_token=$(bot-cred get TELEGRAM_BOT_TOKEN 2>/dev/null | head -1)
-  chat_id=$(bot-cred get TELEGRAM_USER_ID 2>/dev/null | head -1)
+  bot_token=$(arete-cred get TELEGRAM_BOT_TOKEN 2>/dev/null | head -1)
+  chat_id=$(arete-cred get TELEGRAM_USER_ID 2>/dev/null | head -1)
   if [ -z "$bot_token" ] || [ -z "$chat_id" ]; then
     echo "  ${yellow}!${rst} telegram vault keys missing — skipping callback (skill IS deployed)"
     return 0
@@ -1159,28 +1159,28 @@ migrate_reading_list_v2() {
 }
 step "reading-list v2 migrate" migrate_reading_list_v2
 
-# ── 5c. ensure ~/.brain/_raw/ is gitignored ──────────────────────
+# ── 5c. ensure ${BRAIN_PATH}/_raw/ is gitignored ──────────────────────
 # Raw sidecars (verbatim rendered pages from browser-harness) live
-# under ~/.brain/_raw/ and must NEVER be pushed to the GitHub brain
+# under ${BRAIN_PATH}/_raw/ and must NEVER be pushed to the GitHub brain
 # repo — they can include X session signatures, login state hints,
 # and content the source's ToS doesn't want mirrored publicly. The
 # reading-list `git_commit` already only stages an explicit dir
 # allowlist (so `_raw/` is safe by construction), but a manual
 # `git add -A` from a user shell would commit the sidecar. Belt and
-# braces: also list `_raw/` in ~/.brain/.gitignore.
+# braces: also list `_raw/` in ${BRAIN_PATH}/.gitignore.
 ensure_brain_gitignore() {
   local f="$HOME/.brain/.gitignore"
-  [ -d "$HOME/.brain" ] || { echo "  ${yellow}!${rst} ~/.brain missing — skipping"; return 0; }
+  [ -d "$HOME/.brain" ] || { echo "  ${yellow}!${rst} ${BRAIN_PATH} missing — skipping"; return 0; }
   touch "$f"
   if ! grep -qxF "_raw/" "$f"; then
     echo "_raw/" >> "$f"
-    echo "  ${green}✓${rst} added _raw/ to ~/.brain/.gitignore"
+    echo "  ${green}✓${rst} added _raw/ to ${BRAIN_PATH}/.gitignore"
   else
     echo "  ${green}✓${rst} _raw/ already gitignored"
   fi
   return 0
 }
-step "ensure ~/.brain/_raw gitignored" ensure_brain_gitignore
+step "ensure ${BRAIN_PATH}/_raw gitignored" ensure_brain_gitignore
 
 # ── 6. final verification: gbrain smoke-test (informational) ────
 # This step runs gbrain's built-in smoke checks PLUS our drop-in

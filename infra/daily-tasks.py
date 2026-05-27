@@ -3,12 +3,12 @@
 
 Replaces the v1 bash script's per-date flat state with per-task lineage:
 
-  ~/.brain-bootstrap-raw/state/daily-tasks/v2/
+  ${BRAIN_PATH}-bootstrap-raw/state/daily-tasks/v2/
     tasks/<uuid>.json    one logical task with full event history
     daily/<YYYY-MM-DD>.json   pointer list of task_ids for that day
     index.json           derived view: open tasks + title_norm lookup
 
-v1 flat files (~/.brain-bootstrap-raw/state/daily-tasks/<YYYY-MM-DD>.json)
+v1 flat files (${BRAIN_PATH}-bootstrap-raw/state/daily-tasks/<YYYY-MM-DD>.json)
 are READ for backward-compat queries but no longer written. Migration via
 infra/migrate-daily-tasks-v2.py moves v1 history into v2.
 
@@ -981,7 +981,7 @@ def _render_today_page() -> str:
         "*what am I working on*.",
         "",
         "Source of truth: `~/bin/daily-tasks.sh show`. Per-task lineage at",
-        "`~/.brain-bootstrap-raw/state/daily-tasks/v2/tasks/<uuid>.json`.",
+        "`${BRAIN_PATH}-bootstrap-raw/state/daily-tasks/v2/tasks/<uuid>.json`.",
         "",
         f"## Today ({today})",
         "",
@@ -1201,8 +1201,8 @@ def _git_commit_brain(rel_paths: list[Path]) -> None:
             return  # no real changes
         subprocess.run(
             ["git", "-C", str(BRAIN_DIR),
-             "-c", "user.email=alfred@bot",
-             "-c", "user.name=Alfred",
+             "-c", "user.email=arete@bot",
+             "-c", "user.name=Arete",
              "commit", "-m", f"daily-tasks: state update {today_str()}"],
             check=False, capture_output=True, timeout=15,
         )

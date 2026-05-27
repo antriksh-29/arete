@@ -46,7 +46,7 @@ triggers:
     utterance: "draft something on focus, in paulg style"
     expect_skill: x-draft
   - id: xd-011
-    utterance: "draft a tweet on AGI — pure antriksh"
+    utterance: "draft a tweet on AGI — pure me"
     expect_skill: x-draft
 
   # ── post-draft actions ──

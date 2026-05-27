@@ -10,7 +10,7 @@ vault.db
 vault.db.*
 **/oauth_*.json
 **/refresh_token*
-.bot-cred-cache
+.arete-cred-cache
 
 # Conductor workspace state
 .context/
@@ -57,5 +57,5 @@ __pycache__/
 *.pyc
 
 # Telethon session (user creds — never commit)
-.telethon-alfred-e2e/
+
 .gstack/

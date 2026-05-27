@@ -16,7 +16,7 @@ description: |
   reject to compound the voice corpus.
   WHEN: "draft a tweet about <X>", "what should I tweet about <X>", "reply
   to <tweet-url>: <thought>", "quote retweet <url>: <thought>", style
-  overrides like "more garry style", "in paulg style", "pure antriksh", and
+  overrides like "more garry style", "in paulg style", "my voice", and
   the post-draft actions "approve", "edit: <new text>", "reject", "try
   again".
   NOT WHEN: User wants to ingest a tweet they were sent (→ ingest-x-thread),
@@ -26,7 +26,7 @@ trigger: |
   - "draft a tweet about <topic>", "what should I tweet about <X>"
   - "reply to <tweet-url>: <raw thought>"
   - "quote retweet <tweet-url>: <raw thought>", "quote tweet <url>: <raw>"
-  - Style overrides: "more garry style", "like naval would say it", "in paulg style", "pure antriksh"
+  - Style overrides: "more garry style", "like naval would say it", "in paulg style", "my voice"
   - After a draft: "approve" / "looks good", "edit: <new text>", "reject" / "try again"
 writes_to:
   - corpus/x-antriksssh
@@ -39,7 +39,7 @@ brain_dirs_read:
 
 Tweet drafting engine. Reads `identity/X_VOICE.md` (compiled voice profile)
 and the corpus pages (`corpus/x-antriksssh.md`, `corpus/x-paulg.md`, etc.)
-to produce drafts that blend Antriksh's voice (20%) with admired accounts
+to produce drafts that blend the user's voice (20%) with admired accounts
 (80% averaged across @paulg, @naval, @sama, @garrytan, @vkhosla).
 
 ## Pipeline (one-time setup, then ongoing)
@@ -60,7 +60,7 @@ python3 ~/bin/x-approve.py edit "<the edited tweet text>"
 python3 ~/bin/x-approve.py reject
 ```
 
-The pending draft persists at `~/.brain-bootstrap-raw/state/x-draft-pending.json`
+The pending draft persists at `{{user.brain_path}}-bootstrap-raw/state/x-draft-pending.json`
 between the draft call and the approve/edit/reject call.
 
 ## Style overrides
@@ -68,7 +68,7 @@ between the draft call and the approve/edit/reject call.
 The `--style <handle>` flag shifts the blend:
 
 - `--style garrytan` → 60% @garrytan, 20% @antriksssh, 20% averaged across the others
-- `--style antriksh` (or `self`, `me`) → 100% own voice, no admired blend
+- `--style self` (or `self`, `me`) → 100% own voice, no admired blend
 
 Recognized handles: `antriksssh`, `paulg`, `naval`, `sama`, `garrytan`, `vkhosla`.
 
@@ -76,7 +76,7 @@ User phrases that map to overrides:
 - "more garry style" / "in garry tan style" → `--style garrytan`
 - "like naval would say it" / "naval style" → `--style naval`
 - "more sama" → `--style sama`
-- "pure antriksh" / "sound like me" → `--style antriksh`
+- "my voice" / "sound like me" → `--style self`
 
 ## 280-char enforcement
 
@@ -92,7 +92,7 @@ warn the user and they can tighten manually.
 | `edit: <text>` | BOTH the original draft AND the edited version are logged. The edited version goes into the corpus. The diff is the highest-signal training data we have — it tells the model what correction was needed. |
 | `reject` | Logged as a negative example. Future profile recompute can use these to extract "avoid these patterns". |
 
-All actions append to `~/.brain-bootstrap-raw/state/x-draft-feedback.jsonl`
+All actions append to `{{user.brain_path}}-bootstrap-raw/state/x-draft-feedback.jsonl`
 for later analysis or training-pass reuse.
 
 ## Telegram reply format

@@ -35,7 +35,7 @@ from pathlib import Path
 
 
 YC_LAUNCHES_URL = "https://www.ycombinator.com/launches"
-USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) yc-launches-daily/alfred"
+USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) yc-launches-daily/arete"
 SEND_TG = Path.home() / "bin" / "send-telegram.sh"
 LOOKBACK_HOURS = 24
 MAX_BULLETS = 15  # safety: don't spam if YC drops 30 launches in a day

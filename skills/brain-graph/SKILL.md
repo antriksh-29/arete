@@ -28,7 +28,7 @@ trigger_guard: free_text
 
 Two-way edge walker. Forward edges come from the source page's body
 (every `[[target]]` reference). Backlinks come from an O(N) scan of
-all `.md` files in `~/.brain` — fine at the current scale, swap to
+all `.md` files in `{{user.brain_path}}` — fine at the current scale, swap to
 gbrain index if the brain ever grows past ~5k pages.
 
 `--depth 2` follows forward links one more hop (backlink-of-backlink

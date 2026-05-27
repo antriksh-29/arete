@@ -3,7 +3,7 @@
 # the brain self-heals on a schedule. Idempotent. Safe to re-run.
 #
 # What it sets up (gbrain-native — we are NOT writing custom synthesis):
-#   - `gbrain autopilot --install --repo ~/.brain` registers a Minion
+#   - `gbrain autopilot --install --repo ${BRAIN_PATH}` registers a Minion
 #     job loop that, on each cycle, runs:
 #       lint → backlinks → sync → synthesize → extract → patterns →
 #       embed → orphans
@@ -64,7 +64,7 @@ ok "gbrain CLI: $GBRAIN_BIN  (bun: ${BUN_BIN:-MISSING})"
 
 if [ ! -d "$BRAIN_REPO" ]; then
   fail "brain repo not found at $BRAIN_REPO"
-  echo "  set BRAIN_REPO env var or clone antriksh-29/antriksh-brain there"
+  echo "  set BRAIN_REPO env var or clone  there"
   exit 1
 fi
 ok "brain repo: $BRAIN_REPO"

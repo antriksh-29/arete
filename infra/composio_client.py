@@ -4,7 +4,7 @@
 Replaces the prior ClawVisor HTTP gateway pattern. Composio exposes 500+
 app integrations through a single MCP endpoint at
 https://connect.composio.dev/mcp. Auth is one x-consumer-api-key header
-sourced from the bot-cred vault (COMPOSIO_API_KEY).
+sourced from the arete-cred vault (COMPOSIO_API_KEY).
 
 The MCP surface uses a meta-tool pattern: only 7 management tools are
 listed directly (COMPOSIO_MULTI_EXECUTE_TOOL, COMPOSIO_SEARCH_TOOLS,
@@ -45,7 +45,7 @@ DEFAULT_TIMEOUT_S = 60
 def _vault_get(name: str) -> str:
     try:
         r = subprocess.run(
-            ["/usr/local/bin/bot-cred", "get", name],
+            ["/usr/local/bin/arete-cred", "get", name],
             capture_output=True, text=True, timeout=5,
         )
         return r.stdout.strip()

@@ -34,9 +34,9 @@ from pathlib import Path
 
 BRAIN_DIR = Path.home() / ".brain"
 LAST_BOOKMARK_PATH = BRAIN_DIR / ".last-bookmark.json"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 
 def log(msg):
@@ -62,7 +62,7 @@ def _resolve_pointer(pointer):
     # Delegate free-text to brain-find for consistency with brain-ask
     bf = Path(__file__).resolve().parent / "brain-find.py"
     if not bf.exists():
-        bf = Path("/home/botuser/bin/brain-find.py")
+        bf = Path("${STATE_HOME}/bin/brain-find.py")
     if not bf.exists():
         return ""
     try:
@@ -98,7 +98,7 @@ def _extract_outgoing_links(slug):
 
 def _scan_backlinks(target_slug, max_files=2000):
     """Backlinks: every brain page whose body contains [[target]].
-    O(N) over all .md files in ~/.brain — fine at the current
+    O(N) over all .md files in ${BRAIN_PATH} — fine at the current
     couple-hundred-pages scale. If the brain ever grows past 5k pages,
     swap for the gbrain index."""
     if not BRAIN_DIR.is_dir():

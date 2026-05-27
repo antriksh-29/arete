@@ -19,10 +19,10 @@ The PRD/eng plan staging:
 |-------|------|---------|----------|------|
 | 1 — Disabled | Now (~week 1) | `0m` | n/a | Reactive only. Build trust in AGENTS.md against real ingested content. |
 | 2 — Drafting | ~week 2 | `0m` | n/a | Accumulate items below from real "wish it had pinged me" moments. |
-| 3 — Observation-only | ~week 3 | `1h` | `none` | Heartbeat fires, writes findings to `reports/heartbeat-YYYY-MM-DD.md`, doesn't message Antriksh. |
+| 3 — Observation-only | ~week 3 | `1h` | `none` | Heartbeat fires, writes findings to `reports/heartbeat-YYYY-MM-DD.md`, doesn't message the user. |
 | 4 — Active delivery | ~week 4 | `1h` | `last` | Full experience. Surfaces actionable items to Telegram. |
 
-**During Stage 1:** every time Antriksh notices "I wish the bot had pinged
+**During Stage 1:** every time the user notices "I wish the bot had pinged
 me about X," he should add it as a checklist item below. No guesswork.
 Items added without a real moment of need are likely to be noise.
 
@@ -47,7 +47,7 @@ Future format, for reference:
 ## Calendar awareness
 - Any meeting starting in next 30 minutes that lacks a prep dossier?
   If yes, draft one and offer it.
-- Any meeting today with someone Antriksh hasn't talked to in >7 days?
+- Any meeting today with someone the user hasn't talked to in >7 days?
   Surface a quick refresher.
 
 ## Inbox awareness

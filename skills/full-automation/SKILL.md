@@ -30,7 +30,7 @@ mutates_external_state: true   # creates systemd timers + scripts on VPS
 # /full-automation — propose-confirm-execute pattern for new automations
 
 You have unrestricted shell access (tools.exec.security=full) on the VPS as
-botuser (non-root, scoped to home directory and systemd user units).
+agent (non-root, scoped to home directory and systemd user units).
 
 When the user describes a recurring or scheduled automation:
 
@@ -69,8 +69,8 @@ When the user describes a recurring or scheduled automation:
 - systemd user units: `~/.config/systemd/user/<unit>.{service,timer}`,
   followed by `systemctl --user daemon-reload && systemctl --user enable
   --now <unit>.timer`.
-- Persisted state for an automation: `~/.brain-bootstrap-raw/state/<feature>/`.
-- Brain pages always under `~/.brain/<type>/<slug>.md`.
+- Persisted state for an automation: `{{user.brain_path}}-bootstrap-raw/state/<feature>/`.
+- Brain pages always under `{{user.brain_path}}/<type>/<slug>.md`.
 
 Don't ask the user to paste shell commands. Full shell access exists
 specifically so you can do the whole thing yourself.
@@ -84,7 +84,7 @@ worked, readback failed because the skill only documented write).
 
 ### 1. Brain page exists (compiled / narrative view)
 
-Every automation gets a brain page at `~/.brain/<type>/<slug>.md`. The
+Every automation gets a brain page at `{{user.brain_path}}/<type>/<slug>.md`. The
 page has:
 - Frontmatter (`type`, `name`, `created`, `updated`, `tags`)
 - Summary paragraph
@@ -100,7 +100,7 @@ makes the data discoverable.
 
 If the automation logs >1 event per day (water intake, exercise reps,
 expense entries), keep the raw audit trail at
-`~/.brain-bootstrap-raw/state/<feature>/`. The brain page summarizes;
+`{{user.brain_path}}-bootstrap-raw/state/<feature>/`. The brain page summarizes;
 the filesystem holds the raw.
 
 For low-frequency automations (one event per day or less, e.g. reading

@@ -4,6 +4,6 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/home/botuser/bin/daily-tasks-review-trigger.sh
+ExecStart=${STATE_HOME}/bin/daily-tasks-review-trigger.sh
 StandardOutput=journal
 StandardError=journal

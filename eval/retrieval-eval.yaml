@@ -26,7 +26,7 @@
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # Day-1 entries (2026-04-30) — authored against real brain state from Phase 4.5
-# bootstrap. Brain content: 9 people, 11 companies, 10 meetings, antriksh self-page,
+# bootstrap. Brain content: 9 people, 11 companies, 10 meetings, self-page,
 # personal-ai-assistant project page.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -36,7 +36,7 @@
   expected_top3:
     - people/kaushik-immadisetty
     - companies/armoriq
-    - meetings/2026-04-23-kaushik-antriksh-pilot-discussion-and-ne
+    - meetings/2026-04-23-alice-zeta-pilot-discussion-and-ne
   acceptable_top10: []
   recency_decay: "30d half-life"
   entity_boost_for: [Kaushik, ArmorIQ]
@@ -50,7 +50,7 @@
   expected_top3:
     - people/mel
     - companies/komodor
-    - meetings/2026-03-11-mel-antriksh-arete-discussion
+    - meetings/2026-03-11-alice-bob-arete-discussion
   acceptable_top10: []
   recency_decay: "60d half-life"
   entity_boost_for: [Mel, Komodor]
@@ -64,7 +64,7 @@
   expected_top3:
     - people/sai-vishwak-korimerla
     - companies/liquidos
-    - meetings/2026-04-07-vishwak-antriksh
+    - meetings/2026-04-07-alice-bob
   acceptable_top10: []
   recency_decay: "30d half-life"
   entity_boost_for: [Sai Vishwak, Liquidos]
@@ -76,7 +76,7 @@
   expected_top3:
     - companies/armoriq
     - people/kaushik-immadisetty
-    - meetings/2026-04-23-kaushik-antriksh-pilot-discussion-and-ne
+    - meetings/2026-04-23-alice-zeta-pilot-discussion-and-ne
   acceptable_top10: []
   recency_decay: "60d half-life"
   entity_boost_for: [ArmorIQ]
@@ -87,7 +87,7 @@
   intent: recall
   expected_top3:
     - people/kaushik-immadisetty
-    - meetings/2026-04-23-kaushik-antriksh-pilot-discussion-and-ne
+    - meetings/2026-04-23-alice-zeta-pilot-discussion-and-ne
     - companies/armoriq
   acceptable_top10: []
   recency_decay: "14d half-life"
@@ -100,9 +100,9 @@
   query: "Reddit monitoring discussions"
   intent: recall
   expected_top3:
-    - meetings/2026-04-23-kaushik-antriksh-pilot-discussion-and-ne
-    - meetings/2026-03-18-vithika-antriksh-reddit-marketing-discus
-    - meetings/2026-04-06-bhramari-antriksh-reddit-discussion
+    - meetings/2026-04-23-alice-zeta-pilot-discussion-and-ne
+    - meetings/2026-03-18-vithika-bob-reddit-marketing-discus
+    - meetings/2026-04-06-bhramari-bob-reddit-discussion
   acceptable_top10:
     - companies/armoriq
   recency_decay: "60d half-life"
@@ -113,21 +113,21 @@
   query: "what are my 2026 goals"
   intent: conceptual
   expected_top3:
-    - people/antriksh
+    - people/
   acceptable_top10:
     - projects/personal-ai-assistant
   recency_decay: none
-  entity_boost_for: [Antriksh]
+  entity_boost_for: [the user]
   notes: |
-    Self-recall. The 8 goals are explicitly enumerated in people/antriksh.md.
-    Top-1 should be the antriksh page.
+    Self-recall. The 8 goals are explicitly enumerated in people/.md.
+    Top-1 should be the self-page.
 
 - id: conceptual-002
   query: "what am I working on"
   intent: conceptual
   expected_top3:
     - projects/personal-ai-assistant
-    - people/antriksh
+    - people/
   acceptable_top10: []
   recency_decay: "30d half-life"
   entity_boost_for: []
@@ -149,7 +149,7 @@
   query: "what was on March 11"
   intent: temporal
   expected_top3:
-    - meetings/2026-03-11-mel-antriksh-arete-discussion
+    - meetings/2026-03-11-alice-bob-arete-discussion
   acceptable_top10: []
   recency_decay: none
   entity_boost_for: []

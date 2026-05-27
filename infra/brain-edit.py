@@ -36,10 +36,10 @@ from pathlib import Path
 
 BRAIN_DIR = Path.home() / ".brain"
 LAST_BOOKMARK_PATH = BRAIN_DIR / ".last-bookmark.json"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 TODAY = date.today().isoformat()
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 
 def log(msg):
@@ -63,7 +63,7 @@ def _resolve_pointer(pointer):
         return pointer
     bf = Path(__file__).resolve().parent / "brain-find.py"
     if not bf.exists():
-        bf = Path("/home/botuser/bin/brain-find.py")
+        bf = Path("${STATE_HOME}/bin/brain-find.py")
     if not bf.exists():
         return ""
     try:

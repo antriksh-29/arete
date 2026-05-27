@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Phase 4.5 bootstrap enrichment.
-// Reads raw email + calendar JSON from ~/.brain/_raw/, extracts unique entities
+// Reads raw email + calendar JSON from ${BRAIN_PATH}/_raw/, extracts unique entities
 // (people, companies, meetings), calls Claude Sonnet 4.6 to generate compiled
-// brain pages following identity/PAGE_SCHEMA.md, writes them to ~/.brain/.
+// brain pages following identity/PAGE_SCHEMA.md, writes them to ${BRAIN_PATH}/.
 //
 // Reads ANTHROPIC_API_KEY from env. Usage:
 //   node bootstrap-enrich.mjs [--dry-run] [--only=people|companies|meetings]
@@ -31,7 +31,7 @@ const NOISE_DOMAINS = new Set([
   'kfintech.com', 'calendar.luma-mail.com', 'reportsmailer.zerodha.net',
   'ppsskoda.com', 'mailer.zerodha.com', 'thepeakai.com',
 ]);
-const SELF_EMAILS = new Set(['antriksh1980@gmail.com', 'antriksh@getarete.co']);
+const SELF_EMAILS = new Set(['${USER_EMAIL}', '']);
 
 function slugify(s) {
   return (s || '')
@@ -240,7 +240,7 @@ async function callOpenAI(systemPrompt, userPrompt) {
   return json.choices?.[0]?.message?.content || '';
 }
 
-const SYSTEM_PROMPT = `You generate compiled-truth brain pages for Antriksh's personal assistant. Follow this schema EXACTLY.
+const SYSTEM_PROMPT = `You generate compiled-truth brain pages for the user's personal assistant. Follow this schema EXACTLY.
 
 Output a valid markdown file with YAML frontmatter. NO commentary before or after — just the page content.
 
@@ -341,7 +341,7 @@ ${JSON.stringify(data, null, 2)}
 \`\`\`
 
 Notes:
-- The user is Antriksh (antriksh@getarete.co or antriksh1980@gmail.com); do not list him as an external attendee.
+- The user is the user ( or ${USER_EMAIL}); do not list him as an external attendee.
 - Attendees use [[person:<slug>]] links where slug derives from the name.
 - "Decisions" and "Action items" sections — leave empty if the description doesn't surface any.
 

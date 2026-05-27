@@ -32,7 +32,7 @@ def log(msg):
 
 def fetch(symbol):
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=5d"
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 Alfred/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 Arete/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             d = json.loads(r.read())

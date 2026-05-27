@@ -309,7 +309,7 @@ one_pass() {
   # The two are mutually exclusive: revert-to-repo discards user
   # intent; autosync preserves it. We chose autosync because users
   # editing a skill via Telegram expect the change to land on GitHub
-  # the same way ~/.brain changes land in antriksh-brain.
+  # the same way ${BRAIN_PATH} changes land in the tenant brain repo.
   # audit_workspace_user_skills
   audit_crons
 }

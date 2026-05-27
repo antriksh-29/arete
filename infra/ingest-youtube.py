@@ -19,10 +19,10 @@ from datetime import date
 from pathlib import Path
 
 BRAIN_DIR = Path.home() / ".brain"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 TODAY = date.today().isoformat()
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 
 def log(msg):
@@ -72,17 +72,17 @@ def fetch_transcript(video_id):
         return ""
 
 
-SYSTEM_PROMPT = """You are analyzing a YouTube video for Antriksh's personal knowledge brain.
+SYSTEM_PROMPT = """You are analyzing a YouTube video for the user's personal knowledge brain.
 
-The metadata + transcript (or title-only fallback) is below. Antriksh values: connections to what he already knows, sharp takes that re-frame the video's argument, the actual structure of what the speaker is saying. He does NOT want a generic summary.
+The metadata + transcript (or title-only fallback) is below. the user values: connections to what he already knows, sharp takes that re-frame the video's argument, the actual structure of what the speaker is saying. He does NOT want a generic summary.
 
-Produce a brain page in this exact structure (markdown). Use [[slug]] syntax to reference any person, company, or concept Antriksh might already track (people/<first-last>, companies/<name>, concepts/<topic>).
+Produce a brain page in this exact structure (markdown). Use [[slug]] syntax to reference any person, company, or concept the user might already track (people/<first-last>, companies/<name>, concepts/<topic>).
 
 # {title}
 **Channel:** {channel} | **Date:** {date} | **Link:** {url}
 
-## Why this matters (Antriksh's frame)
-2-4 sentences. Connect to what Antriksh already cares about (AI agents, founder-mode, building, personal brain). Use [[slug]] where natural.
+## Why this matters (the user's frame)
+2-4 sentences. Connect to what the user already cares about (AI agents, founder-mode, building, personal brain). Use [[slug]] where natural.
 
 ## The argument
 Reconstruct the video as continuous prose — what the speaker is actually claiming, in the order they build it. 1-3 paragraphs. If transcript is missing, work from title + description and clearly mark this section as "Based on metadata only — transcript unavailable."
@@ -101,7 +101,7 @@ No preamble. No "this video discusses…" filler. Land the structure above and s
 
 
 def analyze(meta, transcript):
-    sys.path.insert(0, "/home/botuser/bin")
+    sys.path.insert(0, "${STATE_HOME}/bin")
     import llm  # type: ignore
     user_msg = (
         f"Title: {meta.get('title','')}\n"
@@ -151,7 +151,7 @@ def ensure_stub(slug, source_slug, source_label):
 
 def cross_reference(slug, page_text):
     """Defer entity stub / link / timeline-add to xref-drainer.py via
-    ~/.brain/.xref-queue.jsonl. See ingest-x-thread.py for rationale —
+    ${BRAIN_PATH}/.xref-queue.jsonl. See ingest-x-thread.py for rationale —
     inline gbrain fan-out was the slowest leg of the deep-ingest path
     and pushed total runtime past the 120s per-turn budget."""
     seen = []

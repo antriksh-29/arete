@@ -31,11 +31,11 @@ def log(msg):
 
 
 def vault_get(key):
-    return subprocess.run(["bot-cred", "get", key], capture_output=True, text=True, check=True).stdout.strip()
+    return subprocess.run(["arete-cred", "get", key], capture_output=True, text=True, check=True).stdout.strip()
 
 
 def fetch(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "Alfred/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Arete/1.0"})
     with urllib.request.urlopen(req, timeout=15) as r:
         return json.loads(r.read())
 

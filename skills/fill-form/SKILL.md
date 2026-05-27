@@ -47,10 +47,10 @@ For any user message of the form "fill <url> with <answers>":
    keyword: answer value}`. Example:
    ```json
    {
-     "Full Name": "Antriksh Jain",
-     "Email": "antriksh1980@gmail.com",
+     "Full Name": "the user Jain",
+     "Email": "user@example.com",
      "Applying as": "Individual Developer",
-     "GitHub": "https://github.com/antriksh-29",
+     "GitHub": "https://github.com/{{platform.org}}",
      "What are you building": "A single-tenant personal AI assistant…",
      "MCP servers": "Dineout, Instamart, Food",
      "I acknowledge": "Yes"
@@ -138,14 +138,14 @@ The script prints a single-line JSON with these fields:
   "ok": true,
   "fields_detected": 14,
   "filled": [
-    {"question": "Full Name", "matched_key": "Full Name", "mode": "text", "value": "Antriksh Jain"},
+    {"question": "Full Name", "matched_key": "Full Name", "mode": "text", "value": "the user Jain"},
     {"question": "Are you applying as…", "matched_key": "Applying as", "mode": "radio", "value": "Individual Developer"},
     ...
   ],
   "skipped_headings": ["..."],
   "submitted": false,
   "verification_state": {
-    "texts": ["Antriksh Jain", "antriksh1980@gmail.com", ...],
+    "texts": ["the user Jain", "user@example.com", ...],
     "radios": ["Individual Developer"],
     "checks": ["Yes"]
   },

@@ -41,7 +41,7 @@ introduce, that disappear when you go MCP:
 
 1. **Environment isolation is solved.** OpenClaw strips env when spawning
    MCP children for security. With a wrapper script that pulls auth from
-   the bot-cred vault and exports it before exec, the MCP server has
+   the arete-cred vault and exports it before exec, the MCP server has
    exactly what it needs — and nothing else. Bash + exec patterns either
    leak env or have to re-pull from vault on every call.
 
@@ -122,7 +122,7 @@ new MCP server we build:
 2. **Server code:** Node + `@modelcontextprotocol/sdk`, stdio transport,
    typed tool schemas.
 3. **Auth:** read from `process.env`, with `infra/<name>-mcp/wrapper.sh`
-   pulling from the bot-cred vault and exporting before `exec node ...`.
+   pulling from the arete-cred vault and exporting before `exec node ...`.
 4. **Tool design:** one tool per discrete capability. Fresh session/UUID
    per call where the upstream API needs it. Coherent reason/instruction
    strings tested against any intent verifiers.

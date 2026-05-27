@@ -45,7 +45,7 @@ updated: 2026-05-12
 
 **Author:** Nishank Singla (@nishanksingla) | **Date:** 2026-05-12 | **Link:** https://x.com/nishanksingla/status/2052819273010238771
 
-## Why this matters (Antriksh's frame)
+## Why this matters (the user's frame)
 This is a founder-mode self-portrait — Nishank arguing that ambition
 without survivorship-bias awareness becomes founder cosplay.
 

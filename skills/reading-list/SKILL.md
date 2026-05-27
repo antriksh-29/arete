@@ -240,7 +240,7 @@ Each ingestor (`ingest-x-thread.py`, `ingest-youtube.py`,
 inline for every `[[wikilink]]` in the freshly-written brain page —
 2-3 subprocess calls per entity, up to ~30s for a 10-entity page.
 
-Now they append the entity batch to `~/.brain/.xref-queue.jsonl`
+Now they append the entity batch to `{{user.brain_path}}/.xref-queue.jsonl`
 and return. `xref-drainer.py --once` reads + clears the queue every
 60s via `xref-drainer.timer`, plus the reading-list worker kicks the
 drainer one-shot at the end of its run so new bookmarks see their

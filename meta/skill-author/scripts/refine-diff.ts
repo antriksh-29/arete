@@ -328,7 +328,7 @@ function validateBoundedDiff(
 
 async function readVaultKey(name: string): Promise<string | null> {
   try {
-    const child = Bun.spawnSync(["bot-cred", "get", name]);
+    const child = Bun.spawnSync(["arete-cred", "get", name]);
     const out = child.stdout.toString().trim();
     if (out && !out.startsWith("error")) return out;
     return null;
@@ -368,7 +368,7 @@ function extractFirstJSON(text: string): Record<string, any> | null {
 }
 
 function buildSystemPrompt(): string {
-  return `You are a skill-file refiner for the Alfred Telegram assistant. The user describes a change to an existing skill; you produce the proposed new content of SKILL.md and eval.yaml.
+  return `You are a skill-file refiner for the Arete Telegram assistant. The user describes a change to an existing skill; you produce the proposed new content of SKILL.md and eval.yaml.
 
 HARD RULES (violating any one of these makes your output rejected and the user has to go through a slow 3-question fallback):
 

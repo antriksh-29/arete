@@ -49,7 +49,7 @@ skill.
 | Field | Meaning |
 |---|---|
 | `journal_hits` | grep count of the skill's script basename in journalctl over the window |
-| `state_freshness` | `fresh` if any state file matching the skill's name was modified; `stale` if not; `no-state-root` if `~/.brain-bootstrap-raw/state/` doesn't exist |
+| `state_freshness` | `fresh` if any state file matching the skill's name was modified; `stale` if not; `no-state-root` if `{{user.brain_path}}-bootstrap-raw/state/` doesn't exist |
 | `smoke` | `pass` / `fail` / `absent` from the gbrain smoke-test log; `no-log` if the log isn't present |
 | `status` | `active` / `dormant` (no journal + stale state) / `errored` (smoke fail) / `constraint` (constraint skills don't have user-fired counts) |
 

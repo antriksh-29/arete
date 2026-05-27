@@ -26,8 +26,8 @@ if [ ! -f "$PATH_TO_PHOTO" ]; then
   exit 1
 fi
 
-TOKEN="$(/usr/local/bin/bot-cred get TELEGRAM_BOT_TOKEN)"
-USER_ID="$(/usr/local/bin/bot-cred get TELEGRAM_USER_ID)"
+TOKEN="$(/usr/local/bin/arete-cred get TELEGRAM_BOT_TOKEN)"
+USER_ID="$(/usr/local/bin/arete-cred get TELEGRAM_USER_ID)"
 if [ -z "$TOKEN" ] || [ -z "$USER_ID" ]; then
   echo "ABORT: TELEGRAM_BOT_TOKEN or TELEGRAM_USER_ID missing from vault" >&2
   exit 1

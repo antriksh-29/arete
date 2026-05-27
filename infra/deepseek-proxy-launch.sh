@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# deepseek-proxy-launch.sh — read API key from bot-cred vault and exec
+# deepseek-proxy-launch.sh — read API key from arete-cred vault and exec
 # the Node proxy. Used by infra/deepseek-proxy.service as the ExecStart
 # command. Mirrors infra/moonshot-proxy-launch.sh.
 
@@ -8,12 +8,12 @@ set -uo pipefail
 export PATH="$HOME/.local/bin:$HOME/.bun/bin:$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 BOTCRED=""
-for p in "$HOME/.local/bin/bot-cred" "/usr/local/bin/bot-cred" "$(command -v bot-cred 2>/dev/null)"; do
+for p in "$HOME/.local/bin/arete-cred" "/usr/local/bin/arete-cred" "$(command -v arete-cred 2>/dev/null)"; do
   if [ -x "$p" ]; then BOTCRED="$p"; break; fi
 done
 
 if [ -z "$BOTCRED" ]; then
-  echo "[deepseek-proxy-launch] FATAL: bot-cred not found on PATH" >&2
+  echo "[deepseek-proxy-launch] FATAL: arete-cred not found on PATH" >&2
   exit 1
 fi
 

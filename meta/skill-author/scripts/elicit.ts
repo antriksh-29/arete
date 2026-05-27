@@ -5,7 +5,7 @@
  * Invoked per Telegram turn. Reads the current user message + any prior
  * draft from .context/skill-author-drafts/<slug>.json, decides which
  * question is next, emits a JSON envelope with `user_message` for
- * Alfred to relay verbatim (Rule 0.7).
+ * Arete to relay verbatim (Rule 0.7).
  *
  * Modes:
  *   --mode=create                          /teach or INTENT=skill_create

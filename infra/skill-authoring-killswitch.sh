@@ -54,9 +54,9 @@ if [ ! -d "$WORKSPACE_SKILLS" ]; then
 fi
 
 if [ ! -f "$TRACKER" ]; then
-  log "tracker $TRACKER not found — can't identify Alfred-authored skills; bailing out (will NOT touch hand-authored skills/)"
+  log "tracker $TRACKER not found — can't identify Arete-authored skills; bailing out (will NOT touch hand-authored skills/)"
   # This is the "fail safe" path: without the tracker we can't tell which
-  # directories under workspace/skills/ are Alfred-authored vs hand-authored.
+  # directories under workspace/skills/ are Arete-authored vs hand-authored.
   # Moving them all aside would break the entire bot. Better to leave
   # everything alone and surface the issue.
   log "ACTION REQUIRED: tracker missing. Either restore it or manually quarantine the suspect user-skill via: mv $WORKSPACE_SKILLS/<name> $WORKSPACE_SKILLS/<name>.quarantined.\$(date +%s)"

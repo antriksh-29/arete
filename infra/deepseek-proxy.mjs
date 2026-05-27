@@ -35,7 +35,7 @@
  *   DEEPSEEK_THINKING=passthrough — leaves whatever the caller sent.
  *
  * Env vars:
- *   DEEPSEEK_API_KEY    — from bot-cred vault, set by systemd unit
+ *   DEEPSEEK_API_KEY    — from arete-cred vault, set by systemd unit
  *   PROXY_PORT          — listen port (default 18791)
  *   FALLBACK_PROXY_PORT — moonshot-proxy port (default 18790)
  *   FALLBACK_MODEL      — model name to swap to on failover (default moonshot-v1-128k-fallback)

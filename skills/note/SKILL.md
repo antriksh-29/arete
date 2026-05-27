@@ -7,10 +7,10 @@ cron: null
 eval: skills/note/eval.yaml
 last_audited: 2026-05-14
 description: |
-  Capture Antriksh's own thoughts, reactions, reminders, and observations
+  Capture the user's own thoughts, reactions, reminders, and observations
   into the brain as first-class pages under notes/. The brain stops
   being a passive collection of ingested bookmarks and becomes a
-  two-way store — Antriksh's voice lands alongside the sources he
+  two-way store — the user's voice lands alongside the sources he
   reacts to.
   WHEN: Any of "take a note", "save this thought", "note to self",
   "remember that", "my reaction to", "add to brain", "append to my note",
@@ -37,7 +37,7 @@ trigger_guard: free_text
 
 # /note
 
-Antriksh's own thoughts, in his own voice, written to the brain so
+the user's own thoughts, in his own voice, written to the brain so
 brain-find can route to them and brain-ask can quote from them. Notes
 compound with bookmarks — once you've reacted to a Nishank thread, a
 future "what do I think about ambition" query surfaces both Nishank's
@@ -61,7 +61,7 @@ slugified). Collisions get `-2`, `-3` suffixes.
 type: note
 created: 2026-05-14
 updated: 2026-05-14
-author: antriksh
+author: 
 source: media/social/x-nishank-20260512   # optional
 ---
 
@@ -79,20 +79,20 @@ source: media/social/x-nishank-20260512   # optional
 
 ## Verbatim rule
 
-Notes are Antriksh's voice. The script writes the body **exactly** as
+Notes are the user's voice. The script writes the body **exactly** as
 typed. The agent does NOT clean up phrasing, expand contractions,
 "clarify" wording, or wrap in framing like "The user notes that…".
-If Antriksh writes "Nishank is wrong about X", the brain page body
+If the user writes "Nishank is wrong about X", the brain page body
 is "Nishank is wrong about X" — not "The user disagrees with Nishank
 about X". This is consistent with how ingested content preserves
 exact phrasing in `## Raw thread` / raw sidecars.
 
 ## Auto-link entities
 
-After the body is written, `note.py` walks `~/.brain/{people,companies,concepts}/`
+After the body is written, `note.py` walks `{{user.brain_path}}/{people,companies,concepts}/`
 and adds `[[wikilinks]]` for every existing entity slug the body mentions
 by name. Explicit `[[wikilinks]]` typed by the user are preserved as-is.
-All links go through the same `~/.brain/.xref-queue.jsonl` that
+All links go through the same `{{user.brain_path}}/.xref-queue.jsonl` that
 `ingest-x-thread` uses, so `xref-drainer` populates entity stubs +
 backlinks asynchronously within ~60s.
 

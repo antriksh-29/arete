@@ -39,7 +39,7 @@ distribution."
 **Good:** "Pollack's distribution argument lines up with what Naval has
 been saying for years (see [[people/naval-ravikant]]) but extends it
 with a specific tactic for B2B SaaS that contradicts the playbook
-Antriksh used at Arete (see [[companies/arete]] timeline 2024-Q3).
+the user used at Arete (see [[companies/arete]] timeline 2024-Q3).
 Worth revisiting before the next pricing decision."
 
 The bad version is a summary anyone could write. The good version

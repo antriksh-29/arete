@@ -1,6 +1,6 @@
 [Unit]
 Description=Conditional Telegram-session reset — weekly hygiene timer
-Documentation=https://github.com/antriksh-29/personal-assistant/blob/main/docs/ADR-001-browser-stack.md
+Documentation=https://github.com//blob/main/docs/ADR-001-browser-stack.md
 
 [Timer]
 # Sunday 04:00 IST (quiet hour, before the 7am brain-collectors and 8am briefing).

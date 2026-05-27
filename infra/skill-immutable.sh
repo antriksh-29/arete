@@ -26,7 +26,7 @@
 #       copies, and re-locks atomically.
 #
 # Sudo dependency: `sudo -n chattr` must work without password for
-# the botuser. Verified on this VPS; if it ever breaks, the helper
+# the agent. Verified on this VPS; if it ever breaks, the helper
 # fails closed (logs error, leaves file mutable) and the existing
 # audit-daemon revert takes over as fallback.
 #

@@ -75,7 +75,7 @@ frequency:
 > on it. what's not working about your <friendly skill name> right now,
 > or what should it do that it doesn't?
 
-(Refer to the skill by what Antriksh calls it, never by its slug. If
+(Refer to the skill by what the user calls it, never by its slug. If
 the title in the frontmatter is friendly, use that. Otherwise infer
 from the capability line.)
 

@@ -303,7 +303,7 @@ EOF
 fi
 
 # --- ROUTE 0b: "yes implement this" / "let's build it" / "ship it" ---
-# Catches the case where the user and Alfred had a free-form conversation
+# Catches the case where the user and Arete had a free-form conversation
 # about a capability (criteria, format, schedule, sample output), and then
 # the user says some shape of "yes, do it". Today the bot kicks elicit.ts
 # Q1-Q5 from scratch, forcing the user to re-state everything that was
@@ -340,7 +340,7 @@ fi
 # short — route 0's active-draft check already handled that case)
 if [ "$IMPLEMENT_VERB" -eq 1 ] && ! echo "$LMSG" | grep -qE "^[[:space:]]*/(teach|refine|cancel|abort|stop)\b"; then
   # Auto-detect the freshest session file the agent is talking on. This
-  # is robust for single-tenant (Antriksh) — multi-tenant would need an
+  # is robust for single-tenant (the user) — multi-tenant would need an
   # explicit chat-id-to-session mapping.
   SESSION_FILE=$(find "$HOME/.openclaw/agents/main/sessions/" -maxdepth 1 -name '*.jsonl' \
                    ! -name '*.trajectory.*' ! -name '*.reset.*' ! -name '*.checkpoint.*' \
@@ -761,8 +761,8 @@ if echo "$LMSG" | grep -qE "\b${TIME_RE}\b.{0,80}\b${NOUN_RE}\b"; then IMPLICIT_
 if echo "$LMSG" | grep -qE "\b${NOUN_RE}\b.{0,40}\b${TIME_RE}\b"; then IMPLICIT_CREATE=1; fi
 # Trigger-action pairing: "when I say X, do Y"
 if echo "$LMSG" | grep -qE '\bwhen\s+i\s+(say|type|ask|tell|message)\b.{0,80}(reply|respond|send|give|share|tell|do|fetch|return)\b'; then IMPLICIT_CREATE=1; fi
-# Capability desire: "I want (you|a way|alfred) to ..."
-if echo "$LMSG" | grep -qE '\bi\s+want\s+(you to|a way to|something to|to be able|the bot to|alfred to|you|alfred)\b'; then IMPLICIT_CREATE=1; fi
+# Capability desire: "I want (you|a way|arete) to ..."
+if echo "$LMSG" | grep -qE '\bi\s+want\s+(you to|a way to|something to|to be able|the bot to|arete to|you|arete)\b'; then IMPLICIT_CREATE=1; fi
 # Capability desire (broad): "I want to create/build/make/set up X", "I'd like to set up/build X"
 # Catches the image-v33 case: "I want to create a personalised video recommender..."
 if echo "$LMSG" | grep -qE "\bi\s+(want|need|would\s+like|.d\s+like)\s+to\s+(create|build|make|set\s*up|setup|have|get|automate|schedule)\b"; then IMPLICIT_CREATE=1; fi
@@ -788,7 +788,7 @@ fi
 # --- Implicit refine signals (target a specific existing skill) ---
 # "the X skill should also ..." / "modify the X skill ..."
 # "this output isn't quite right, fix it so next time ..."
-# "you should always do X when I ask for Y" (a refine of how Alfred handles Y)
+# "you should always do X when I ask for Y" (a refine of how Arete handles Y)
 IMPLICIT_REFINE_TARGET=""
 # "the <name> skill should also ..."
 T=$(echo "$LMSG" | grep -oE '\bthe[[:space:]]+([a-z0-9_-]+)[[:space:]]+skill\b' | head -1 | awk '{print $2}')

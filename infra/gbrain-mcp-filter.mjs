@@ -29,7 +29,7 @@ const KEEP = new Set([
   'get_health',
 ]);
 
-const child = spawn('/home/botuser/.bun/bin/gbrain', ['serve'], {
+const child = spawn('${STATE_HOME}/.bun/bin/gbrain', ['serve'], {
   stdio: ['pipe', 'pipe', 'inherit'],
   env: process.env,
 });

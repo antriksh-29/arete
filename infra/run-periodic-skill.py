@@ -35,7 +35,7 @@ The dispatcher picks one item, formats:
     `<b>Title</b>\\n\\n<body>\\n\\n<i>— Author, Title</i>`
   - Otherwise: emit the body as-is
 
-State file at `~/.brain-bootstrap-raw/state/<slug>.json` tracks the
+State file at `${BRAIN_PATH}-bootstrap-raw/state/<slug>.json` tracks the
 last 5 emitted indices. The dispatcher avoids those when possible so
 the user doesn't see the same insight twice in a week.
 """

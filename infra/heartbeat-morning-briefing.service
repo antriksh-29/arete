@@ -4,6 +4,6 @@ After=openclaw-gateway.service
 
 [Service]
 Type=oneshot
-ExecStartPre=/bin/mkdir -p /home/botuser/.brain-bootstrap-raw/logs
-ExecStart=/home/botuser/bin/heartbeat-morning-briefing.sh
+ExecStartPre=/bin/mkdir -p ${STATE_HOME}/.brain-bootstrap-raw/logs
+ExecStart=${STATE_HOME}/bin/heartbeat-morning-briefing.sh
 TimeoutStartSec=300
