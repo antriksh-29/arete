@@ -47,30 +47,56 @@ export async function waitHealthy(
   timeoutMs = 60_000,
 ): Promise<void> {
   // The container exposes a WebSocket Gateway on loopback (default port 18789).
-  // Probe it from inside the container via `openclaw gateway health` rather than
-  // hitting HTTP — the previous /health endpoint never existed.
+  // Probe it from inside the container via `openclaw gateway health`.
+  //
+  // IMPORTANT (bug fix): we MUST set AttachStdout/Stderr=true. With both false,
+  // dockerode returns an empty stream and the "end" event never fires — the
+  // outer while-loop's deadline check never re-runs, and waitHealthy hangs
+  // forever despite the underlying command completing in <2s. Attaching the
+  // streams (even though we discard the data) makes dockerode emit "end"
+  // properly when the exec process exits.
+  //
+  // Also: each iteration has its own per-attempt watchdog so a single stuck
+  // exec can't pin the whole loop. The watchdog is loose (5s per probe vs.
+  // the 1.8s typical runtime) and only fires on genuine hangs.
   const c = docker.getContainer(tenant.container_name!);
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    try {
-      const exec = await c.exec({
-        Cmd: ["openclaw", "gateway", "health"],
-        AttachStdout: false,
-        AttachStderr: false,
-      });
-      const stream = await exec.start({ Detach: false });
-      await new Promise<void>((resolve) => stream.on("end", () => resolve()));
-      const info = await exec.inspect();
-      if (info.ExitCode === 0) return;
-    } catch {
-      // container may not be up yet; retry
-    }
+    const attemptOk = await runOneHealthProbe(c).catch(() => false);
+    if (attemptOk) return;
     await new Promise((r) => setTimeout(r, 1000));
   }
   throw new Error(
     `tenant ${tenant.id} did not become healthy within ${timeoutMs}ms (gateway health probe failed)`,
   );
+}
+
+async function runOneHealthProbe(c: Dockerode.Container): Promise<boolean> {
+  const exec = await c.exec({
+    Cmd: ["openclaw", "gateway", "health"],
+    AttachStdout: true,
+    AttachStderr: true,
+  });
+  const stream = await exec.start({ Detach: false, hijack: true });
+  // Drain the stream so the "end" event fires reliably. We don't care about
+  // the content; just want the EOF.
+  const { PassThrough } = require("stream");
+  const sink = new PassThrough();
+  sink.resume(); // discard data
+  docker.modem.demuxStream(stream, sink, sink);
+  // Race: stream end vs. 5s watchdog (in case dockerode still wedges)
+  await Promise.race([
+    new Promise<void>((resolve, reject) => {
+      stream.on("end", () => resolve());
+      stream.on("error", reject);
+    }),
+    new Promise<void>((_, reject) =>
+      setTimeout(() => reject(new Error("health probe watchdog 5s")), 5000),
+    ),
+  ]);
+  const info = await exec.inspect();
+  return info.ExitCode === 0;
 }
 
 /**
