@@ -1,0 +1,59 @@
+# Local dev only. Production tenants are launched by services/router via
+# `docker run`, not docker-compose.
+#
+# Usage:
+#   cp .env.example .env             # then fill in secrets
+#   docker compose build             # builds arete:dev
+#   docker compose up postgres -d    # start the shared db (one-off)
+#   docker compose run --rm tenant-test bash  # interactive shell in a test tenant
+#   docker compose up tenant-test    # boot a tenant in the foreground
+#
+# The `postgres` service uses a local Postgres + pgvector container so you can
+# develop without hitting Supabase. To hit the real shared Supabase, set
+# SUPABASE_DB_URL in .env and skip the `postgres` service.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: arete-postgres-local
+    environment:
+      POSTGRES_USER: arete
+      POSTGRES_PASSWORD: arete-dev
+      POSTGRES_DB: arete
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arete"]
+      interval: 5s
+      retries: 10
+
+  tenant-test:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile
+      args:
+        GBRAIN_SHA: ${GBRAIN_SHA:-0fb0c83}
+    image: arete:dev
+    container_name: arete-tenant-test
+    environment:
+      TENANT_ID: ${TENANT_ID:-test-1}
+      TENANT_REPO_URL: ${TENANT_REPO_URL}
+      GITHUB_PAT: ${ARETE_GITHUB_PAT}
+      SHARED_ANTHROPIC_KEY: ${ARETE_SHARED_ANTHROPIC_KEY}
+      SHARED_OPENAI_KEY: ${ARETE_SHARED_OPENAI_KEY:-}
+      SUPABASE_DB_URL: ${ARETE_SUPABASE_DB_URL:-postgresql://arete:arete-dev@postgres:5432/arete}
+      TELEGRAM_INTERNAL_PORT: "8787"
+      INJECTION_MODEL: ${INJECTION_MODEL:-claude-sonnet-4-6}
+    volumes:
+      # Mount a local directory as the tenant volume. Persists between runs.
+      - ./fixtures/local-dev/test-1:/home/agent/state
+    ports:
+      - "8787:8787"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
