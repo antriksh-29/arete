@@ -1,7 +1,7 @@
 """Unit tests for note.py — Layer 3 note-taking.
 
 The brain has stored ingested bookmarks since reading-list v2 shipped.
-note.py adds the symmetric direction: Antriksh's own writing lands
+note.py adds the symmetric direction: the user's own writing lands
 under notes/ as first-class brain pages so brain-find can route to
 them and brain-ask can quote from them.
 
@@ -95,7 +95,7 @@ def test_write_new_note_preserves_body_verbatim(tmp_path, monkeypatch):
     assert body in written
     # Frontmatter shape
     assert "type: note" in written
-    assert "author: antriksh" in written
+    assert "author: " in written
     # Slug includes the date + a derived stem
     assert slug.startswith("notes/")
     assert mod.TODAY in slug
@@ -208,7 +208,7 @@ def test_append_to_note_preserves_connections_section(tmp_path, monkeypatch):
     notes_dir.mkdir(parents=True, exist_ok=True)
     slug = f"notes/{mod.TODAY}-founder-mode-at-seed"
     (tmp_path / f"{slug}.md").write_text(
-        f"---\ntype: note\ncreated: {mod.TODAY}\nupdated: {mod.TODAY}\nauthor: antriksh\n---\n\n"
+        f"---\ntype: note\ncreated: {mod.TODAY}\nupdated: {mod.TODAY}\nauthor: \n---\n\n"
         "# Founder mode at seed\n\n"
         "Founder mode applies at seed differently than late stage.\n\n"
         "## Connections\n- [[concepts/founder-mode]] — mentioned in the note text\n"

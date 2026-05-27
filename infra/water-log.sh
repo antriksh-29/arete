@@ -205,7 +205,7 @@ commit_brain() {
   cd "$HOME/.brain" 2>/dev/null || return 0
   if [ -n "$(git status --porcelain habits/water-intake.md 2>/dev/null)" ]; then
     git add habits/water-intake.md
-    git -c user.email='antriksh.bot@${PLATFORM_ROOT_DOMAIN}' -c user.name='Alfred' \
+    git -c user.email='arete-bot@${PLATFORM_ROOT_DOMAIN}' -c user.name='Arete' \
       commit -m "habit: water-intake update $(now_ist '%Y-%m-%d %H:%M')" >/dev/null 2>&1 || true
   fi
   # Push every habit commit immediately so GitHub reflects the change

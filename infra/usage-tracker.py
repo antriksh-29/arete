@@ -29,7 +29,7 @@ CLI:
     usage-tracker.py --replay FILE         # process a static file once
     usage-tracker.py --smoke               # self-test (writes a fixture)
 
-Author/owner: Alfred runtime. Hand-edits to .usage.json files are
+Author/owner: Arete runtime. Hand-edits to .usage.json files are
 clobbered on the next resolver hit; that's intentional — the sidecar
 is a runtime-managed file.
 """

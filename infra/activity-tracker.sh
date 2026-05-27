@@ -238,7 +238,7 @@ EOF
       cd "$BRAIN_DIR"
       git add habits/activity-tracker.md 2>/dev/null
       if ! git diff --cached --quiet 2>/dev/null; then
-        git -c user.email='alfred@bot' -c user.name='Alfred' \
+        git -c user.email='arete@bot' -c user.name='Arete' \
           commit -m "activity-tracker: rebuild $today" >/dev/null 2>&1 || true
       fi
       # Push immediately so GitHub reflects state in real time.

@@ -1,6 +1,6 @@
 #!/bin/bash
 # setup-composio-mcp.sh — wire up Composio as an MCP server backing
-# Alfred's tool catalog. Composio exposes 100+ app integrations (Gmail,
+# Arete's tool catalog. Composio exposes 100+ app integrations (Gmail,
 # Calendar, Slack, Notion, Linear, HubSpot, etc.) through one MCP
 # endpoint at https://connect.composio.dev/mcp.
 #
@@ -8,7 +8,7 @@
 #   bash setup-composio-mcp.sh <composio-api-key>
 #   bash setup-composio-mcp.sh --check        # show current state, no writes
 #
-# Run this on the VPS (botuser). It:
+# Run this on the VPS (agent). It:
 #   1. Stores COMPOSIO_API_KEY in the arete-cred vault (audit trail + future
 #      reference)
 #   2. Writes the key into mcp.servers.composio.headers.x-consumer-api-key

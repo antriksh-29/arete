@@ -131,7 +131,7 @@ def fetch_title_fallback(url, kind):
     """Cheap title-only fetch for when the deep ingestor fails. Used as
     a last-resort so a row is never blank."""
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Alfred reading-list)"})
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Arete reading-list)"})
         with urllib.request.urlopen(req, timeout=10) as r:
             html = r.read(500_000).decode("utf-8", errors="replace")
         m = re.search(r"<title[^>]*>([^<]+)</title>", html, re.IGNORECASE | re.DOTALL)
@@ -529,7 +529,7 @@ def git_commit():
     if diff.returncode == 0:
         return
     subprocess.run(
-        ["git", "-c", "user.email=alfred@bot", "-c", "user.name=Alfred",
+        ["git", "-c", "user.email=arete@bot", "-c", "user.name=Arete",
          "commit", "-m", f"reading-list update {TODAY}"],
         cwd=cwd, capture_output=True,
     )

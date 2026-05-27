@@ -48,7 +48,7 @@ tags: [originals, <topic tags>]
 
 > "<verbatim quote from user>"
 
-— Antriksh, <date>
+— the user, <date>
 
 ## The Idea
 
@@ -59,7 +59,7 @@ faithful to the user's framing>
 
 <what the user was discussing when they expressed this>
 
-[Source: Telegram chat with Alfred, <date> <time> IST]
+[Source: Telegram chat with Arete, <date> <time> IST]
 
 ## Connections
 

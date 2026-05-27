@@ -1,7 +1,7 @@
 # ADR-001 — Browser stack: browser-harness primary, Composio Browser fallback
 
 **Status:** Accepted, frozen 2026-05-18
-**Owner:** Antriksh
+**Owner:** the user
 **Supersedes:** none
 
 ## Decision

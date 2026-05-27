@@ -14,7 +14,7 @@
 #                            plumbing jargon (slugs, cron, commit URLs,
 #                            model names) on top of the always-on rules.
 #   --context internal_status — same as chat. Used by infra scripts that
-#                                emit status from Alfred about himself.
+#                                emit status from Arete about himself.
 #   --context composio_relay — relaxed. Skips the internal-jargon
 #                                blocklist. Used when relaying content
 #                                from a Composio-connected tool (GitHub,
@@ -90,7 +90,7 @@ ALWAYS_RULES = [
     ("syco_as_an_ai", re.compile(r"\bas an AI[,]?\s*", re.I), ""),
     ("syco_id_be_happy_to", re.compile(r"\bI'?d be happy to\s*", re.I), "I can "),
 
-    # 6. Status-ping noise. The result is what reaches Antriksh, not
+    # 6. Status-ping noise. The result is what reaches the user, not
     #    the play-by-play. Strip "Fetching ...", "Now submitting ...",
     #    "The command ran successfully.", and similar narration.
     ("status_fetching", re.compile(r"^\s*Fetching\s+[^\n.]+\.\.\.?\s*$\n?", re.I | re.MULTILINE), ""),
@@ -114,9 +114,9 @@ ALWAYS_RULES = [
 
 # ── internal-plumbing rules (skip in composio_relay / research_answer) ──
 #
-# These strip Alfred's own implementation details: cron strings, slugs,
+# These strip Arete's own implementation details: cron strings, slugs,
 # commit URLs to this repo, model names, raw API errors, brain-page
-# metadata. They only run when Alfred is talking about himself.
+# metadata. They only run when Arete is talking about himself.
 
 INTERNAL_RULES = [
     # Cron expressions in any form. Five-field whitespace-separated
@@ -134,8 +134,8 @@ INTERNAL_RULES = [
     ("slug_user_skills_path", re.compile(r"\buser-skills/[\w-]+(/[\w.]+)?", re.I), "this skill"),
 
     # GitHub URLs to the personal-assistant repo. Strip; don't surface
-    # commit/file URLs about Alfred himself.
-    ("repo_github_url", re.compile(r"https?://github\.com/antriksh-29/personal-assistant/\S+", re.I), ""),
+    # commit/file URLs about Arete himself.
+    ("repo_github_url", re.compile(r"https?://github\.com//\S+", re.I), ""),
 
     # "Commit: <sha>" / "Commit: <url>" footers that leak from skill-author
     # ship flows. Match the bare "Commit:" label too (its URL/SHA argument
@@ -246,7 +246,7 @@ def rewrite(text: str, context: str = "chat"):
 
     rules = list(ALWAYS_RULES)
     if context in ("chat", "internal_status"):
-        # Internal rules apply where Alfred talks about himself.
+        # Internal rules apply where Arete talks about himself.
         # Inserted BEFORE the always-on rules so the always-on
         # collapse_spaces/blank_lines can clean up afterward.
         rules = INTERNAL_RULES + ALWAYS_RULES

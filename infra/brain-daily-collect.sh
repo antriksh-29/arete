@@ -56,7 +56,7 @@ cd "$HOME/.brain"
 if [ -n "$(git status --porcelain)" ]; then
   log "brain changes detected — committing + syncing"
   git add -A
-  git -c user.email='antriksh.bot@${PLATFORM_ROOT_DOMAIN}' -c user.name='Alfred' \
+  git -c user.email='arete-bot@${PLATFORM_ROOT_DOMAIN}' -c user.name='Arete' \
     commit -m "feat(daily): $(date +%Y-%m-%d) collector run" 2>&1 | tee -a "$LOG"
   gbrain sync --repo "$HOME/.brain" 2>&1 | tee -a "$LOG"
   git push origin main 2>&1 | tee -a "$LOG" || log "push failed (non-fatal — try again next run)"

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # skill-autosync.sh — mirror workspace user-skill edits back to the
 # personal-assistant git repo + push to GitHub, the same way
-# ${BRAIN_PATH} syncs to antriksh-brain.
+# ${BRAIN_PATH} syncs to the tenant brain repo.
 #
 # Architectural shift from the immutable-bit approach (#113):
 #
-#   chattr +i failed because botuser has NOPASSWD sudo. The bot
+#   chattr +i failed because agent has NOPASSWD sudo. The bot
 #   ran `sudo chattr -i`, wrote, and continued. Wrong abstraction.
 #
 #   Brain pattern (works): scripts edit ${BRAIN_PATH}/ files freely,

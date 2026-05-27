@@ -37,7 +37,7 @@ LOG_FILE = LOG_DIR / f"heartbeat-{TODAY_IST}.log"
 
 # Composio account routing (alias OR composio account ID → email).
 CALENDAR_ACCOUNTS = [
-    {"composio": "personal",                    "email": "antriksh@${PLATFORM_ROOT_DOMAIN}"},
+    {"composio": "personal",                    "email": ""},
     {"composio": "googlecalendar_casse-wikeno", "email": "${USER_EMAIL}"},
 ]
 

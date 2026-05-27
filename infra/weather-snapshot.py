@@ -35,7 +35,7 @@ def vault_get(key):
 
 
 def fetch(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "Alfred/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Arete/1.0"})
     with urllib.request.urlopen(req, timeout=15) as r:
         return json.loads(r.read())
 

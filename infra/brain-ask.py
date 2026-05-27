@@ -58,7 +58,7 @@ Rules:
 2. When the user asks for quotes, attribution, or exact phrasing, quote VERBATIM from the Raw source section. Wrap quotes in straight quotes. Do not paraphrase.
 3. When you cite, cite the section. Format: (Brain page §The argument) or (Raw source ¶N) where ¶N is the rough paragraph number. Inline, not as footnotes.
 4. Keep answers tight. Bulleted lists when the user asks for "top N" or "key points". Continuous prose when they ask "what does X say" or "explain".
-5. The user's name is Antriksh. Address him directly when the answer is opinion-shaped ("you might want to…"). Never call him "the user".
+5. The user's name is the user. Address him directly when the answer is opinion-shaped ("you might want to…"). Never call him "the user".
 
 Output format: just the answer. No preamble, no "Here are the key points:", no closing summary. Just the substantive content."""
 
@@ -191,7 +191,7 @@ def _resolve_pointer(pointer):
 
 def _load_persona(persona_slug):
     """Load a brain entity page as the reader's frame (Pattern 6 —
-    contextual explanation). Defaults to people/antriksh.md so the
+    contextual explanation). Defaults to people/.md so the
     bot can pitch answers calibrated to who is asking. Returns the
     page body or empty string if missing."""
     if not persona_slug:
@@ -270,7 +270,7 @@ def main():
     # Args:
     #   brain-ask.py <pointer> <question>
     #   brain-ask.py <pointer> <question> --persona <persona-slug>
-    # Persona defaults to people/antriksh when --persona is passed
+    # Persona defaults to people/ when --persona is passed
     # with no value or with "self".
     argv = sys.argv[1:]
     persona_slug = ""
@@ -282,10 +282,10 @@ def main():
             persona_slug = argv[idx + 1]
             del argv[idx:idx + 2]
         else:
-            persona_slug = "people/antriksh"
+            persona_slug = "people/"
             del argv[idx:idx + 1]
         if persona_slug == "self":
-            persona_slug = "people/antriksh"
+            persona_slug = "people/"
 
     if len(argv) < 2:
         sys.exit('Usage: brain-ask.py <slug|"last"|url> "<question>" [--persona [people/...]]')

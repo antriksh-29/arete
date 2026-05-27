@@ -57,7 +57,7 @@ USER_DEFAULTS = {
     # Key names chosen to map UNAMBIGUOUSLY to platform form headings.
     # Avoid "Name" / "Last name" — they fuzz-match "First name" /
     # "Surname" the wrong way and cross-fill the values.
-    "First name": "Antriksh",
+    "First name": "the user",
     "Surname": "Jain",
     "Phone number": "+918310872480",
     "Email": "${USER_EMAIL}",

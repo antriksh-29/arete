@@ -1201,8 +1201,8 @@ def _git_commit_brain(rel_paths: list[Path]) -> None:
             return  # no real changes
         subprocess.run(
             ["git", "-C", str(BRAIN_DIR),
-             "-c", "user.email=alfred@bot",
-             "-c", "user.name=Alfred",
+             "-c", "user.email=arete@bot",
+             "-c", "user.name=Arete",
              "commit", "-m", f"daily-tasks: state update {today_str()}"],
             check=False, capture_output=True, timeout=15,
         )

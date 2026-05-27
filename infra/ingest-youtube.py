@@ -72,17 +72,17 @@ def fetch_transcript(video_id):
         return ""
 
 
-SYSTEM_PROMPT = """You are analyzing a YouTube video for Antriksh's personal knowledge brain.
+SYSTEM_PROMPT = """You are analyzing a YouTube video for the user's personal knowledge brain.
 
-The metadata + transcript (or title-only fallback) is below. Antriksh values: connections to what he already knows, sharp takes that re-frame the video's argument, the actual structure of what the speaker is saying. He does NOT want a generic summary.
+The metadata + transcript (or title-only fallback) is below. the user values: connections to what he already knows, sharp takes that re-frame the video's argument, the actual structure of what the speaker is saying. He does NOT want a generic summary.
 
-Produce a brain page in this exact structure (markdown). Use [[slug]] syntax to reference any person, company, or concept Antriksh might already track (people/<first-last>, companies/<name>, concepts/<topic>).
+Produce a brain page in this exact structure (markdown). Use [[slug]] syntax to reference any person, company, or concept the user might already track (people/<first-last>, companies/<name>, concepts/<topic>).
 
 # {title}
 **Channel:** {channel} | **Date:** {date} | **Link:** {url}
 
-## Why this matters (Antriksh's frame)
-2-4 sentences. Connect to what Antriksh already cares about (AI agents, founder-mode, building, personal brain). Use [[slug]] where natural.
+## Why this matters (the user's frame)
+2-4 sentences. Connect to what the user already cares about (AI agents, founder-mode, building, personal brain). Use [[slug]] where natural.
 
 ## The argument
 Reconstruct the video as continuous prose — what the speaker is actually claiming, in the order they build it. 1-3 paragraphs. If transcript is missing, work from title + description and clearly mark this section as "Based on metadata only — transcript unavailable."

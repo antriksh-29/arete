@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Read-only helper that fetches files from the canonical brain repo
-// (antriksh-29/antriksh-brain) via `gh api`. Used by local audits that
+// () via `gh api`. Used by local audits that
 // need to verify brain dirs / pages exist without cloning the repo or
 // running gbrain on this machine.
 //
@@ -15,7 +15,7 @@
 
 import { execFileSync } from 'node:child_process';
 
-const REPO = 'antriksh-29/antriksh-brain';
+const REPO = '';
 
 function gh(path) {
   // Returns parsed JSON for a successful response, or throws.

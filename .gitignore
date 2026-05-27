@@ -57,5 +57,5 @@ __pycache__/
 *.pyc
 
 # Telethon session (user creds — never commit)
-.telethon-alfred-e2e/
+
 .gstack/

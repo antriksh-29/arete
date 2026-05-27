@@ -131,7 +131,7 @@ def _load_note_rows():
         created_m = _NOTE_CREATED_RE.search(body)
         out.append({
             "title": title_m.group(1).strip() if title_m else path.stem,
-            "posted_by": "antriksh (note)",
+            "posted_by": " (note)",
             "one_liner": "",
             "kind": "note",
             "url": "",

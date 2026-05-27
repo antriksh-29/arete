@@ -43,10 +43,10 @@ Two Google accounts are connected; pass `account` to scope a call.
 
 | Toolkit | Alias / ID | Email |
 |---|---|---|
-| gmail | `work` (default) | antriksh@getarete.co |
-| gmail | `personal` | antriksh1980@gmail.com |
-| googlecalendar | `personal` (default) | antriksh@getarete.co |
-| googlecalendar | `googlecalendar_casse-wikeno` (no alias) | antriksh1980@gmail.com |
+| gmail | `work` (default) | user@ |
+| gmail | `personal` | user@example.com |
+| googlecalendar | `personal` (default) | user@ |
+| googlecalendar | `googlecalendar_casse-wikeno` (no alias) | user@example.com |
 
 Omit `account` for the default. Pass alias OR connection ID for a specific
 account. The googlecalendar "personal" alias is mislabeled (it's the WORK

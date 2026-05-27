@@ -40,7 +40,7 @@ outputs:
   # ── friend-voice action confirms (added 2026-05-24 retune) ──
   # Per identity/SOUL.md rule 4, bare one-word replies tied to a real
   # action are now the target register, not the anti-pattern. They
-  # confirm what the main agent just did in the same voice Antriksh
+  # confirm what the main agent just did in the same voice the user
   # would use himself.
   - id: rd-pass-bare-done
     cmd: 'echo "done." | python3 infra/reply-discipline.py'

@@ -282,7 +282,7 @@ sync_user_skills() {
   printf '%s\n' $current_names > "$tracker"
 
   # Note: PR #113's chattr +i locking is removed (#114). The bot was
-  # able to `sudo chattr -i` its way around immutability since botuser
+  # able to `sudo chattr -i` its way around immutability since agent
   # has NOPASSWD sudo. Switched to the brain-style autosync approach:
   # skill-autosync.sh watches workspace edits and pushes them to the
   # repo + GitHub. Bot edits are preserved instead of fought.

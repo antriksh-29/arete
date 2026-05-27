@@ -7,8 +7,8 @@ cron: null
 eval: meta/skill-author/eval.yaml
 last_audited: 2026-05-19
 description: |
-  The runtime authoring meta-skill. Lets Antriksh create or modify
-  Alfred's skills directly from Telegram, without opening Claude Code.
+  The runtime authoring meta-skill. Lets the user create or modify
+  Arete's skills directly from Telegram, without opening Claude Code.
   Two modes: (a) CREATE a brand-new skill from a 4-question conversation,
   (b) REFINE an existing skill — including fork-on-modify against skills/
   and openclaw/skills/. Output lands in user-skills/<slug>/ which wins on
@@ -48,10 +48,10 @@ brain_dirs_read:
 
 # /skill-author — The Runtime Authoring Meta-Skill
 
-This is the skill that lets Alfred grow new skills from Telegram. Born
+This is the skill that lets Arete grow new skills from Telegram. Born
 from the same lineage as Garry Tan's `gbrain skillify` (10-item discipline)
 and Anthropic's `skill-creator` (4-question elicitation), specialized for
-Alfred's single-tenant runtime.
+Arete's single-tenant runtime.
 
 ## Two modes
 
@@ -71,7 +71,7 @@ Three sub-cases:
 - **REFINE user-skill** (`name ∈ user-skills/`): in-place version bump.
 - **REFINE skills/ skill** (`name ∈ skills/`): **fork-on-modify** —
   clone source into `user-skills/<name>/`, rewrite frontmatter
-  (`created_by: alfred`, `source: telegram`, `forked_from: skills/<name>@<sha>`,
+  (`created_by: arete`, `source: telegram`, `forked_from: skills/<name>@<sha>`,
   `version: 0.1.0`), apply diff. Original untouched.
 - **REFINE openclaw skill** (`name ∈ openclaw/skills/`): same fork-on-modify
   semantics, `forked_from: openclaw/skills/<name>@<sha>`.
@@ -80,7 +80,7 @@ Three sub-cases:
 
 **CREATE flow:**
 
-1. **What should this skill enable Alfred to do?** (one-line capability)
+1. **What should this skill enable Arete to do?** (one-line capability)
 2. **Manual or periodic invocation?**
    - **manual** — user trigger phrases (Q3a)
    - **periodic** — runs on a schedule (Q3b → Q4 schedule details)
@@ -163,7 +163,7 @@ Every skill this meta-skill writes carries:
 ```yaml
 name: <slug>
 version: 0.1.0       # bumps on /refine: PATCH per refine, MINOR if triggers change
-created_by: alfred
+created_by: arete
 source: telegram
 created_at: <iso-8601>
 forked_from: <tier>/<name>@<sha>   # only for fork-on-modify; omit for net-new
@@ -171,7 +171,7 @@ last_authoring_turn: <iso-8601>   # bumps on every /refine
 ```
 
 Hermes-pattern provenance. Lets a future Curator sweep filter on
-`created_by: alfred` to archive stale Alfred-authored skills without
+`created_by: arete` to archive stale Arete-authored skills without
 touching hand-authored `skills/`.
 
 ## Anti-patterns (the safety gate enforces these)
@@ -235,7 +235,7 @@ Per turn, this skill emits a JSON envelope to stdout for OpenClaw to relay:
 {
   "ok": true,
   "phase": "elicit|safety|routing|commit|deploy|done",
-  "user_message": "<verbatim text Alfred should send to Telegram>",
+  "user_message": "<verbatim text Arete should send to Telegram>",
   "draft_slug": "<slug-or-null>",
   "verdict": "<pass|quarantine|collision|deploy_ok|error>",
   "detail": { ... phase-specific fields ... }

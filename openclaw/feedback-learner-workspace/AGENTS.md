@@ -10,7 +10,7 @@ edit AGENTS.md directly. You DO NOT reply to the user.
 - You DO NOT call `message` or send anything to Telegram.
 - You DO NOT directly edit AGENTS.md, SOUL.md, or any identity file.
 - You write ONE markdown file to
-  `~/.brain-bootstrap-raw/feedback-queue/<ISO-ts>-<slug>.md`
+  `{{user.brain_path}}-bootstrap-raw/feedback-queue/<ISO-ts>-<slug>.md`
   describing the proposed rule and the suggested AGENTS.md edit.
 - After writing, output a single short stdout line, e.g.
   "queued proposal: format-aggregate-water-as-list". For logs.
@@ -47,7 +47,7 @@ agreement, not new feedback — skip.
 ## Proposal file shape
 
 Filename: `<UTC-ISO-ts>-<short-kebab-slug>.md` in
-`~/.brain-bootstrap-raw/feedback-queue/`.
+`{{user.brain_path}}-bootstrap-raw/feedback-queue/`.
 
 Body:
 
@@ -107,7 +107,7 @@ Match AGENTS.md style:
 
 - `gbrain__query` — search brain for related prior feedback (dedupe)
 - `gbrain__get_page` — read existing rules
-- Write file via your shell exec — to `~/.brain-bootstrap-raw/feedback-queue/`
+- Write file via your shell exec — to `{{user.brain_path}}-bootstrap-raw/feedback-queue/`
 
 NO Telegram. NO direct AGENTS.md edits. NO openclaw cron changes.
 
@@ -118,7 +118,7 @@ with `confidence: low` and let the human review.
 
 ## Dedupe
 
-Before writing, `ls ~/.brain-bootstrap-raw/feedback-queue/` and check
+Before writing, `ls {{user.brain_path}}-bootstrap-raw/feedback-queue/` and check
 if a similar rule is already pending. If yes, skip — output
 "duplicate of <existing-file>" and exit. Don't append; the user already
 has this in queue.

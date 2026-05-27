@@ -1,5 +1,5 @@
 [Unit]
-Description=Alfred user-skills .usage.json tracker (tails Axiom log shipper output)
+Description=Arete user-skills .usage.json tracker (tails Axiom log shipper output)
 After=openclaw-gateway.service
 PartOf=openclaw-gateway.service
 

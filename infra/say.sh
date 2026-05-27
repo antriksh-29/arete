@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# say.sh — the ONLY allowed path for Alfred to send a user-facing message.
+# say.sh — the ONLY allowed path for Arete to send a user-facing message.
 #
 # Architecture (added 2026-05-24 with messages.visibleReplies=message_tool):
 # OpenClaw is configured to suppress plain assistant.text emissions from

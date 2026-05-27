@@ -2,12 +2,12 @@
 
 Status: draft for `/plan-eng-review`.
 Date: 2026-05-13.
-Owner: antriksh-29.
+Owner: {{platform.org}}.
 
 ## Problem statement
 
 The daily-task-manager skill captures a flat per-date list of tasks
-(`~/.brain-bootstrap-raw/state/daily-tasks/<YYYY-MM-DD>.json`) and
+(`{{user.brain_path}}-bootstrap-raw/state/daily-tasks/<YYYY-MM-DD>.json`) and
 fires a 22:00 IST review prompt that asks the user to mark each task
 done / tomorrow / later / skip. As of 2026-05-13 this is broken in
 two ways, and structurally not capable of the longer-term workflow
@@ -17,7 +17,7 @@ the user actually wants.
 
 Evidence: screenshots IMG_9872-v1 / IMG_9873-v1, gateway log file
 `/tmp/openclaw-1000/openclaw-2026-05-13.log`, on-disk state file
-`~/.brain-bootstrap-raw/state/daily-tasks/2026-05-13.json`.
+`{{user.brain_path}}-bootstrap-raw/state/daily-tasks/2026-05-13.json`.
 
 | # | Symptom | Root cause |
 |---|---------|------------|
@@ -65,7 +65,7 @@ Move from a flat per-date file to a per-task lineage. Each logical
 task gets a UUID. Per-date files become thin pointers.
 
 ```
-~/.brain-bootstrap-raw/state/daily-tasks/
+{{user.brain_path}}-bootstrap-raw/state/daily-tasks/
   tasks/
     <uuid>.json        # one file per logical task lineage
   daily/
@@ -263,7 +263,7 @@ Outside-voice findings handled without separate AskUserQuestion:
 
 - **`later` semantics**: `later` = "parked indefinitely". Does NOT auto-carry. Shows ONLY in `backlog --include-later`. No auto-resurface; user must explicitly ask for parked tasks. This makes the status semantically distinct from `tomorrow`.
 - **Phase 3-5 decoupling from Phase 2 migration gate**: backlog/stats can run via a read-only adapter over the v1 flat files until migration applies. Phases 3-5 are not blocked by manual migration review.
-- **Migration rollback**: `migrate-daily-tasks-v2.py --apply` archives v1 files to `~/.brain-bootstrap-raw/state/daily-tasks/.v1-backup-<timestamp>/`. A `--rollback <timestamp>` flag restores them and removes v2 artefacts. Solo user + no staging = mandatory escape hatch.
+- **Migration rollback**: `migrate-daily-tasks-v2.py --apply` archives v1 files to `{{user.brain_path}}-bootstrap-raw/state/daily-tasks/.v1-backup-<timestamp>/`. A `--rollback <timestamp>` flag restores them and removes v2 artefacts. Solo user + no staging = mandatory escape hatch.
 
 ## Implementation phases (eng-review-locked)
 

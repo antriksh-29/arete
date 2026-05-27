@@ -25,7 +25,7 @@ import sys
 import subprocess
 from pathlib import Path
 
-VENV_DIR = Path.home() / ".telethon-alfred-e2e"
+VENV_DIR = Path.home() / ".telethon-arete-e2e"
 SESSION_FILE = VENV_DIR / "session.txt"
 
 
@@ -51,7 +51,7 @@ def main():
 
     print()
     print("══════════════════════════════════════════════════════════")
-    print(" Telethon session setup for Alfred E2E harness")
+    print(" Telethon session setup for Arete E2E harness")
     print("══════════════════════════════════════════════════════════")
     print()
     print(" Get api_id and api_hash from https://my.telegram.org/apps")

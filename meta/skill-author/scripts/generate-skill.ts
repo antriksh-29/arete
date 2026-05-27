@@ -130,7 +130,7 @@ async function readVaultKey(name: string): Promise<string | null> {
   }
 }
 
-const SYSTEM_PROMPT = `You produce production-quality SKILL.md body content and eval.yaml fixtures for the Alfred personal assistant. The user just confirmed they want to ship a new skill. Your output is the FINAL polished version that gets committed to GitHub.
+const SYSTEM_PROMPT = `You produce production-quality SKILL.md body content and eval.yaml fixtures for the Arete personal assistant. The user just confirmed they want to ship a new skill. Your output is the FINAL polished version that gets committed to GitHub.
 
 Conventions to match (from existing skills/agent-browser, skills/image-ocr, skills/ingest-pdf):
 
@@ -138,7 +138,7 @@ SKILL.md BODY (no frontmatter — that's generated separately):
 
 # /<slug>
 
-Author: Alfred (Telegram skill-author, <YYYY-MM-DD>)
+Author: Arete (Telegram skill-author, <YYYY-MM-DD>)
 
 ## Capability
 

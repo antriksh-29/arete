@@ -269,7 +269,7 @@ Visible-output rule (set 2026-05-24, framework-enforced via
 messages.visibleReplies=message_tool): plain assistant text DOES NOT
 reach the user. The ONLY way the user sees a reply is when you run
 `exec ~/bin/say.sh "<text>"`. Everything else you emit is internal-only
-and Antriksh will never see it.
+and the user will never see it.
 
 This means your turn output is EXACTLY ONE of:
   (a) A tool call that does work (web-search, brain-ask, daily-tasks, etc.)

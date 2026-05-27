@@ -69,11 +69,11 @@ naturally when they mention an amount.
 
 ### Storage (dual-layer)
 
-- **Brain page** (compiled view): `~/.brain/habits/water-intake.md` —
+- **Brain page** (compiled view): `{{user.brain_path}}/habits/water-intake.md` —
   recomputed on every log call. Has todays entries, last 7 days table,
   and stats. This is what `gbrain__query` finds when user asks
   questions like "how am I doing on hydration" or "what habits am I tracking".
-- **Filesystem** (raw events): `~/.brain-bootstrap-raw/state/water/YYYY-MM-DD.log` —
+- **Filesystem** (raw events): `{{user.brain_path}}-bootstrap-raw/state/water/YYYY-MM-DD.log` —
   one file per IST day, one line per entry. Used by the script for cheap
   total/summary computation. Day boundary 12:00am-11:59pm IST.
 

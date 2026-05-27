@@ -41,7 +41,7 @@ brain_dirs_read:
 # /daily-tasks
 
 Single source of truth: `infra/daily-tasks.sh` (deployed to `~/bin/`).
-Per-date state JSON lives at `~/.brain-bootstrap-raw/state/daily-tasks/<YYYY-MM-DD>.json`.
+Per-date state JSON lives at `{{user.brain_path}}-bootstrap-raw/state/daily-tasks/<YYYY-MM-DD>.json`.
 The brain page `habits/daily-tasks` is auto-rebuilt on every mutation —
 NEVER read it to answer queries; always go through the script.
 
@@ -100,7 +100,7 @@ exits non-zero, relay the stderr verbatim. Do NOT compose a fake
 **Why the HARD RULE exists — the May 9–11 outage.** The 22:00 IST evening
 review is a systemd timer (`daily-tasks-review.timer`) that fires
 `daily-tasks-review-trigger.sh`. The trigger ONLY sends the review
-prompt if `~/.brain-bootstrap-raw/state/daily-tasks/<today>.json` exists.
+prompt if `{{user.brain_path}}-bootstrap-raw/state/daily-tasks/<today>.json` exists.
 If the agent fabricates a "Saved. N tasks logged" reply WITHOUT invoking
 the script, no state file is written → trigger exits silently → user
 gets no reminder. That's the regression that produced the May 9–11

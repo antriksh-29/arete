@@ -244,7 +244,7 @@ async function readVaultKey(name: string): Promise<string | null> {
   }
 }
 
-const INTAKE_SYSTEM_PROMPT = `You read a recent Telegram chat between Alfred (a personal assistant bot) and his user, plus the user's latest message, then extract the structured fields needed to create a new automated skill.
+const INTAKE_SYSTEM_PROMPT = `You read a recent Telegram chat between Arete (a personal assistant bot) and his user, plus the user's latest message, then extract the structured fields needed to create a new automated skill.
 
 Two possible shapes of the latest message:
 
@@ -257,7 +257,7 @@ In both cases, you treat the union of {chat history + latest message} as the sou
 Your job: extract these fields from the conversation. Return ONLY the JSON object specified below. Use null for fields you cannot confidently determine from chat context.
 
 Fields:
-  • capability (string): One-sentence summary of what the skill enables. Write it the way Alfred would: imperative, concrete, no marketing fluff. E.g. "Send a daily YC launch digest at 6:30pm IST".
+  • capability (string): One-sentence summary of what the skill enables. Write it the way Arete would: imperative, concrete, no marketing fluff. E.g. "Send a daily YC launch digest at 6:30pm IST".
   • invocation_mode ("manual" | "periodic" | null): "periodic" if the user wants it on a schedule (daily, every morning, every hour, at X time, etc). "manual" if the user wants to trigger it themselves with words.
   • triggers (array of strings or null): When invocation_mode="manual", the trigger phrases (2-5 short phrases the user would type). Null for periodic.
   • schedule (object or null): When invocation_mode="periodic", the schedule shape:

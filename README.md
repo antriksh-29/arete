@@ -1,4 +1,4 @@
-# antriksh-bot-config
+# {{platform.repo}}
 
 Source repo for personal AI assistant on Telegram. Single-tenant. Lives on a Hetzner CX22.
 
@@ -18,7 +18,7 @@ Source repo for personal AI assistant on Telegram. Single-tenant. Lives on a Het
 │   └── Caddyfile.template         # Caddy reverse-proxy config (Phase 1)
 ├── identity/                      # AGENTS.md, SOUL.md, USER.md, etc. (Phase 3-4)
 ├── openclaw/                      # OpenClaw config + custom skills (Phase 3-5)
-├── tools/                         # safe_fs, bot-cred wrapper, log shipper (Phase 2)
+├── tools/                         # safe_fs, arete-cred wrapper, log shipper (Phase 2)
 │   └── .gbrain-pin                # Pinned GBrain SHA (Phase 4)
 ├── skills/                        # Custom skill definitions (Phase 5)
 │   ├── twitter-ingest/
@@ -40,7 +40,7 @@ Source repo for personal AI assistant on Telegram. Single-tenant. Lives on a Het
 - **PRD:** `.context/attachments/personal-assistant-prd-v2.1.md` (CEO-edited)
 - **CEO review:** `.context/ceo-review-2026-04-28.md`
 - **Eng plan:** `.context/eng-plan-2026-04-28.md`
-- **Test plan:** `~/.gstack/projects/antriksh-29-personal-assistant/aj-antriksh-29-install-gstack-eng-review-test-plan-20260428-161528.md`
+- **Test plan:** `~/.gstack/projects/{{platform.repo}}/aj-{{platform.org}}-install-gstack-eng-review-test-plan-20260428-161528.md`
 
 `.context/` is gitignored (Conductor convention). To preserve these in the bot-config repo when pushed to GitHub, copy the relevant subset to `docs/` before the first push.
 

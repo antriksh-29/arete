@@ -1,7 +1,7 @@
 # Brain filing rules
 
 Single source of truth for **where new knowledge goes** in
-`antriksh-29/antriksh-brain`. Every skill that writes to the brain MUST
+`{{user.brain_repo}}`. Every skill that writes to the brain MUST
 consult this document first. The audit (`infra/check-resolvable.mjs`)
 validates each SKILL.md's `writes_to:` / `brain_dirs_read:` against the
 canonical directory list below.
@@ -23,11 +23,11 @@ Primary subject (not format, not source) determines the directory.
 
 | Content | Dir | Slug pattern | Real example |
 |---|---|---|---|
-| Person | `people/` | `<lowercase-hyphenated>` | `people/antriksh.md`, `people/garry-tan.md` |
+| Person | `people/` | `<lowercase-hyphenated>` | `people/{{user.slug}}.md`, `people/garry-tan.md` |
 | Company / org / startup | `companies/` | `<lowercase-hyphenated>` | `companies/alexlance.md` |
 | Concept / mental model / framework | `concepts/` | `<lowercase-hyphenated>` | `concepts/ai-agent.md`, `concepts/founder-mode.md` |
 | Project (own work or close-watched) | `projects/` | `<lowercase-hyphenated>` | `projects/personal-ai-assistant.md` |
-| Meeting notes | `meetings/` | `YYYY-MM-DD-<participants>-<topic>` | `meetings/2026-03-11-mel-antriksh-arete-discussion.md` |
+| Meeting notes | `meetings/` | `YYYY-MM-DD-<participants>-<topic>` | `meetings/2026-03-11-alice-bob-arete-discussion.md` |
 | Habit / routine / recurring behaviour | `habits/` | `<lowercase-hyphenated>` | `habits/book-reading.md`, `habits/daily-tasks.md`, `habits/water-intake.md` |
 | Curated list (state document, single per topic) | `lists/` | `<lowercase-hyphenated>` | `lists/to-read.md` |
 | Social / consumed media (movies, shows, articles, threads) | `media/` or `media/social/` | `<topic>` or `x-<handle>-<YYYYMMDD>` | `media/bait.md`, `media/social/x-garrytan-20260408.md` |
@@ -62,7 +62,7 @@ mismatches.
 - X handles in `corpus/` and `media/social/` use `x-<handle>` (lowercase
   handle, no `@`). Dated social pages append `-YYYYMMDD`.
 - Meetings use `YYYY-MM-DD-<participant-or-context>-<topic>`. Multiple
-  participants are joined with hyphens (e.g. `mel-antriksh`).
+  participants are joined with hyphens (e.g. `alice-bob`).
 
 ## Back-linking iron law (non-negotiable)
 
@@ -91,7 +91,7 @@ works if the wikilink is present in the source page to begin with.
 | New entity dir (`vc-firms/`, `frameworks/`) | Use existing `companies/` or `concepts/`, OR update this file FIRST | Dir sprawl breaks the routing table |
 | Mid-stream lower-case-with-spaces slug (e.g. `personal ai assistant`) | `personal-ai-assistant` | Slug discipline — hyphens, no spaces |
 
-## Currently flagged anti-patterns in antriksh-brain (2026-05-08)
+## Currently flagged anti-patterns in {{user.brain_repo}} (2026-05-08)
 
 These exist today and should be cleaned up — captured here so future
 audits can confirm they shrink to zero.

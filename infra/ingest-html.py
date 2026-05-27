@@ -38,7 +38,7 @@ def slugify(s):
 
 
 def fetch_html(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Alfred ingest-html)"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Arete ingest-html)"})
     with urllib.request.urlopen(req, timeout=20) as r:
         raw = r.read(2_000_000)
         enc = r.headers.get_content_charset() or "utf-8"
@@ -135,17 +135,17 @@ def extract(html):
     return {"title": title, "description": description, "author": author, "body": body_text[:60000]}
 
 
-SYSTEM_PROMPT = """You are analyzing a web article for Antriksh's personal knowledge brain.
+SYSTEM_PROMPT = """You are analyzing a web article for the user's personal knowledge brain.
 
-Antriksh values: connections to what he already knows, sharp takes that re-frame the article, the actual argument structure (not a paragraph-by-paragraph recap). He does NOT want a generic summary.
+the user values: connections to what he already knows, sharp takes that re-frame the article, the actual argument structure (not a paragraph-by-paragraph recap). He does NOT want a generic summary.
 
-Produce a brain page in this exact structure (markdown). Use [[slug]] syntax to reference any person, company, or concept Antriksh might already track (people/<first-last>, companies/<name>, concepts/<topic>).
+Produce a brain page in this exact structure (markdown). Use [[slug]] syntax to reference any person, company, or concept the user might already track (people/<first-last>, companies/<name>, concepts/<topic>).
 
 # {title}
 **Author / Site:** {author} | **Date:** {date} | **Link:** {url}
 
-## Why this matters (Antriksh's frame)
-2-4 sentences. Connect to what Antriksh already cares about (AI agents, founder-mode, building, personal brain). Use [[slug]] where natural.
+## Why this matters (the user's frame)
+2-4 sentences. Connect to what the user already cares about (AI agents, founder-mode, building, personal brain). Use [[slug]] where natural.
 
 ## The argument
 Reconstruct the article as continuous prose — what the author is actually claiming, in the order they build it. 1-3 paragraphs.

@@ -15,7 +15,7 @@ and the contract every new pathway must follow.
 ## The contract
 
 For any pathway that touches an entity (person, company, meeting, idea,
-note, habit, anything in `~/.brain/<type>/`), the pathway MUST do one of:
+note, habit, anything in `{{user.brain_path}}/<type>/`), the pathway MUST do one of:
 
 - **New entity** → create the page (frontmatter + summary stub + first
   timeline entry, citation included).

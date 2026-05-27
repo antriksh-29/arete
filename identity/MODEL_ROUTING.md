@@ -159,7 +159,7 @@ Before first deploy of this experiment:
 
 1. **Add the key to the vault** (on the VPS):
    ```bash
-   bot-cred set DEEPSEEK_API_KEY 'sk-...'
+   arete-cred set DEEPSEEK_API_KEY 'sk-...'
    ```
    The proxy launcher reads it from there. Do NOT put the key in any
    tracked file.

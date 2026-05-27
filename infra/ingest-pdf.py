@@ -86,17 +86,17 @@ def slugify(s):
     return re.sub(r"[-\s]+", "-", s)[:80]
 
 
-SYSTEM_PROMPT = """You are analyzing a document for Antriksh's personal knowledge brain.
+SYSTEM_PROMPT = """You are analyzing a document for the user's personal knowledge brain.
 
-Antriksh values: connections to what he already knows, sharp insights that re-frame the topic, specific quotes with their context. He does NOT want a summary.
+the user values: connections to what he already knows, sharp insights that re-frame the topic, specific quotes with their context. He does NOT want a summary.
 
-Produce a brain page in this exact structure (markdown). Reference existing brain entities via [[slug]] syntax wherever the document mentions a person, company, or concept Antriksh might already track. Use plausible slugs (people/<first-last>, companies/<name>, concepts/<topic>) — the indexer resolves them.
+Produce a brain page in this exact structure (markdown). Reference existing brain entities via [[slug]] syntax wherever the document mentions a person, company, or concept the user might already track. Use plausible slugs (people/<first-last>, companies/<name>, concepts/<topic>) — the indexer resolves them.
 
 # {title}
 **Author:** {author} | **Source:** {source}
 
-## Why this matters (Antriksh's frame)
-2-4 sentences: central claim, why it's interesting given what Antriksh already cares about (AI agents, founder-mode, personal-assistant building, brain-as-memory). Reference [[slug]] where natural.
+## Why this matters (the user's frame)
+2-4 sentences: central claim, why it's interesting given what the user already cares about (AI agents, founder-mode, personal-assistant building, brain-as-memory). Reference [[slug]] where natural.
 
 ## Key arguments (in order)
 Bulleted list, each bullet 1-3 sentences. Cover EVERY major argument the document makes, in the order it presents them. Do not skip sections. Use direct quotes sparingly when phrasing matters.

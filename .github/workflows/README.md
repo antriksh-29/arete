@@ -12,10 +12,10 @@ variables → Actions → Repository secrets:
 
 | Secret name | Value |
 |---|---|
-| `VPS_HOST` | `bot.getarete.co` |
-| `VPS_USER` | `botuser` |
-| `VPS_SSH_KEY` | A *new* dedicated deploy SSH key's **private** half. **Do NOT reuse your personal key.** Generate with `ssh-keygen -t ed25519 -f ~/.ssh/id_personal_assistant_deploy -N "" -C "github-actions deploy"`. Add the **public** half (`~/.ssh/id_personal_assistant_deploy.pub`) to `~/.ssh/authorized_keys` on the VPS as `botuser`. |
-| `VPS_KNOWN_HOSTS` | Output of `ssh-keyscan -t ed25519,rsa bot.getarete.co` run from your Mac. Pin the host key so MITM is impossible from a hijacked GitHub runner. |
+| `VPS_HOST` | `{{platform.domain}}` |
+| `VPS_USER` | `agent` |
+| `VPS_SSH_KEY` | A *new* dedicated deploy SSH key's **private** half. **Do NOT reuse your personal key.** Generate with `ssh-keygen -t ed25519 -f ~/.ssh/id_personal_assistant_deploy -N "" -C "github-actions deploy"`. Add the **public** half (`~/.ssh/id_personal_assistant_deploy.pub`) to `~/.ssh/authorized_keys` on the VPS as `agent`. |
+| `VPS_KNOWN_HOSTS` | Output of `ssh-keyscan -t ed25519,rsa {{platform.domain}}` run from your Mac. Pin the host key so MITM is impossible from a hijacked GitHub runner. |
 
 ### Generating the deploy key (one-time)
 
@@ -34,7 +34,7 @@ cat ~/.ssh/id_personal_assistant_deploy.pub
 cat ~/.ssh/id_personal_assistant_deploy
 ```
 
-On the VPS (one-time, while still SSHed in as `botuser` from your Mac):
+On the VPS (one-time, while still SSHed in as `agent` from your Mac):
 
 ```bash
 echo '<paste public key here>' >> ~/.ssh/authorized_keys
@@ -44,7 +44,7 @@ chmod 600 ~/.ssh/authorized_keys
 For the known-hosts pin (run on your Mac):
 
 ```bash
-ssh-keyscan -t ed25519,rsa bot.getarete.co
+ssh-keyscan -t ed25519,rsa {{platform.domain}}
 # Copy the output verbatim into the VPS_KNOWN_HOSTS secret.
 ```
 

@@ -6,7 +6,7 @@
 # Touches BOTH locations so they stay in sync:
 #   • ~/personal-assistant/identity/AGENTS.md (the repo source — autosync
 #     pushes any changes back to GitHub, so the canonical doc on
-#     antriksh-29/personal-assistant always shows the current toolkit list)
+#      always shows the current toolkit list)
 #   • ~/.openclaw/workspace/AGENTS.md (what the agent reads at runtime)
 #
 # Markers in AGENTS.md (Rule 8b):

@@ -80,7 +80,7 @@ Failure modes (relay `user_message` verbatim):
 
 ## Pre-flight
 
-`OPENAI_API_KEY` must be in the bot-cred vault. `youtube-transcript-api`
+`OPENAI_API_KEY` must be in the arete-cred vault. `youtube-transcript-api`
 must be importable (`pip install youtube-transcript-api`). If the
 transcript lib is missing, the script falls back to `agent-browser` to
 pull the video's description and title block.

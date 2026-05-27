@@ -143,7 +143,7 @@ If unknown, use `https://<domain>/`.
 
 Vault key: `SITE_COOKIES__<domain_underscored>` (e.g.
 `SITE_COOKIES__linkedin_com`). Value is a JSON-serialized list of
-CDP-shaped cookie dicts. The bot-cred vault is the same surface as
+CDP-shaped cookie dicts. The arete-cred vault is the same surface as
 every other secret on this VPS — read access requires shell on the
 box, write access requires the deploy user.
 

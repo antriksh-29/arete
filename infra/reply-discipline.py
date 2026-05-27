@@ -42,7 +42,7 @@ BANNED_PATTERNS = [
 # under friend-voice (see identity/SOUL.md rule 4), bare action-confirming
 # words like "done.", "moved it.", "sent.", "on it." are the TARGET
 # register, not the anti-pattern. They tie to a concrete action the
-# main agent just took, and Antriksh prefers them over verbose status
+# main agent just took, and the user prefers them over verbose status
 # reports. Only purely content-free acks ("ok", "k", "ack") that don't
 # reference an action stay banned.
 EMPTY_ACKS = ["ack", "ok", "okay", "k"]

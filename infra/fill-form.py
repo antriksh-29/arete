@@ -11,7 +11,7 @@ Usage:
     python3 ~/bin/fill-form.py <url> <answers-json-file> [--submit] [--screenshot <path>]
 
 Answers JSON shape (keys matched fuzzily against question labels):
-    {"Full Name": "Antriksh Jain", "Email": "...", ...}
+    {"Full Name": "the user Jain", "Email": "...", ...}
 """
 
 import json

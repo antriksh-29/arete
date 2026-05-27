@@ -12,9 +12,9 @@ Storage layout:
     /var/log/arete-creds/access.log      — audit log, mode 640
 
 Threat model (single-tenant, single-user):
-    - VPS process compromise as botuser → can read vault.db AND master.key
+    - VPS process compromise as agent → can read vault.db AND master.key
       → can decrypt all credentials. Acceptable: matches what an attacker
-      that fully compromised botuser would have anyway.
+      that fully compromised agent would have anyway.
     - Filesystem snapshot / backup leak → vault.db alone is encrypted blob,
       master.key is what unlocks it. Master key is backed up separately to
       1Password (offline). So a backup-only leak (R2 snapshot, cloud-init

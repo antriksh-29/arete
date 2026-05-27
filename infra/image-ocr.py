@@ -42,7 +42,7 @@ def load_image(src):
     return None, base64.b64encode(data).decode()
 
 
-SYSTEM_PROMPT_DEFAULT = """You are extracting and analyzing the content of an image for Antriksh.
+SYSTEM_PROMPT_DEFAULT = """You are extracting and analyzing the content of an image for the user.
 
 If the image contains text (screenshot, document, menu, sign, handwriting), output it in this structure:
 
@@ -61,7 +61,7 @@ If there's BOTH meaningful visual content AND text (e.g. an annotated screenshot
 
 Be concrete and specific. Don't invent details that aren't in the image. If something is illegible or unclear, say so."""
 
-SYSTEM_PROMPT_QUESTION = """You are answering a question about the content of an image for Antriksh.
+SYSTEM_PROMPT_QUESTION = """You are answering a question about the content of an image for the user.
 
 Look at the image carefully and answer the question directly. Quote text from the image when relevant. If the question can't be answered from the image alone (the answer isn't visible), say so explicitly rather than inventing.
 

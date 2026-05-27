@@ -106,7 +106,7 @@ def test_browser_first_rich_tweet_writes_real_brain_page(tmp_path, monkeypatch):
     fake_llm_page = (
         "# tobi: Learning on the Shop floor\n\n"
         "**Author:** tobi lutke (@tobi) | **Date:** 2026-04-30 | **Link:** " + TOBI_URL + "\n\n"
-        "## Why this matters (Antriksh's frame)\n"
+        "## Why this matters (the user's frame)\n"
         "Connects directly to [[concepts/founder-mode]] — the case for staying "
         "embedded in your product's operating loop rather than abstracting up.\n\n"
         "## The argument\n"
@@ -176,7 +176,7 @@ def test_browser_login_wall_falls_back_to_api(tmp_path, monkeypatch):
     }
     monkeypatch.setattr(mod, "try_api_path", lambda url, token: (fake_api_bundle, None))
     monkeypatch.setattr(mod, "cross_reference", lambda slug, page: [])
-    monkeypatch.setattr(mod, "analyze", lambda bundle, url, prefetched_extra_context="": "# tobi: API-only fallback\n\n## Why this matters (Antriksh's frame)\nFallback page.\n")
+    monkeypatch.setattr(mod, "analyze", lambda bundle, url, prefetched_extra_context="": "# tobi: API-only fallback\n\n## Why this matters (the user's frame)\nFallback page.\n")
 
     monkeypatch.setattr(sys, "argv", ["ingest-x-thread.py", TOBI_URL])
     buf = _capture_stdout(monkeypatch)

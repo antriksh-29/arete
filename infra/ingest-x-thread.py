@@ -205,19 +205,19 @@ def assemble_bundle(seed_resp, convo_resp, token):
     }
 
 
-SYSTEM_PROMPT = """You are analyzing an X (Twitter) thread for Antriksh's personal knowledge brain.
+SYSTEM_PROMPT = """You are analyzing an X (Twitter) thread for the user's personal knowledge brain.
 
 The bundle below is a complete reconstruction: original tweet, the author's full thread, quoted/referenced tweets, notable replies, and linked articles with one-line glosses.
 
-Antriksh values: connections to what he already knows, sharp takes that re-frame the thread, the actual argument structure (not a tweet-by-tweet recap). He does NOT want a summary.
+the user values: connections to what he already knows, sharp takes that re-frame the thread, the actual argument structure (not a tweet-by-tweet recap). He does NOT want a summary.
 
-Produce a brain page in this exact structure (markdown). Use [[slug]] syntax to reference any person, company, or concept Antriksh might already track (people/<first-last>, companies/<name>, concepts/<topic>).
+Produce a brain page in this exact structure (markdown). Use [[slug]] syntax to reference any person, company, or concept the user might already track (people/<first-last>, companies/<name>, concepts/<topic>).
 
 # {handle}: <topic in 6-10 words>
 **Author:** {name} (@{handle}) | **Date:** {date} | **Link:** {url}
 
-## Why this matters (Antriksh's frame)
-2-4 sentences. Connect to what Antriksh already cares about (AI agents, founder-mode, building, personal brain). Use [[slug]] where natural.
+## Why this matters (the user's frame)
+2-4 sentences. Connect to what the user already cares about (AI agents, founder-mode, building, personal brain). Use [[slug]] where natural.
 
 ## The argument
 Reconstruct the thread as continuous prose — what the author is actually claiming, in the order they build it. Don't list tweet-by-tweet. Synthesize the full arc into 1-3 paragraphs.
@@ -667,7 +667,7 @@ def write_stub_brain_page(slug, handle, url, note):
         f"---\ntype: x-thread\ncreated: {TODAY}\nupdated: {TODAY}\n---\n\n"
         f"# {handle or 'x.com'}: bookmarked X post (content not extracted)\n\n"
         f"**Author:** @{handle or 'unknown'} | **Date:** {TODAY} | **Link:** {url}\n\n"
-        "## Why this matters (Antriksh's frame)\n"
+        "## Why this matters (the user's frame)\n"
         "Saved as a pointer. The full thread content wasn't extractable at ingest "
         "time — see the note below for how to enable richer extraction.\n\n"
         "## The argument\n"

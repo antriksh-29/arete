@@ -5,7 +5,7 @@
 # bookmarks together.
 #
 # Why this exists: the brain so far only stored content the user
-# bookmarked from elsewhere. Antriksh's own thoughts ("I disagree
+# bookmarked from elsewhere. the user's own thoughts ("I disagree
 # with Nishank because…", "remember that founder-mode applies
 # differently at seed vs growth") had nowhere to live except the
 # Telegram chat — lossy, search-blind, can't be linked. note.py
@@ -166,7 +166,7 @@ def write_new_note(body, source_slug=None, override_slug=None):
         "type: note",
         f"created: {TODAY}",
         f"updated: {TODAY}",
-        "author: antriksh",
+        "author: ",
     ]
     if source_slug:
         parts.append(f"source: {source_slug}")

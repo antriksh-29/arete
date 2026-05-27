@@ -3,8 +3,8 @@
 # Caddy auto-fetches a Let's Encrypt cert on first request.
 #
 # Substitute ${PLATFORM_DOMAIN} with your actual domain, e.g.:
-#   bot.antriksh.xyz
-# Tip: `sed -i 's/${PLATFORM_DOMAIN}/bot.antriksh.xyz/g' /etc/caddy/Caddyfile`
+#   
+# Tip: `sed -i 's/${PLATFORM_DOMAIN}//g' /etc/caddy/Caddyfile`
 #
 # OpenClaw listens on localhost:18789. Caddy terminates TLS and reverse-proxies.
 

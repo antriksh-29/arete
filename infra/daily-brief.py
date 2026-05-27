@@ -47,11 +47,11 @@ TODAY_IST = datetime.now(IST).date()
 # stable account ID for that one).
 GMAIL_ACCOUNTS = [
     {"composio": "personal", "email": "${USER_EMAIL}"},
-    {"composio": "work",     "email": "antriksh@${PLATFORM_ROOT_DOMAIN}"},
+    {"composio": "work",     "email": ""},
 ]
 CALENDAR_ACCOUNTS = [
     {"composio": "googlecalendar_casse-wikeno", "email": "${USER_EMAIL}"},
-    {"composio": "personal",                    "email": "antriksh@${PLATFORM_ROOT_DOMAIN}"},
+    {"composio": "personal",                    "email": ""},
 ]
 # Legacy alias for sections that still reference a flat list of email
 # addresses (logging, filenames, "from N accounts" counts).
@@ -227,10 +227,10 @@ def fetch_stuck_backlog(age_gte=14, cap=3):
 
 # -------------------- 4. Email triage (LLM) --------------------
 
-EMAIL_TRIAGE_SYSTEM = """You are triaging Antriksh's overnight email for his morning briefing. Return ONLY the genuinely action-worthy items.
+EMAIL_TRIAGE_SYSTEM = """You are triaging the user's overnight email for his morning briefing. Return ONLY the genuinely action-worthy items.
 
 HIGH importance — surface these:
-- Direct response/action needed from Antriksh (replies awaited, decisions to make)
+- Direct response/action needed from the user (replies awaited, decisions to make)
 - Bills DUE soon (utility, broadband, mobile, insurance premium, credit card statement with a due date)
 - Payment REMINDERS for upcoming dues (e.g. "your bill is due in 3 days", "EMI due tomorrow")
 - Government / tax / regulatory notices (IT department, GST, MCA, RBI)

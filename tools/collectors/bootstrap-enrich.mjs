@@ -31,7 +31,7 @@ const NOISE_DOMAINS = new Set([
   'kfintech.com', 'calendar.luma-mail.com', 'reportsmailer.zerodha.net',
   'ppsskoda.com', 'mailer.zerodha.com', 'thepeakai.com',
 ]);
-const SELF_EMAILS = new Set(['${USER_EMAIL}', 'antriksh@${PLATFORM_ROOT_DOMAIN}']);
+const SELF_EMAILS = new Set(['${USER_EMAIL}', '']);
 
 function slugify(s) {
   return (s || '')
@@ -240,7 +240,7 @@ async function callOpenAI(systemPrompt, userPrompt) {
   return json.choices?.[0]?.message?.content || '';
 }
 
-const SYSTEM_PROMPT = `You generate compiled-truth brain pages for Antriksh's personal assistant. Follow this schema EXACTLY.
+const SYSTEM_PROMPT = `You generate compiled-truth brain pages for the user's personal assistant. Follow this schema EXACTLY.
 
 Output a valid markdown file with YAML frontmatter. NO commentary before or after — just the page content.
 
@@ -341,7 +341,7 @@ ${JSON.stringify(data, null, 2)}
 \`\`\`
 
 Notes:
-- The user is Antriksh (antriksh@${PLATFORM_ROOT_DOMAIN} or ${USER_EMAIL}); do not list him as an external attendee.
+- The user is the user ( or ${USER_EMAIL}); do not list him as an external attendee.
 - Attendees use [[person:<slug>]] links where slug derives from the name.
 - "Decisions" and "Action items" sections — leave empty if the description doesn't surface any.
 

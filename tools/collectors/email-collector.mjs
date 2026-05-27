@@ -21,11 +21,11 @@ const { gmailSearch, gmailGet } = await import(`${__dirname}/composio_client.mjs
 // Map email-address style account → Composio account alias / connection ID.
 // Composio routes by alias ("work", "personal") or stable account ID.
 const COMPOSIO_ALIAS = {
-  'antriksh@${PLATFORM_ROOT_DOMAIN}': 'work',
+  '': 'work',
   '${USER_EMAIL}': 'personal',
 };
 
-const DEFAULT_ACCOUNTS = ['${USER_EMAIL}', 'antriksh@${PLATFORM_ROOT_DOMAIN}'];
+const DEFAULT_ACCOUNTS = ['${USER_EMAIL}', ''];
 const DAYS = parseInt(process.argv.find(a => /^\d+$/.test(a)) || '30', 10);
 const accountArg = process.argv.find(a => a.startsWith('--account='));
 const ACCOUNTS = accountArg ? [accountArg.split('=')[1]] : DEFAULT_ACCOUNTS;

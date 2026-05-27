@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # spool-stall-watchdog.sh — detect and recover from stuck Telegram inbound.
 #
-# Observed 2026-05-22: user asked Alfred a question that Kimi fabricated
+# Observed 2026-05-22: user asked Arete a question that Kimi fabricated
 # the answer for, then looped on `cat > /tmp/youtube_subs.txt` for 30+
 # minutes. The first message blocked the queue; every subsequent /new
 # the user sent stacked behind it in the spool. The user thought the

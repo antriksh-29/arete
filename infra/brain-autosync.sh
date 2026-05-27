@@ -24,7 +24,7 @@
 # loop converges deterministically without serialization complexity.
 # Latency: ≤60s from edit to GitHub. Acceptable for a brain repo.
 #
-# Commit message: "alfred-autosync: <comma-separated changed files> @ <ts>"
+# Commit message: "arete-autosync: <comma-separated changed files> @ <ts>"
 # so the git history is informative without a separate commit per file.
 #
 # Conflict handling: if `git push` fails (concurrent push from a script
@@ -78,9 +78,9 @@ if [ -z "$staged" ]; then
 fi
 
 if [ "$n_files" -le 5 ]; then
-  msg="alfred-autosync: $files @ $ts"
+  msg="arete-autosync: $files @ $ts"
 else
-  msg="alfred-autosync: $files +$((n_files - 5)) more @ $ts"
+  msg="arete-autosync: $files +$((n_files - 5)) more @ $ts"
 fi
 
 if ! git commit -m "$msg" >>"$LOG" 2>&1; then

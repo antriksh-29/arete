@@ -252,7 +252,7 @@ def git_commit():
         return
     subprocess.run(["git", "add", "corpus/"], cwd=cwd, capture_output=True)
     subprocess.run(
-        ["git", "-c", "user.email=alfred@bot", "-c", "user.name=Alfred",
+        ["git", "-c", "user.email=arete@bot", "-c", "user.name=Arete",
          "commit", "-m", f"x-corpus collected {TODAY}"],
         cwd=cwd, capture_output=True
     )
