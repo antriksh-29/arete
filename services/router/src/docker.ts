@@ -90,8 +90,11 @@ export async function runAgentTurn(
   // Per-user session key so memory is continuous across turns.
   const sessionKey = `agent:arete:tg-${telegramUserId}`;
 
-  // Pin to Haiku for cost. Override per-call later via tenant config if needed.
-  const model = process.env.ARETE_AGENT_MODEL || "claude-haiku-4-5";
+  // Pin to Haiku for cost. The "anthropic/" prefix IS required — without it,
+  // OpenClaw defaults to the configured gateway provider ("openai/" on a fresh
+  // install) and routes "claude-haiku-4-5" as "openai/claude-haiku-4-5", which
+  // fails: `FailoverError: Unknown model: openai/claude-haiku-4-5`.
+  const model = process.env.ARETE_AGENT_MODEL || "anthropic/claude-haiku-4-5";
   const exec = await c.exec({
     Cmd: [
       "openclaw",
@@ -136,21 +139,48 @@ export async function runAgentTurn(
     throw new Error(`openclaw agent exited ${info.ExitCode}: ${stderr.slice(0, 200)}`);
   }
 
-  // The reply field name isn't documented; try common shapes in order.
-  // First valid string we find wins; the rest fall through to stdout-as-text.
+  // openclaw agent --json shape (observed from openclaw@2026.5.22):
+  //   {
+  //     "runId": "...",
+  //     "status": "ok",
+  //     "summary": "completed",
+  //     "result": {
+  //       "payloads": [{ "text": "...the reply...", "mediaUrl": null }],
+  //       "meta": { "sessionId": "...", "provider": "anthropic", "model": "...",
+  //                 "durationMs": 5716, ... }
+  //     }
+  //   }
+  // The reply text lives at result.payloads[0].text. There may be multiple
+  // payloads for multi-part responses; we join them with newlines.
   let reply: string | undefined;
+  let agentMeta: Record<string, unknown> | undefined;
   try {
     const obj = JSON.parse(stdout.trim());
-    reply =
-      obj.reply ??
-      obj.text ??
-      obj.message ??
-      obj.content ??
-      obj.output ??
-      obj.response ??
-      (typeof obj.result === "string" ? obj.result : obj.result?.text);
+    const payloads = obj?.result?.payloads;
+    if (Array.isArray(payloads) && payloads.length > 0) {
+      reply = payloads
+        .map((p: { text?: string }) => p?.text)
+        .filter((t): t is string => typeof t === "string" && t.length > 0)
+        .join("\n\n");
+    }
+    agentMeta = obj?.result?.meta?.agentMeta;
+    // Surface useful diagnostics in the journal: session id + duration + token
+    // accounting if the agent reported them.
+    if (agentMeta) {
+      log.debug(
+        {
+          tenant: tenant.id,
+          sessionId: agentMeta.sessionId,
+          provider: agentMeta.provider,
+          model: agentMeta.model,
+          durationMs: obj?.result?.meta?.durationMs,
+        },
+        "agent meta",
+      );
+    }
   } catch {
-    // Not JSON (or partial). Fall back to whole stdout.
+    // Not JSON (or partial). Fall back to whole stdout — at least the user
+    // sees the raw error rather than total silence.
   }
   if (!reply || !reply.trim()) {
     reply = stdout.trim();
