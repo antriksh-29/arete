@@ -11,12 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential libnss3 libatk-bridge2.0-0 libdrm2 libxkbcommon0 \
       libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 \
       libpangocairo-1.0-0 libpango-1.0-0 libcairo2 libcups2 libatspi2.0-0 \
-      jq tini \
+      jq tini unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Bun (for gbrain + some skills)
-RUN curl -fsSL https://bun.sh/install | bash \
-    && ln -s /root/.bun/bin/bun /usr/local/bin/bun
+# Bun — copied from the official image (avoids curl|bash, gives us a known-good build).
+COPY --from=oven/bun:1.1-debian /usr/local/bin/bun /usr/local/bin/bun
 
 # uv (fast Python deps)
 RUN curl -fsSL https://astral.sh/uv/install.sh | sh \
