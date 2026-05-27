@@ -1,22 +1,28 @@
 #cloud-config
-# Hetzner first-boot config for personal AI assistant VPS.
-# Tested on CX23 (x86, eu-central / Falkenstein). CX22 also fine.
-# Sets timezone, hardens SSH/UFW/fail2ban, creates agent, installs core packages,
-# pre-creates dirs for vault + logs.
-# See docs/HETZNER-SETUP.md for the full provisioning walkthrough.
+# Arete Docker-host cloud-init (Hetzner first-boot).
 #
-# Pasted into Hetzner "Cloud config" field on server creation.
-# After provisioning: ssh agent@<vps-ip> should succeed (key-based, no password).
+# Tested on CPX32 (4 vCPU / 8 GB / 160 GB, Falkenstein). Smaller boxes work
+# but headroom is the bottleneck once you cross ~5 active tenants.
 #
-# What it does NOT do:
-# - Install Bun (done in Phase 1 — depends on user verifying SSH first)
-# - Install OpenClaw / GBrain (done in Phases 3 + 4)
-# - Set up Caddy reverse proxy (done in Phase 1)
-# - Provision the credential vault (done in Phase 2)
+# Paste into Hetzner's "Cloud config" field on server creation OR run
+# infra/bootstrap-host.sh on an existing box (idempotent).
 #
-# Idempotent: re-running cloud-init won't break anything, but Hetzner only runs it on first boot anyway.
+# Sets up:
+#   - timezone UTC (per-tenant timezone is applied inside each container)
+#   - Docker Engine + compose plugin
+#   - non-root user `arete` (sudo + docker group)
+#   - UFW: 22, 80, 443 open from anywhere; everything else denied
+#   - fail2ban (default ssh jail)
+#   - 4 GB swap (CPX32 has 8 GB RAM; swap protects against tenant container OOM spikes)
+#   - skeleton dirs: /var/tenants, /var/lib/arete-creds, /etc/arete-secrets, /var/log/arete
+#
+# Does NOT (those happen in infra/bootstrap-host.sh, run after cloud-init):
+#   - install Caddy + provision TLS cert (needs domain DNS pointed at this box first)
+#   - pull the Arete container image
+#   - install the router/provisioner systemd units
+#   - clone the platform repo
 
-timezone: Asia/Kolkata
+timezone: Etc/UTC
 
 package_update: true
 package_upgrade: true
@@ -24,90 +30,92 @@ package_upgrade: true
 packages:
   - ufw
   - fail2ban
-  - tmux
-  - ripgrep
-  - htop
-  - jq
-  - rclone
-  - curl
-  - git
-  - python3.11
-  - python3.11-venv
-  - python3-pip
-  - sqlite3
-  - unzip
   - ca-certificates
+  - curl
   - gnupg
+  - git
+  - jq
+  - htop
+  - rsync
+  - unattended-upgrades
 
 users:
-  - name: agent
+  - name: arete
     sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
-    groups: [sudo]
+    groups: [sudo, docker]
     ssh_authorized_keys:
-      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFUVpoJ2io/NqpketRS2QKw7igmU4pw/mE6lWaoLIyQQ ${USER_EMAIL}
+      # Hetzner injects the SSH keys you selected at server-create time into
+      # both /root/.ssh/authorized_keys AND /home/arete/.ssh/authorized_keys,
+      # so you can leave this empty as long as you picked a key in the
+      # Hetzner Cloud Console.
+      #
+      # If you want to harden later, replace with explicit pubkeys here and
+      # disable root login via SSH (PermitRootLogin no).
 
 write_files:
-  # SSH hardening — disable password auth, root login, restrict to ed25519/rsa
-  - path: /etc/ssh/sshd_config.d/99-bot-hardening.conf
-    permissions: '0644'
+  - path: /etc/sysctl.d/99-arete.conf
     content: |
-      PermitRootLogin no
-      PasswordAuthentication no
-      ChallengeResponseAuthentication no
-      KbdInteractiveAuthentication no
-      PubkeyAuthentication yes
-      X11Forwarding no
-      AllowUsers agent
-      MaxAuthTries 3
-      LoginGraceTime 30
+      # Lower swappiness so we use swap only under real memory pressure.
+      vm.swappiness=10
+      # Improve TCP perf for many small concurrent connections (Telegram webhooks).
+      net.core.somaxconn=4096
+      net.ipv4.tcp_fin_timeout=15
 
-  # fail2ban — basic SSH protection
-  - path: /etc/fail2ban/jail.d/sshd.local
-    permissions: '0644'
+  - path: /etc/docker/daemon.json
     content: |
-      [sshd]
-      enabled = true
-      port = 22
-      maxretry = 5
-      findtime = 600
-      bantime = 3600
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "50m",
+          "max-file": "3"
+        },
+        "live-restore": true
+      }
 
 runcmd:
-  # UFW firewall — deny all incoming except SSH/HTTP/HTTPS
+  # ── Install Docker (official repo, supports compose plugin) ────────────────
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - bash -c 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list'
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - systemctl enable --now docker
+
+  # ── Swap (4 GB) — guard against tenant container OOM spikes ────────────────
+  - bash -c 'test -f /swapfile || (fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo "/swapfile none swap sw 0 0" >> /etc/fstab)'
+  - sysctl --system
+
+  # ── UFW: deny everything in by default, allow SSH + HTTP(S) ───────────────
   - ufw default deny incoming
   - ufw default allow outgoing
-  - ufw allow 22/tcp comment 'ssh'
-  - ufw allow 80/tcp comment 'http (caddy autocert challenge)'
-  - ufw allow 443/tcp comment 'https'
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
   - ufw --force enable
 
-  # Restart SSH with new hardening
-  - systemctl restart ssh
-
-  # Enable fail2ban
+  # ── fail2ban ───────────────────────────────────────────────────────────────
   - systemctl enable --now fail2ban
 
-  # Pre-create directories per PRD §A.1
-  - mkdir -p /etc/arete-secrets && chmod 700 /etc/arete-secrets && chown agent:agent /etc/arete-secrets
-  - mkdir -p /var/lib/arete-creds && chmod 700 /var/lib/arete-creds && chown agent:agent /var/lib/arete-creds
-  - mkdir -p /var/log/arete-creds && chmod 750 /var/log/arete-creds && chown agent:agent /var/log/arete-creds
-  - touch /var/log/arete-creds/access.log && chmod 640 /var/log/arete-creds/access.log && chown agent:agent /var/log/arete-creds/access.log
-  - mkdir -p /var/log/openclaw && chmod 750 /var/log/openclaw && chown agent:agent /var/log/openclaw
-  # NOTE: /var/log/caddy is intentionally NOT pre-created here. The caddy user does
-  # not exist until `apt install caddy` runs (Phase 1), and pre-creating the dir as
-  # root causes permission-denied when caddy reloads with a config that writes logs.
-  # The caddy postinst creates the dir with correct ownership.
+  # ── Skeleton dirs ──────────────────────────────────────────────────────────
+  - install -d -m 0755 -o arete -g arete /var/tenants
+  - install -d -m 0700 -o arete -g arete /var/lib/arete-creds
+  - install -d -m 0700 -o root  -g root  /etc/arete-secrets
+  - install -d -m 0755 -o arete -g arete /var/log/arete
 
-  # Disable unattended-upgrades automatic restart at random times (we want predictable uptime)
-  # but keep security updates. systemd unit will be tuned in Phase 1.
-  - sed -i 's|//Unattended-Upgrade::Automatic-Reboot "true";|Unattended-Upgrade::Automatic-Reboot "false";|' /etc/apt/apt.conf.d/50unattended-upgrades || true
+  # ── Unattended security upgrades ───────────────────────────────────────────
+  - dpkg-reconfigure -plow unattended-upgrades
 
-  # Marker file so Phase 1 setup script can detect cloud-init completed
-  - echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) cloud-init complete" > /var/log/cloud-init-bot-marker.log
+  # ── Sanity ─────────────────────────────────────────────────────────────────
+  - docker --version
+  - docker compose version
+  - id arete
+  - ufw status verbose
 
-# After this completes, expect:
-#   ssh agent@<vps-ip>  → shell prompt
-#   sudo -n true           → no password prompt
-#   ls /var/lib/arete-creds  → empty dir owned by agent
-#   ufw status             → 22/80/443 allowed, all else denied
+final_message: |
+  Arete host cloud-init complete. Next:
+    1. SSH in as `arete@<ip>` (key-based — root login still works too).
+    2. Run `sudo bash infra/bootstrap-host.sh` (clones repo + runs script).
+    3. Point your domain's A record at this box, then re-run bootstrap-host.sh
+       with PLATFORM_DOMAIN set to provision Caddy + Let's Encrypt cert.
