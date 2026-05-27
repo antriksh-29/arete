@@ -79,9 +79,17 @@ fi
 
 # --- 4. Injection-fixture smoke test (boot gate) ---
 # Mirrors Alfred's pattern: refuse to start if any prompt-injection pattern would succeed.
-if ! python3 /opt/arete/eval/run-injection-fixture.py --fixture /opt/arete/eval/injection-fixture.yaml; then
-  echo "[arete] FATAL: injection fixture refused — container will NOT start" >&2
-  exit 1
+# COST: each run = 30 LLM calls × ~2-20KB context per call. Default-skipped because the
+# fixture+model+identity tuple is identical across container starts — the gate's value
+# is at image-build/release time, not per-container-cold-start. Set ARETE_SKIP_BOOT_GATE=0
+# in /etc/arete-secrets/router.env (router-side, propagated via docker create) to enable.
+if [ "${ARETE_SKIP_BOOT_GATE:-1}" = "1" ]; then
+  echo "[arete] boot gate SKIPPED (ARETE_SKIP_BOOT_GATE=1). Set =0 to enable."
+else
+  if ! python3 /opt/arete/eval/run-injection-fixture.py --fixture /opt/arete/eval/injection-fixture.yaml; then
+    echo "[arete] FATAL: injection fixture refused — container will NOT start" >&2
+    exit 1
+  fi
 fi
 
 # --- 5. Start the syncer in background ---
