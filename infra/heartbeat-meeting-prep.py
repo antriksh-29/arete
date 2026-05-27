@@ -20,7 +20,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-sys.path.insert(0, "/home/botuser/bin")
+sys.path.insert(0, "${STATE_HOME}/bin")
 import composio_client  # type: ignore
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -37,8 +37,8 @@ LOG_FILE = LOG_DIR / f"heartbeat-{TODAY_IST}.log"
 
 # Composio account routing (alias OR composio account ID → email).
 CALENDAR_ACCOUNTS = [
-    {"composio": "personal",                    "email": "antriksh@getarete.co"},
-    {"composio": "googlecalendar_casse-wikeno", "email": "antriksh1980@gmail.com"},
+    {"composio": "personal",                    "email": "antriksh@${PLATFORM_ROOT_DOMAIN}"},
+    {"composio": "googlecalendar_casse-wikeno", "email": "${USER_EMAIL}"},
 ]
 
 # Telegram target (user's direct chat id).

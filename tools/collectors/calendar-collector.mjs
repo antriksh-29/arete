@@ -25,11 +25,11 @@ const { calendarList } = await import(`${__dirname}/composio_client.mjs`);
 // during OAuth); the personal-email calendar has no alias so we use
 // its stable account ID.
 const COMPOSIO_CAL_ACCOUNT = {
-  'antriksh@getarete.co':    'personal',
-  'antriksh1980@gmail.com':  'googlecalendar_casse-wikeno',
+  'antriksh@${PLATFORM_ROOT_DOMAIN}':    'personal',
+  '${USER_EMAIL}':  'googlecalendar_casse-wikeno',
 };
 
-const ACCOUNTS = ['antriksh1980@gmail.com', 'antriksh@getarete.co'];
+const ACCOUNTS = ['${USER_EMAIL}', 'antriksh@${PLATFORM_ROOT_DOMAIN}'];
 const DAYS = parseInt(process.argv.find(a => /^\d+$/.test(a)) || '60', 10);
 const OUT_DIR = process.env.OUT_DIR || './data/calendar';
 const MAX_PAGES = parseInt(process.env.MAX_PAGES || '20', 10);

@@ -3,7 +3,7 @@
 # 30-day retention via rclone delete --min-age=30d.
 #
 # What we back up (in priority order):
-#   1. ~/.brain/         — markdown pages + git history (the source of truth)
+#   1. ${BRAIN_PATH}/         — markdown pages + git history (the source of truth)
 #   2. ~/.gbrain/        — gbrain config (URLs, schema state)
 #   3. ~/.openclaw/openclaw.json + identity files (workspace AGENTS.md, etc.)
 #
@@ -23,9 +23,9 @@ echo "[$(date -Iseconds)] backup start" >> "$LOG"
 # rclone config from vault on the fly (avoids persistent config file).
 export RCLONE_CONFIG_R2_TYPE=s3
 export RCLONE_CONFIG_R2_PROVIDER=Cloudflare
-export RCLONE_CONFIG_R2_ENDPOINT="$(/usr/local/bin/bot-cred get CLOUDFLARE_R2_ENDPOINT)"
-export RCLONE_CONFIG_R2_ACCESS_KEY_ID="$(/usr/local/bin/bot-cred get CLOUDFLARE_R2_ACCESS_KEY)"
-export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$(/usr/local/bin/bot-cred get CLOUDFLARE_R2_SECRET_KEY)"
+export RCLONE_CONFIG_R2_ENDPOINT="$(/usr/local/bin/arete-cred get CLOUDFLARE_R2_ENDPOINT)"
+export RCLONE_CONFIG_R2_ACCESS_KEY_ID="$(/usr/local/bin/arete-cred get CLOUDFLARE_R2_ACCESS_KEY)"
+export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$(/usr/local/bin/arete-cred get CLOUDFLARE_R2_SECRET_KEY)"
 export RCLONE_CONFIG_R2_ACL=private
 
 if [ -z "$RCLONE_CONFIG_R2_ENDPOINT" ] || [ -z "$RCLONE_CONFIG_R2_ACCESS_KEY_ID" ]; then

@@ -11,7 +11,7 @@
 # performs the mutation. The agent CANNOT mutate SKILL.md directly —
 # that's the architectural guarantee Bug D needs.
 #
-# State file: ~/.brain-bootstrap-raw/state/pending-skill-edits/<slug>.json
+# State file: ${BRAIN_PATH}-bootstrap-raw/state/pending-skill-edits/<slug>.json
 # TTL: 15 minutes (apply-skill-edit.sh refuses stale pending files).
 #
 # Usage:

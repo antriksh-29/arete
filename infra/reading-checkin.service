@@ -3,5 +3,5 @@ Description=Daily reading check-in (10am IST)
 
 [Service]
 Type=oneshot
-ExecStart=/home/botuser/bin/reading-checkin.sh ping
+ExecStart=${STATE_HOME}/bin/reading-checkin.sh ping
 TimeoutStartSec=120

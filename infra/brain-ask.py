@@ -10,14 +10,14 @@
 # invoke, so there's no excuse to improvise from summary.
 #
 # Resolution order for the source content:
-#   1. ~/.brain/_raw/<slug-basename>.raw.txt           (Layer 2 sidecar — verbatim rendered page from browser-harness)
-#   2. ~/.brain/<slug>.md                               (the brain page itself — agent analysis + Raw thread section)
+#   1. ${BRAIN_PATH}/_raw/<slug-basename>.raw.txt           (Layer 2 sidecar — verbatim rendered page from browser-harness)
+#   2. ${BRAIN_PATH}/<slug>.md                               (the brain page itself — agent analysis + Raw thread section)
 #   3. gbrain get <slug>                                (fallback if the file is missing on disk)
 #
 # Usage:
 #   brain-ask.py <slug-or-pointer> "<question>"
 #     slug-or-pointer  →  "media/social/x-nishank-20260512"
-#                          OR "last"  (reads ~/.brain/.last-bookmark.json)
+#                          OR "last"  (reads ${BRAIN_PATH}/.last-bookmark.json)
 #                          OR a URL we have bookmarked (looked up in lists/to-read)
 #
 # Prints a single-line JSON envelope on stdout:
@@ -41,10 +41,10 @@ from pathlib import Path
 BRAIN_DIR = Path.home() / ".brain"
 RAW_DIR = BRAIN_DIR / "_raw"
 LAST_BOOKMARK_PATH = BRAIN_DIR / ".last-bookmark.json"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 TODAY = date.today().isoformat()
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 
 def log(msg):
@@ -138,7 +138,7 @@ def _resolve_via_brain_find(query):
     here = Path(__file__).resolve().parent
     bf = here / "brain-find.py"
     if not bf.exists():
-        bf = Path("/home/botuser/bin/brain-find.py")
+        bf = Path("${STATE_HOME}/bin/brain-find.py")
     if not bf.exists():
         return "", [], False
     try:
@@ -163,7 +163,7 @@ def _resolve_via_brain_find(query):
 def _resolve_pointer(pointer):
     """Map the CLI argument to a brain page slug. Accepts:
       - a literal slug ("media/social/x-nishank-20260512")
-      - "last" — read ~/.brain/.last-bookmark.json
+      - "last" — read ${BRAIN_PATH}/.last-bookmark.json
       - a URL — look it up in lists/to-read.md
       - free-text — delegated to brain-find.py (since 2026-05-14
         when the v100 follow-up probe showed `last` was a bad default
@@ -233,7 +233,7 @@ def ask(slug, question, persona_slug=""):
     user_msg = "\n\n".join(parts)
 
     # Import llm lazily so unit tests can stub before import.
-    sys.path.insert(0, "/home/botuser/bin")
+    sys.path.insert(0, "${STATE_HOME}/bin")
     import llm  # type: ignore
     text, provider = llm.call(
         system_prompt=SYSTEM_PROMPT,

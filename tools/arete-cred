@@ -1,0 +1,8 @@
+#!/bin/bash
+# Thin wrapper around tools/creds.py.
+# Installed at /usr/local/bin/arete-cred inside each tenant container so the
+# command is on PATH for the agent user.
+# Runs as the invoking user; relies on filesystem permissions to protect
+# /var/lib/arete-creds/vault.db and /etc/arete-secrets/master.key.
+set -euo pipefail
+exec /usr/bin/python3 /opt/arete/tools/creds.py "$@"

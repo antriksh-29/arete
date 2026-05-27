@@ -85,7 +85,7 @@ const ALLOWED_DOMAINS = [
   "googleapis.com",
   "axiom.co", "api.axiom.co",
   // user's own apex domains
-  "getarete.co", "bot.getarete.co",
+  "${PLATFORM_ROOT_DOMAIN}", "${PLATFORM_DOMAIN}",
 ];
 
 // ──────────────────────────────────────────────────────────────────
@@ -256,7 +256,7 @@ async function llmReview(bundle: DraftBundle): Promise<LlmVerdict | { error: "of
 
   // Moonshot (Kimi K2.6) API call. OpenAI-compatible Chat Completions shape.
   // Aligns with identity/MODEL_ROUTING.md: Kimi K2.6 is the project-wide primary
-  // model as of 2026-05-15. Auth via bot-cred MOONSHOT_API_KEY.
+  // model as of 2026-05-15. Auth via arete-cred MOONSHOT_API_KEY.
   const apiKey = process.env.MOONSHOT_API_KEY ?? await readVaultKey("MOONSHOT_API_KEY");
   if (!apiKey) return { error: "offline", detail: "MOONSHOT_API_KEY not available in vault or env" };
 
@@ -323,7 +323,7 @@ async function llmReview(bundle: DraftBundle): Promise<LlmVerdict | { error: "of
 
 async function readVaultKey(name: string): Promise<string | null> {
   try {
-    const child = Bun.spawnSync(["bot-cred", "get", name]);
+    const child = Bun.spawnSync(["arete-cred", "get", name]);
     const out = child.stdout.toString().trim();
     if (out && !out.startsWith("error")) return out;
     return null;

@@ -55,4 +55,4 @@ done <<< "$TASKS"
 
 MSG=$(printf '%s\n' "${LINES[@]}")
 
-/home/botuser/bin/send-telegram.sh "$MSG"
+${STATE_HOME}/bin/send-telegram.sh "$MSG"

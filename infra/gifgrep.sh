@@ -14,7 +14,7 @@
 #
 # v0.3.0 of upstream requires KLIPY_API_KEY for ALL sources (klipy/tenor/
 # giphy proxy through klipy in the current build). Key is read from
-# the bot-cred vault; if missing the script prints a clear ABORT line
+# the arete-cred vault; if missing the script prints a clear ABORT line
 # the agent will relay verbatim.
 
 set -uo pipefail
@@ -37,9 +37,9 @@ if ! command -v gifgrep >/dev/null 2>&1; then
   exit 1
 fi
 
-KLIPY_API_KEY="$(/usr/local/bin/bot-cred get KLIPY_API_KEY 2>/dev/null)"
+KLIPY_API_KEY="$(/usr/local/bin/arete-cred get KLIPY_API_KEY 2>/dev/null)"
 if [ -z "$KLIPY_API_KEY" ]; then
-  echo 'ABORT: KLIPY_API_KEY missing from vault — sign up free at https://klipy.com, then `bot-cred set KLIPY_API_KEY <key>` on the VPS'
+  echo 'ABORT: KLIPY_API_KEY missing from vault — sign up free at https://klipy.com, then `arete-cred set KLIPY_API_KEY <key>` on the VPS'
   exit 1
 fi
 export KLIPY_API_KEY

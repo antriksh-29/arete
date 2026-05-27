@@ -20,9 +20,9 @@ import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 ACTIVITIES_TSV = Path.home() / ".brain-bootstrap-raw" / "state" / "activity-tracker" / "activities.tsv"
 
 DEFAULT_TARGET = 200

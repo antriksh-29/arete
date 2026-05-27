@@ -9,7 +9,7 @@
 #
 # Usage:
 #   ingest-x-thread.py <tweet-url>
-# Reads OPENAI_API_KEY and X_API_BEARER_TOKEN from bot-cred vault.
+# Reads OPENAI_API_KEY and X_API_BEARER_TOKEN from arete-cred vault.
 # Prints a short JSON envelope to stdout for the agent to relay.
 
 import json
@@ -23,13 +23,13 @@ from datetime import date
 from pathlib import Path
 
 BRAIN_DIR = Path.home() / ".brain"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 X_BASE = "https://api.x.com/2"
 TODAY = date.today().isoformat()
 
 # gbrain's shebang is `#!/usr/bin/env bun`. When openclaw invokes this script,
 # bun isn't on PATH and every gbrain call silently exits 127. Force PATH.
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 
 def log(msg):
@@ -37,13 +37,13 @@ def log(msg):
 
 
 def vault_get(key):
-    """Return the vault value, or empty string if bot-cred isn't
+    """Return the vault value, or empty string if arete-cred isn't
     installed / the key is missing. The browser-first flow tolerates
     a missing X_API_BEARER_TOKEN — it just means the API enrich step
     is skipped — so this no longer raises like it used to."""
     try:
         r = subprocess.run(
-            ["bot-cred", "get", key], capture_output=True, text=True, check=False
+            ["arete-cred", "get", key], capture_output=True, text=True, check=False
         )
     except FileNotFoundError:
         return ""
@@ -289,7 +289,7 @@ def inject_x_cookies_if_present():
     login wall, or signal cookies-required)."""
     login_bin = os.path.expanduser("~/bin/browser-login.py")
     if not os.path.isfile(login_bin):
-        login_bin = "/home/botuser/bin/browser-login.py"
+        login_bin = "${STATE_HOME}/bin/browser-login.py"
     if not os.path.isfile(login_bin):
         log("browser-login.py not on PATH; skipping cookie injection")
         return False
@@ -472,7 +472,7 @@ def browser_to_bundle(browser_ctx, url, handle_from_url):
 
 
 def analyze(bundle, source_url, prefetched_extra_context=""):
-    sys.path.insert(0, "/home/botuser/bin")
+    sys.path.insert(0, "${STATE_HOME}/bin")
     import llm  # type: ignore
 
     # If the caller already fetched browser context (the new
@@ -581,7 +581,7 @@ def cross_reference(slug, page_text):
 
 
 def _enqueue_xref(slug, entities, source_label):
-    """Append a batch to ~/.brain/.xref-queue.jsonl. Format matches
+    """Append a batch to ${BRAIN_PATH}/.xref-queue.jsonl. Format matches
     xref-drainer.py's reader."""
     queue_path = BRAIN_DIR / ".xref-queue.jsonl"
     BRAIN_DIR.mkdir(parents=True, exist_ok=True)
@@ -629,10 +629,10 @@ def write_raw_sidecar(slug, page_text, alt_texts, source_url, title=""):
     quotes / exact phrasing — the LLM analysis in the brain page is
     not lossless.
 
-    Lives under ~/.brain/_raw/ which is gitignored so the rendered
+    Lives under ${BRAIN_PATH}/_raw/ which is gitignored so the rendered
     body never makes it to the GitHub brain repo (X ToS, account
     session signatures in URLs). Backed up by the daily R2 brain
-    backup the same as everything else under ~/.brain."""
+    backup the same as everything else under ${BRAIN_PATH}."""
     if not (page_text or alt_texts):
         return None
     RAW_SIDECAR_DIR.mkdir(parents=True, exist_ok=True)

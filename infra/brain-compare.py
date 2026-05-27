@@ -28,9 +28,9 @@ from pathlib import Path
 BRAIN_DIR = Path.home() / ".brain"
 RAW_DIR = BRAIN_DIR / "_raw"
 LAST_BOOKMARK_PATH = BRAIN_DIR / ".last-bookmark.json"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 
 def log(msg):
@@ -63,7 +63,7 @@ def _resolve_pointer(pointer):
         return pointer
     bf = Path(__file__).resolve().parent / "brain-find.py"
     if not bf.exists():
-        bf = Path("/home/botuser/bin/brain-find.py")
+        bf = Path("${STATE_HOME}/bin/brain-find.py")
     if not bf.exists():
         return ""
     try:
@@ -119,7 +119,7 @@ def compare(slugs, question=""):
     else:
         user_block += "\n\n=== TASK ===\nCompare and contrast these sources."
 
-    sys.path.insert(0, "/home/botuser/bin")
+    sys.path.insert(0, "${STATE_HOME}/bin")
     import llm  # type: ignore
     text, provider = llm.call(
         system_prompt=SYSTEM_PROMPT,

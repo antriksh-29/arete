@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Reusable cookie-injection helper for browser-harness.
 
-Stores per-domain cookie blobs in the bot-cred vault under
+Stores per-domain cookie blobs in the arete-cred vault under
 `SITE_COOKIES__<domain>` (domain normalized to its registrable form).
 Future skills that need an authenticated browser context call:
 
@@ -31,7 +31,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 VAULT_PREFIX = "SITE_COOKIES__"
 
@@ -41,24 +41,24 @@ def log(msg):
 
 
 def vault_get(key):
-    r = subprocess.run(["bot-cred", "get", key], capture_output=True, text=True)
+    r = subprocess.run(["arete-cred", "get", key], capture_output=True, text=True)
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
 def vault_set(key, value):
-    r = subprocess.run(["bot-cred", "set", key, value], capture_output=True, text=True)
+    r = subprocess.run(["arete-cred", "set", key, value], capture_output=True, text=True)
     return r.returncode == 0
 
 
 def vault_list():
-    r = subprocess.run(["bot-cred", "list"], capture_output=True, text=True)
+    r = subprocess.run(["arete-cred", "list"], capture_output=True, text=True)
     if r.returncode != 0:
         return []
     return [line.strip() for line in r.stdout.splitlines() if line.strip().startswith(VAULT_PREFIX)]
 
 
 def vault_remove(key):
-    r = subprocess.run(["bot-cred", "remove", key], capture_output=True, text=True)
+    r = subprocess.run(["arete-cred", "remove", key], capture_output=True, text=True)
     return r.returncode == 0
 
 

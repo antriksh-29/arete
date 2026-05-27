@@ -7,9 +7,9 @@
 #   total [YYYY-MM-DD]   — total ml for a date to stdout (default: today IST)
 #
 # Storage (dual):
-#   - Filesystem (raw events): ~/.brain-bootstrap-raw/state/water/YYYY-MM-DD.log
+#   - Filesystem (raw events): ${BRAIN_PATH}-bootstrap-raw/state/water/YYYY-MM-DD.log
 #     Each line: "<YYYY-MM-DD HH:MM IST> <ml>"
-#   - Brain (compiled view): ~/.brain/habits/water-intake.md
+#   - Brain (compiled view): ${BRAIN_PATH}/habits/water-intake.md
 #     Updated on every log call; queryable by brain-first lookups.
 
 set -euo pipefail
@@ -97,7 +97,7 @@ entries_for_date() {
 
 # Recompute the brain page from filesystem state. Idempotent — safe to call
 # repeatedly. Reads up to last 30 days, computes 7-day and overall stats,
-# stamps full markdown back to ~/.brain/habits/water-intake.md.
+# stamps full markdown back to ${BRAIN_PATH}/habits/water-intake.md.
 rebuild_brain_page() {
   python3 - "$STATE_DIR" "$BRAIN_PAGE" "$TARGET_ML" <<'PYEOF'
 import os, sys, datetime, re
@@ -205,7 +205,7 @@ commit_brain() {
   cd "$HOME/.brain" 2>/dev/null || return 0
   if [ -n "$(git status --porcelain habits/water-intake.md 2>/dev/null)" ]; then
     git add habits/water-intake.md
-    git -c user.email='antriksh.bot@getarete.co' -c user.name='Alfred' \
+    git -c user.email='antriksh.bot@${PLATFORM_ROOT_DOMAIN}' -c user.name='Alfred' \
       commit -m "habit: water-intake update $(now_ist '%Y-%m-%d %H:%M')" >/dev/null 2>&1 || true
   fi
   # Push every habit commit immediately so GitHub reflects the change
@@ -250,7 +250,7 @@ notify_summary() {
   local DATE="$1"
   local MSG
   MSG=$(build_summary_msg "$DATE")
-  /home/botuser/bin/send-telegram.sh "$MSG"
+  ${STATE_HOME}/bin/send-telegram.sh "$MSG"
 }
 
 # Compact one-line-per-day list for any [from] [to] inclusive range.

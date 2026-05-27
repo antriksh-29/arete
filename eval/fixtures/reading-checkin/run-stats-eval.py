@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # run-stats-eval.py — verifies reading-checkin's stats math is correct
 # against a deterministic 9-day fixture. Independent of the live brain
-# repo; doesn't touch the real ~/.brain/.
+# repo; doesn't touch the real ${BRAIN_PATH}/.
 #
 # Reproduces recompute_stats logic from infra/reading-checkin.sh and
 # asserts the per-window counts match what we expect for a fixed

@@ -23,7 +23,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-sys.path.insert(0, "/home/botuser/bin")
+sys.path.insert(0, "${STATE_HOME}/bin")
 import llm  # type: ignore
 
 

@@ -14,7 +14,7 @@
 #               Without this, only rows missing brain_page / posted_by
 #               / one_liner are touched.
 #
-# Reads cred from the bot-cred vault (TELEGRAM_BOT_TOKEN / TELEGRAM_USER_ID).
+# Reads cred from the arete-cred vault (TELEGRAM_BOT_TOKEN / TELEGRAM_USER_ID).
 # Exit code is informational only; nobody is waiting.
 
 import importlib.util
@@ -37,7 +37,7 @@ def _load_reading_list():
     here = Path(__file__).resolve().parent
     rl_path = here / "reading-list.py"
     if not rl_path.exists():
-        rl_path = Path("/home/botuser/bin/reading-list.py")
+        rl_path = Path("${STATE_HOME}/bin/reading-list.py")
     spec = importlib.util.spec_from_file_location("reading_list", rl_path)
     assert spec is not None and spec.loader is not None
     rl = importlib.util.module_from_spec(spec)
@@ -48,7 +48,7 @@ def _load_reading_list():
 
 def _vault_get(key):
     try:
-        r = subprocess.run(["bot-cred", "get", key], capture_output=True, text=True)
+        r = subprocess.run(["arete-cred", "get", key], capture_output=True, text=True)
     except FileNotFoundError:
         return ""
     return r.stdout.strip() if r.returncode == 0 else ""
@@ -85,7 +85,7 @@ def _send_telegram(text):
 def _drain_xref_queue():
     drainer = Path(__file__).resolve().parent / "xref-drainer.py"
     if not drainer.exists():
-        drainer = Path("/home/botuser/bin/xref-drainer.py")
+        drainer = Path("${STATE_HOME}/bin/xref-drainer.py")
     if not drainer.exists():
         return
     subprocess.run(

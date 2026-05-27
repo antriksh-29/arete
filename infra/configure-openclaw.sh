@@ -392,7 +392,7 @@ desired = desired + [
     # as plaintext (file is mode 600) and are set during initial
     # provisioning. Don't add a knob for them — version-controlling
     # the plaintext keys would leak them. DEEPSEEK_API_KEY belongs in
-    # the bot-cred vault (same as MOONSHOT_API_KEY) — deploy-vps.sh
+    # the arete-cred vault (same as MOONSHOT_API_KEY) — deploy-vps.sh
     # reads it from there when seeding openclaw.json.
 ]
 

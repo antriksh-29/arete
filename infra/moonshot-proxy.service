@@ -9,8 +9,8 @@ PartOf=openclaw-gateway.service
 [Service]
 Type=simple
 # The launch wrapper reads MOONSHOT_API_KEY + OPENAI_API_KEY from the
-# bot-cred vault, then execs node. Wrapping avoids systemd's
-# EnvironmentFile-on-first-boot race AND PATH issues (bot-cred + node
+# arete-cred vault, then execs node. Wrapping avoids systemd's
+# EnvironmentFile-on-first-boot race AND PATH issues (arete-cred + node
 # are often only on PATH via shell init that systemd doesn't run).
 ExecStart=%h/personal-assistant/infra/moonshot-proxy-launch.sh
 Restart=on-failure

@@ -12,7 +12,7 @@
 #   3 — usage / config error
 #
 # Required env (on VPS):
-#   BOT_TOKEN   Telegram bot token (or pulled via bot-cred get BOT_TOKEN)
+#   BOT_TOKEN   Telegram bot token (or pulled via arete-cred get BOT_TOKEN)
 #   CHAT_ID     Telegram chat id (or passed as arg 1)
 #
 # Usage:
@@ -36,11 +36,11 @@ fi
 
 # ── pull bot token ──────────────────────────────────────────────
 BOT_TOKEN="${BOT_TOKEN:-}"
-if [ -z "$BOT_TOKEN" ] && command -v bot-cred >/dev/null 2>&1; then
-  BOT_TOKEN="$(bot-cred get BOT_TOKEN 2>/dev/null || true)"
+if [ -z "$BOT_TOKEN" ] && command -v arete-cred >/dev/null 2>&1; then
+  BOT_TOKEN="$(arete-cred get BOT_TOKEN 2>/dev/null || true)"
 fi
 if [ -z "$BOT_TOKEN" ]; then
-  echo '{"ok":false,"reason":"BOT_TOKEN unset and bot-cred unavailable","user_message":"config error"}' >&2
+  echo '{"ok":false,"reason":"BOT_TOKEN unset and arete-cred unavailable","user_message":"config error"}' >&2
   exit 3
 fi
 

@@ -37,7 +37,7 @@ mkdir -p "$LOG_DIR"
 TS=$(date -Iseconds)
 LOG="$LOG_DIR/$(date +%Y-%m-%d).log"
 
-export PATH="/home/botuser/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+export PATH="${STATE_HOME}/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 if [ "$SKIP_DETECTOR" -eq 0 ]; then
   # Bug I fix (2026-05-26): retire the signal-detector session if it has

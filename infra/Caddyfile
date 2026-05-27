@@ -2,13 +2,13 @@
 # Deployed in Phase 1 to /etc/caddy/Caddyfile on the VPS.
 # Caddy auto-fetches a Let's Encrypt cert on first request.
 #
-# Substitute bot.getarete.co with your actual domain, e.g.:
+# Substitute ${PLATFORM_DOMAIN} with your actual domain, e.g.:
 #   bot.antriksh.xyz
-# Tip: `sed -i 's/bot.getarete.co/bot.antriksh.xyz/g' /etc/caddy/Caddyfile`
+# Tip: `sed -i 's/${PLATFORM_DOMAIN}/bot.antriksh.xyz/g' /etc/caddy/Caddyfile`
 #
 # OpenClaw listens on localhost:18789. Caddy terminates TLS and reverse-proxies.
 
-bot.getarete.co {
+${PLATFORM_DOMAIN} {
     reverse_proxy localhost:18789 {
         # Telegram webhooks need the original Host header preserved
         header_up Host {host}
@@ -56,6 +56,6 @@ bot.getarete.co {
 
 # Redirect plain HTTP root to HTTPS (Caddy does this by default but explicit doesn't hurt)
 # Block direct IP-based access (anyone hitting the IP without the right Host)
-http://bot.getarete.co {
-    redir https://bot.getarete.co{uri} permanent
+http://${PLATFORM_DOMAIN} {
+    redir https://${PLATFORM_DOMAIN}{uri} permanent
 }

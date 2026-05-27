@@ -10,8 +10,8 @@
 # `systemd-run --user --on-active=...` for relative; `--on-calendar=...` for absolute.
 # Each scheduled reminder gets a unique unit name so we can list / cancel later.
 #
-# Reminder context is also appended to ~/.brain/_state/reminders.jsonl for auditing
-# (path is outside ~/.brain so gbrain doesn't try to import it as a page).
+# Reminder context is also appended to ${BRAIN_PATH}/_state/reminders.jsonl for auditing
+# (path is outside ${BRAIN_PATH} so gbrain doesn't try to import it as a page).
 
 set -e
 
@@ -32,7 +32,7 @@ if [ -z "$WHEN" ] || [ -z "$MSG" ]; then
 fi
 
 UNIT_NAME="reminder-$(date +%s)-$$"
-SCRIPT="/home/botuser/bin/send-telegram.sh"
+SCRIPT="${STATE_HOME}/bin/send-telegram.sh"
 
 if [[ "$WHEN" == @* ]]; then
   # Calendar form: @YYYY-MM-DD HH:MM[:SS]   (interpreted as Asia/Kolkata)

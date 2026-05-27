@@ -2,11 +2,11 @@
 """migrate-daily-tasks-v2.py — migrate v1 flat state to v2 per-task lineage.
 
 v1 layout (per-date flat):
-  ~/.brain-bootstrap-raw/state/daily-tasks/<YYYY-MM-DD>.json
+  ${BRAIN_PATH}-bootstrap-raw/state/daily-tasks/<YYYY-MM-DD>.json
     {date, tasks: [title], statuses: {title: status}}
 
 v2 layout (task-centric):
-  ~/.brain-bootstrap-raw/state/daily-tasks/v2/
+  ${BRAIN_PATH}-bootstrap-raw/state/daily-tasks/v2/
     tasks/<uuid>.json     full lineage per logical task
     daily/<YYYY-MM-DD>.json   pointer list per day
     index.json            derived view of open tasks + title_norm

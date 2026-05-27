@@ -7,7 +7,7 @@
 #
 # Usage:
 #   ingest-pdf.py <url-or-path>
-# Reads OPENAI_API_KEY from bot-cred vault.
+# Reads OPENAI_API_KEY from arete-cred vault.
 # Writes brain page, prints a short JSON envelope to stdout for the agent
 # to relay to Telegram. Diagnostic info goes to stderr.
 
@@ -23,12 +23,12 @@ from pathlib import Path
 
 BRAIN_DIR = Path.home() / ".brain"
 SOURCES_DIR = BRAIN_DIR / "sources"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 TODAY = date.today().isoformat()
 
 # gbrain's shebang is `#!/usr/bin/env bun`. When openclaw invokes this script,
 # bun isn't on PATH and every gbrain call silently exits 127. Force PATH.
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 
 def log(msg):
@@ -37,7 +37,7 @@ def log(msg):
 
 def vault_get(key):
     return subprocess.run(
-        ["bot-cred", "get", key], capture_output=True, text=True, check=True
+        ["arete-cred", "get", key], capture_output=True, text=True, check=True
     ).stdout.strip()
 
 
@@ -115,7 +115,7 @@ No preamble. No "this document discusses…" filler. No closing summary. Land th
 
 
 def analyze(title, author, source, body):
-    sys.path.insert(0, "/home/botuser/bin")
+    sys.path.insert(0, "${STATE_HOME}/bin")
     import llm  # type: ignore
     body_capped = body[:80000]
     user_msg = (

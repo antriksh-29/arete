@@ -39,7 +39,7 @@ BRAIN_ROOT = Path.home() / ".brain"
 def vault_get(name: str) -> str:
     try:
         r = subprocess.run(
-            ["/usr/local/bin/bot-cred", "get", name],
+            ["/usr/local/bin/arete-cred", "get", name],
             capture_output=True, text=True, timeout=5,
         )
         return r.stdout.strip()

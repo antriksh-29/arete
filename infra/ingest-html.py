@@ -22,10 +22,10 @@ from datetime import date
 from pathlib import Path
 
 BRAIN_DIR = Path.home() / ".brain"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 TODAY = date.today().isoformat()
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 
 def log(msg):
@@ -164,7 +164,7 @@ No preamble. Land the structure above and stop. Do NOT wrap output in code fence
 
 
 def analyze(meta, url):
-    sys.path.insert(0, "/home/botuser/bin")
+    sys.path.insert(0, "${STATE_HOME}/bin")
     import llm  # type: ignore
     user_msg = (
         f"Title: {meta['title']}\n"
@@ -214,7 +214,7 @@ def ensure_stub(slug, source_slug, source_label):
 
 def cross_reference(slug, page_text):
     """Defer entity stub / link / timeline-add to xref-drainer.py via
-    ~/.brain/.xref-queue.jsonl. See ingest-x-thread.py for rationale."""
+    ${BRAIN_PATH}/.xref-queue.jsonl. See ingest-x-thread.py for rationale."""
     seen = []
     for m in WIKILINK_RE.finditer(page_text):
         target = m.group(1).strip()

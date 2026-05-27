@@ -9,7 +9,7 @@
 #   x-draft.py quote <tweet-url> "<raw>"      [--style <handle>]
 #
 # Prints a single-line JSON envelope. Pending-draft state stored at
-# ~/.brain-bootstrap-raw/state/x-draft-pending.json.
+# ${BRAIN_PATH}-bootstrap-raw/state/x-draft-pending.json.
 
 import json
 import os
@@ -21,14 +21,14 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 BRAIN_DIR = Path.home() / ".brain"
 WORKSPACE = Path.home() / ".openclaw" / "workspace"
 STATE_DIR = Path.home() / ".brain-bootstrap-raw" / "state"
 STATE_FILE = STATE_DIR / "x-draft-pending.json"
 VOICE_PATH = WORKSPACE / "identity" / "X_VOICE.md"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 
 OWN_HANDLE = "antriksssh"
 ADMIRED = ["paulg", "naval", "sama", "garrytan", "vkhosla"]
@@ -40,7 +40,7 @@ def log(msg):
 
 
 def vault_get(key):
-    return subprocess.run(["bot-cred", "get", key], capture_output=True, text=True, check=True).stdout.strip()
+    return subprocess.run(["arete-cred", "get", key], capture_output=True, text=True, check=True).stdout.strip()
 
 
 def load_voice_profile():
@@ -149,7 +149,7 @@ Hard rules:
 
 
 def generate(prompt_user_msg):
-    sys.path.insert(0, "/home/botuser/bin")
+    sys.path.insert(0, "${STATE_HOME}/bin")
     import llm  # type: ignore
     text, provider = llm.call(
         system_prompt=SYSTEM_PROMPT_BASE,

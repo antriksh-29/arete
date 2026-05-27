@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# brain-autosync.sh — periodic auto-commit + push for ~/.brain/.
+# brain-autosync.sh — periodic auto-commit + push for ${BRAIN_PATH}/.
 #
 # Motivating bug (2026-05-22, image-v36): user asked the bot to modify
 # the youtube-subscriptions-complete brain page. Either Kimi forgot to
@@ -10,7 +10,7 @@
 # Existing pattern: domain-specific scripts (reading-checkin.sh,
 # water-log.sh, youtube-subs-categorize.py) each call `git add/commit/push`
 # themselves. That works for THOSE scripts. It fails for any path that
-# touches ~/.brain/ without going through them — including the agent
+# touches ${BRAIN_PATH}/ without going through them — including the agent
 # editing files via raw exec.
 #
 # This script is the safety net: runs every 60s via systemd timer,
@@ -67,7 +67,7 @@ n_files=$(echo "$changed" | wc -l | tr -d ' ')
 ts=$(date '+%Y-%m-%d %H:%M IST' 2>/dev/null || date)
 
 # Stage everything — brain edits are always intentional (no .env / no
-# build artifacts) so `add -A` is safe here. Verified ~/.brain/.gitignore
+# build artifacts) so `add -A` is safe here. Verified ${BRAIN_PATH}/.gitignore
 # already excludes non-content files.
 git add -A 2>/dev/null
 

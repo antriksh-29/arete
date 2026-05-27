@@ -45,7 +45,7 @@ users:
     shell: /bin/bash
     groups: [sudo]
     ssh_authorized_keys:
-      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFUVpoJ2io/NqpketRS2QKw7igmU4pw/mE6lWaoLIyQQ antriksh1980@gmail.com
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFUVpoJ2io/NqpketRS2QKw7igmU4pw/mE6lWaoLIyQQ ${USER_EMAIL}
 
 write_files:
   # SSH hardening — disable password auth, root login, restrict to ed25519/rsa
@@ -89,10 +89,10 @@ runcmd:
   - systemctl enable --now fail2ban
 
   # Pre-create directories per PRD §A.1
-  - mkdir -p /etc/bot-secrets && chmod 700 /etc/bot-secrets && chown botuser:botuser /etc/bot-secrets
-  - mkdir -p /var/lib/bot-creds && chmod 700 /var/lib/bot-creds && chown botuser:botuser /var/lib/bot-creds
-  - mkdir -p /var/log/bot-creds && chmod 750 /var/log/bot-creds && chown botuser:botuser /var/log/bot-creds
-  - touch /var/log/bot-creds/access.log && chmod 640 /var/log/bot-creds/access.log && chown botuser:botuser /var/log/bot-creds/access.log
+  - mkdir -p /etc/arete-secrets && chmod 700 /etc/arete-secrets && chown botuser:botuser /etc/arete-secrets
+  - mkdir -p /var/lib/arete-creds && chmod 700 /var/lib/arete-creds && chown botuser:botuser /var/lib/arete-creds
+  - mkdir -p /var/log/arete-creds && chmod 750 /var/log/arete-creds && chown botuser:botuser /var/log/arete-creds
+  - touch /var/log/arete-creds/access.log && chmod 640 /var/log/arete-creds/access.log && chown botuser:botuser /var/log/arete-creds/access.log
   - mkdir -p /var/log/openclaw && chmod 750 /var/log/openclaw && chown botuser:botuser /var/log/openclaw
   # NOTE: /var/log/caddy is intentionally NOT pre-created here. The caddy user does
   # not exist until `apt install caddy` runs (Phase 1), and pre-creating the dir as
@@ -109,5 +109,5 @@ runcmd:
 # After this completes, expect:
 #   ssh botuser@<vps-ip>  → shell prompt
 #   sudo -n true           → no password prompt
-#   ls /var/lib/bot-creds  → empty dir owned by botuser
+#   ls /var/lib/arete-creds  → empty dir owned by botuser
 #   ufw status             → 22/80/443 allowed, all else denied

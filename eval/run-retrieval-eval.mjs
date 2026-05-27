@@ -55,7 +55,7 @@ function parseYaml(txt) {
 }
 
 function gbrainQuery(q) {
-  const out = execSync(`PATH=/home/botuser/.bun/bin:$PATH gbrain query ${JSON.stringify(q)} 2>&1`, { encoding: 'utf-8', maxBuffer: 4_000_000 });
+  const out = execSync(`PATH=${STATE_HOME}/.bun/bin:$PATH gbrain query ${JSON.stringify(q)} 2>&1`, { encoding: 'utf-8', maxBuffer: 4_000_000 });
   // Output looks like: "[0.8980] companies/armoriq -- # ArmorIQ\n..."
   const hits = [];
   for (const line of out.split('\n')) {

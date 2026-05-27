@@ -328,7 +328,7 @@ function validateBoundedDiff(
 
 async function readVaultKey(name: string): Promise<string | null> {
   try {
-    const child = Bun.spawnSync(["bot-cred", "get", name]);
+    const child = Bun.spawnSync(["arete-cred", "get", name]);
     const out = child.stdout.toString().trim();
     if (out && !out.startsWith("error")) return out;
     return null;

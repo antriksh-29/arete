@@ -31,7 +31,7 @@ def log(msg):
 
 
 def vault_get(key):
-    return subprocess.run(["bot-cred", "get", key], capture_output=True, text=True, check=True).stdout.strip()
+    return subprocess.run(["arete-cred", "get", key], capture_output=True, text=True, check=True).stdout.strip()
 
 
 def fetch(url):

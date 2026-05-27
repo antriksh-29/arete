@@ -1,5 +1,5 @@
 [Unit]
-Description=Brain autosync — commit + push any uncommitted ~/.brain/ changes to GitHub
+Description=Brain autosync — commit + push any uncommitted ${BRAIN_PATH}/ changes to GitHub
 After=network-online.target
 
 [Service]

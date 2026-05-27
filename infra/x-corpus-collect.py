@@ -17,11 +17,11 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
 BRAIN_DIR = Path.home() / ".brain"
 CORPUS_DIR = BRAIN_DIR / "corpus"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 TODAY = datetime.now(timezone.utc).date().isoformat()
 
 OWN_HANDLE = "antriksssh"
@@ -35,7 +35,7 @@ def log(msg):
 
 
 def vault_get(key):
-    return subprocess.run(["bot-cred", "get", key], capture_output=True, text=True, check=True).stdout.strip()
+    return subprocess.run(["arete-cred", "get", key], capture_output=True, text=True, check=True).stdout.strip()
 
 
 # ---- own tweets via X API ----

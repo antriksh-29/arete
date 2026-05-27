@@ -2,7 +2,7 @@
 // Used by tools/collectors/{email,calendar}-collector.mjs after the
 // 2026-05-16 ClawVisor → Composio migration.
 //
-// Reads COMPOSIO_API_KEY from the bot-cred vault. Talks JSON-RPC over
+// Reads COMPOSIO_API_KEY from the arete-cred vault. Talks JSON-RPC over
 // HTTP to https://connect.composio.dev/mcp, parses the SSE-framed
 // response, unwraps the COMPOSIO_MULTI_EXECUTE_TOOL envelope, and
 // returns the tool's `data` payload.
@@ -14,7 +14,7 @@ let _API_KEY = null;
 
 function apiKey() {
   if (_API_KEY) return _API_KEY;
-  _API_KEY = execSync('/usr/local/bin/bot-cred get COMPOSIO_API_KEY', { encoding: 'utf-8' }).trim();
+  _API_KEY = execSync('/usr/local/bin/arete-cred get COMPOSIO_API_KEY', { encoding: 'utf-8' }).trim();
   if (!_API_KEY) throw new Error('COMPOSIO_API_KEY missing from vault');
   return _API_KEY;
 }

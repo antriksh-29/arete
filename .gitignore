@@ -10,7 +10,7 @@ vault.db
 vault.db.*
 **/oauth_*.json
 **/refresh_token*
-.bot-cred-cache
+.arete-cred-cache
 
 # Conductor workspace state
 .context/

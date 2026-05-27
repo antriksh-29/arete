@@ -60,7 +60,7 @@ USER_DEFAULTS = {
     "First name": "Antriksh",
     "Surname": "Jain",
     "Phone number": "+918310872480",
-    "Email": "antriksh1980@gmail.com",
+    "Email": "${USER_EMAIL}",
 }
 FILL_FORM = os.path.expanduser("~/bin/fill-form.py")
 SEND_PHOTO = os.path.expanduser("~/bin/send-telegram-photo.sh")

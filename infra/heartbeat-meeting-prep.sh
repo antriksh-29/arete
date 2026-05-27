@@ -9,6 +9,6 @@
 # shell-escaping plumbing.
 
 set -e
-export PATH="/home/botuser/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+export PATH="${STATE_HOME}/.bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 exec /usr/bin/python3 "$(dirname "$0")/heartbeat-meeting-prep.py" "$@"

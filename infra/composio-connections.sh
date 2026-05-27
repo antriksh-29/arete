@@ -58,7 +58,7 @@ TOOLKITS=(
 TOOLKITS_JSON=$(printf '{"name":"%s","action":"list"},' "${TOOLKITS[@]}")
 TOOLKITS_JSON="[${TOOLKITS_JSON%,}]"
 
-KEY=$(bot-cred get COMPOSIO_API_KEY 2>/dev/null)
+KEY=$(arete-cred get COMPOSIO_API_KEY 2>/dev/null)
 if [ -z "$KEY" ]; then
   echo "ABORT: COMPOSIO_API_KEY missing from vault" >&2
   exit 1

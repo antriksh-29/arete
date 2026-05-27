@@ -35,20 +35,20 @@ from pathlib import Path
 BRAIN_DIR = Path.home() / ".brain"
 LIST_PATH = BRAIN_DIR / "lists" / "to-read.md"
 LIST_SLUG = "lists/to-read"
-GBRAIN = "/home/botuser/.bun/bin/gbrain"
+GBRAIN = "${STATE_HOME}/.bun/bin/gbrain"
 TODAY = date.today().isoformat()
 
 # gbrain's shebang is `#!/usr/bin/env bun`. When this script is invoked
 # by openclaw or systemd, bun isn't on PATH and every gbrain call
 # silently returns exit 127. Prepend bun's bin dir.
-os.environ["PATH"] = "/home/botuser/.bun/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = "${STATE_HOME}/.bun/bin:" + os.environ.get("PATH", "")
 
-INGEST_PDF = "/home/botuser/bin/ingest-pdf.py"
-INGEST_X = "/home/botuser/bin/ingest-x-thread.py"
-INGEST_YOUTUBE = "/home/botuser/bin/ingest-youtube.py"
-INGEST_HTML = "/home/botuser/bin/ingest-html.py"
-WORKER_BIN = "/home/botuser/bin/reading-list-worker.py"
-MIGRATE_WORKER_BIN = "/home/botuser/bin/migrate-worker.py"
+INGEST_PDF = "${STATE_HOME}/bin/ingest-pdf.py"
+INGEST_X = "${STATE_HOME}/bin/ingest-x-thread.py"
+INGEST_YOUTUBE = "${STATE_HOME}/bin/ingest-youtube.py"
+INGEST_HTML = "${STATE_HOME}/bin/ingest-html.py"
+WORKER_BIN = "${STATE_HOME}/bin/reading-list-worker.py"
+MIGRATE_WORKER_BIN = "${STATE_HOME}/bin/migrate-worker.py"
 # Worker stderr log — short retention is fine, the systemd journal
 # captures the worker as well when it's invoked via the timer.
 WORKER_LOG = "/tmp/reading-list-worker.log"
@@ -60,7 +60,7 @@ def log(msg):
 
 
 def vault_get(key):
-    r = subprocess.run(["bot-cred", "get", key], capture_output=True, text=True)
+    r = subprocess.run(["arete-cred", "get", key], capture_output=True, text=True)
     return r.stdout.strip() if r.returncode == 0 else ""
 
 

@@ -256,7 +256,7 @@ def test_graph_returns_forward_links_and_backlinks(tmp_path, monkeypatch):
 
 
 def test_graph_skips_raw_sidecar_dir(tmp_path, monkeypatch):
-    """The _raw/ sidecars live as plain text files under ~/.brain/_raw/
+    """The _raw/ sidecars live as plain text files under ${BRAIN_PATH}/_raw/
     — they MUST be excluded from the backlink scan so the citation
     inside the raw text doesn't show up as a fake backlink."""
     mod = _import("brain-graph.py")

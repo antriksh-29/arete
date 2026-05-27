@@ -1,7 +1,0 @@
-#!/bin/bash
-# Thin wrapper around tools/creds.py.
-# Installed at /usr/local/bin/bot-cred so the command is on PATH for botuser.
-# Runs as the invoking user (botuser); relies on filesystem permissions to
-# protect /var/lib/bot-creds/vault.db and /etc/bot-secrets/master.key.
-set -euo pipefail
-exec /usr/bin/python3 /home/botuser/tools/creds.py "$@"

@@ -9,7 +9,7 @@
 #   bash setup-composio-mcp.sh --check        # show current state, no writes
 #
 # Run this on the VPS (botuser). It:
-#   1. Stores COMPOSIO_API_KEY in the bot-cred vault (audit trail + future
+#   1. Stores COMPOSIO_API_KEY in the arete-cred vault (audit trail + future
 #      reference)
 #   2. Writes the key into mcp.servers.composio.headers.x-consumer-api-key
 #      in ~/.openclaw/openclaw.json. OpenClaw doesn't interpolate env vars
@@ -29,7 +29,7 @@ if [ "${1:-}" = "--check" ]; then
   openclaw mcp show composio 2>&1 | head -20
   echo ""
   echo "=== vault slot ==="
-  if bot-cred list 2>&1 | grep -q "^COMPOSIO_API_KEY "; then
+  if arete-cred list 2>&1 | grep -q "^COMPOSIO_API_KEY "; then
     echo "  COMPOSIO_API_KEY: present"
   else
     echo "  COMPOSIO_API_KEY: missing"
@@ -55,9 +55,9 @@ if [ ${#KEY} -lt 20 ] || [ ${#KEY} -gt 200 ]; then
   read -r _
 fi
 
-echo "=== 1. store key in bot-cred vault ==="
-echo "$KEY" | bot-cred set COMPOSIO_API_KEY --value-stdin 2>&1 | tail -3 \
-  || { echo "  bot-cred set failed; trying interactive..."; bot-cred set COMPOSIO_API_KEY; }
+echo "=== 1. store key in arete-cred vault ==="
+echo "$KEY" | arete-cred set COMPOSIO_API_KEY --value-stdin 2>&1 | tail -3 \
+  || { echo "  arete-cred set failed; trying interactive..."; arete-cred set COMPOSIO_API_KEY; }
 
 echo ""
 echo "=== 2. write mcp.servers.composio.headers.x-consumer-api-key into openclaw.json ==="

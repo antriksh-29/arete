@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # skill-autosync.sh — mirror workspace user-skill edits back to the
 # personal-assistant git repo + push to GitHub, the same way
-# ~/.brain syncs to antriksh-brain.
+# ${BRAIN_PATH} syncs to antriksh-brain.
 #
 # Architectural shift from the immutable-bit approach (#113):
 #
 #   chattr +i failed because botuser has NOPASSWD sudo. The bot
 #   ran `sudo chattr -i`, wrote, and continued. Wrong abstraction.
 #
-#   Brain pattern (works): scripts edit ~/.brain/ files freely,
-#   then `cd ~/.brain && git commit && git push`. Trust the writer,
+#   Brain pattern (works): scripts edit ${BRAIN_PATH}/ files freely,
+#   then `cd ${BRAIN_PATH} && git commit && git push`. Trust the writer,
 #   commit & push the change so it's visible everywhere.
 #
 #   This script applies the same pattern to user-skills:
@@ -355,7 +355,7 @@ if ticket is not None:
 # If no pending file exists (e.g. the agent went straight to direct
 # Edit without first calling propose-skill-edit), we have no way to
 # recover the user intent — silent revert is the safe outcome.
-pending_path = os.path.expanduser(f"~/.brain-bootstrap-raw/state/pending-skill-edits/{slug}.json")
+pending_path = os.path.expanduser(f"${BRAIN_PATH}-bootstrap-raw/state/pending-skill-edits/{slug}.json")
 pending = None
 if os.path.isfile(pending_path):
     try:
@@ -443,13 +443,13 @@ elif matching:
         job["sessionTarget"] = "isolated"
         job["wakeMode"] = "now"
         job["payload"] = {"kind": "agentTurn", "message": f"Run the {slug} skill and deliver its output per user-skills/{slug}/SKILL.md."}
-        # Read user's Telegram chat ID from the bot-cred vault. Without
+        # Read user's Telegram chat ID from the arete-cred vault. Without
         # `to`, the cron fires but delivery fails (`Delivering to
         # Telegram requires target <chatId>`) — that's the 11:30 IST
         # bug that took 5 PRs to find.
         import subprocess
         try:
-            chat_id = subprocess.check_output(["/usr/local/bin/bot-cred", "get", "TELEGRAM_USER_ID"], text=True).strip().splitlines()[0]
+            chat_id = subprocess.check_output(["/usr/local/bin/arete-cred", "get", "TELEGRAM_USER_ID"], text=True).strip().splitlines()[0]
         except Exception:
             chat_id = ""
         job["delivery"] = {"mode": "announce", "channel": "last", "to": chat_id}
@@ -479,7 +479,7 @@ else:
     # working CLI-generated shape; delivery requires `to: <chat_id>`).
     import subprocess, time as _t
     try:
-        chat_id = subprocess.check_output(["/usr/local/bin/bot-cred", "get", "TELEGRAM_USER_ID"], text=True).strip().splitlines()[0]
+        chat_id = subprocess.check_output(["/usr/local/bin/arete-cred", "get", "TELEGRAM_USER_ID"], text=True).strip().splitlines()[0]
     except Exception:
         chat_id = ""
     jobs["jobs"].append({
