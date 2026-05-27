@@ -21,6 +21,17 @@ COPY --from=oven/bun:1.1-debian /usr/local/bin/bun /usr/local/bin/bun
 RUN curl -fsSL https://astral.sh/uv/install.sh | sh \
     && ln -s /root/.local/bin/uv /usr/local/bin/uv
 
+# Boot-gate runtime deps (eval/run-injection-fixture.py imports yaml; httpx is the
+# LLM client). pip --break-system-packages required because Debian's PEP 668 marker
+# otherwise blocks site-packages writes.
+RUN pip3 install --break-system-packages --no-cache-dir pyyaml httpx
+
+# Trust bind-mounted git repos regardless of UID ownership. The per-tenant volume
+# is created on the host (root/UID 1000) then bind-mounted where agent is UID 1001;
+# without this, every git operation fails "fatal: detected dubious ownership".
+# --system writes /etc/gitconfig so it applies to all users (root + agent).
+RUN git config --system --add safe.directory '*'
+
 # OpenClaw runtime (public npm package — unscoped)
 ARG OPENCLAW_VERSION=2026.5.22
 RUN npm install -g openclaw@${OPENCLAW_VERSION}
@@ -44,8 +55,8 @@ COPY --chown=agent:agent tools/ ./tools/
 COPY --chown=agent:agent meta/ ./meta/
 COPY --chown=agent:agent openclaw/ ./openclaw/
 
-# Per-skill Python deps (skills declare in pyproject.toml or requirements.txt)
-RUN find /opt/arete/skills /opt/arete/infra -name 'requirements.txt' -exec uv pip install --system -r {} \; 2>/dev/null || true
+# Per-skill / per-eval Python deps (skills + eval runners declare in requirements.txt)
+RUN find /opt/arete/skills /opt/arete/infra /opt/arete/eval -name 'requirements.txt' -exec uv pip install --system -r {} \; 2>/dev/null || true
 
 USER agent
 WORKDIR /home/agent
