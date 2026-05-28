@@ -18,27 +18,129 @@ import { log } from "./log.js";
 
 function onboardingGreeting(): string {
   return [
-    "👋 Hey! I'm Arete — your own personal AI assistant living right here in Telegram.",
+    "👋 Hey! I'm Arete — your own personal AI assistant, living right here in Telegram.",
     "",
-    "Before we dive in, what's your first name?",
+    "Quick 4-question setup so I can hit the ground running. First: what should I call you?",
   ].join("\n");
 }
 
 function onboardingAskCountry(name: string): string {
-  return `Nice to meet you, ${name}. Which country are you based in? (so I can get your timezone right for reminders + briefings.)`;
+  return `Nice to meet you, ${name}. Which country are you based in? (gives me the right timezone for reminders + briefings.)`;
 }
 
-function onboardingComplete(name: string): string {
+function onboardingAskOccupation(): string {
+  return "Got it. What do you do? (one line is fine — e.g. \"founder of a SaaS startup\", \"product manager at a fintech\", \"med-school student\", \"freelance designer\")";
+}
+
+function onboardingAskUseCase(): string {
   return [
-    `Great, all set ${name}. Here are a few things you can ask me right away:`,
+    "Last one: what would you most like to use me for? Pick the closest, or describe in your own words:",
     "",
-    "• \"Brief me on my day\" — pulls your calendar + inbox + open tasks.",
-    "• \"Remind me to call Dad at 7pm\" — natural-language scheduling.",
-    "• \"Add water-log to my habits\" — I track recurring habits + nudge you.",
-    "• \"Save this thread\" — I remember anything you tell me; ask me about it any time.",
-    "• \"What's on for tomorrow?\" — calendar-aware planning.",
+    "1. Daily briefings — morning pull-together of calendar, inbox, open tasks",
+    "2. Email triage — read, draft, schedule replies",
+    "3. Reminders + habits — natural-language scheduling, recurring nudges",
+    "4. Knowledge brain — save anything I tell you, ask about it later",
+    "5. Meeting prep + scheduling",
+    "6. Research + summaries — articles, PDFs, YouTube, X threads",
+    "7. Something else (just describe it)",
+  ].join("\n");
+}
+
+// Map a free-text use-case response to a starter-journey nudge. Best-effort
+// substring detection — if nothing matches, we fall back to the full catalog.
+function pickStarterJourney(useCase: string): string {
+  const t = useCase.toLowerCase();
+  if (/\b(1|brief|morning|daily)/.test(t)) {
+    return [
+      "Perfect — let's set up your daily morning briefing.",
+      "",
+      "I'll need a couple of things to make this work:",
+      "• What time should I send it? (e.g. \"7am\")",
+      "• Should I pull from Gmail + Google Calendar? (I'll ask for permission separately)",
+      "",
+      "Just answer those two and I'll wire it up.",
+    ].join("\n");
+  }
+  if (/\b(2|email|triage|inbox)/.test(t)) {
+    return [
+      "Great choice — email triage is one of the most impactful things I can do.",
+      "",
+      "First step: I'll need permission to connect to your Gmail. When you're ready, just say \"connect Gmail\" and I'll walk you through it.",
+      "",
+      "Once connected, you can ask me things like:",
+      "• \"What's unread that matters?\"",
+      "• \"Draft a reply to <person>\"",
+      "• \"Mark everything from <newsletter> as read\"",
+    ].join("\n");
+  }
+  if (/\b(3|remind|habit|nudge)/.test(t)) {
+    return [
+      "Awesome — reminders and habits are easy. Try these right now:",
+      "",
+      "• \"Remind me to call Dad at 7pm\"",
+      "• \"Every weekday at 9am, ask if I drank water\"",
+      "• \"Remind me Monday morning to send the weekly update\"",
+      "",
+      "I'll set them up and check in at the right time.",
+    ].join("\n");
+  }
+  if (/\b(4|brain|memory|save|remember|knowledge)/.test(t)) {
+    return [
+      "Got it — let's make the brain useful right away. Try one of these:",
+      "",
+      "• Forward me any message and say \"save this\" — I'll file it.",
+      "• \"Note: <person> prefers Notion over Linear\" — I'll remember.",
+      "• \"What did <person> say about pricing last week?\" — I'll look it up.",
+      "",
+      "The more you tell me, the sharper I get at resurfacing it later.",
+    ].join("\n");
+  }
+  if (/\b(5|meeting|schedul|calendar)/.test(t)) {
+    return [
+      "Meeting prep is a great fit. First, I'll need permission to connect to Google Calendar — say \"connect Calendar\" when you're ready.",
+      "",
+      "Once connected, you can ask:",
+      "• \"What's on for tomorrow?\"",
+      "• \"Prep me for the 3pm with <person>\" — I'll pull recent emails + notes",
+      "• \"Find 30 min next week with <person>\"",
+    ].join("\n");
+  }
+  if (/\b(6|research|summar|article|pdf|youtube|x[\s-]?thread)/.test(t)) {
+    return [
+      "Research is one of my favourites. Try:",
+      "",
+      "• Send me a YouTube link — \"summarise this\"",
+      "• Forward an article URL — I'll pull the gist + file it to your brain",
+      "• Send a PDF — I'll extract the key takeaways",
+      "• Send an X (Twitter) thread link — I'll save it as a single page",
+    ].join("\n");
+  }
+  // 7 / unmatched — let the user explore.
+  return [
+    "Got it. Whatever it is, I'll try to make it work. Tell me more about how you'd like to use me, or just start asking — I'll figure it out.",
+  ].join("\n");
+}
+
+function onboardingComplete(name: string, useCase: string): string {
+  return [
+    `Welcome aboard, ${name}. 🪶`,
     "",
-    "Try anything — I'll figure it out. Ask me a question?",
+    pickStarterJourney(useCase),
+    "",
+    "─────────",
+    "**Everything else I can do** — for whenever you want to explore:",
+    "",
+    "📅 **Daily briefings** — \"brief me on my day\"",
+    "✉️ **Email** — read, draft, schedule replies (needs Gmail permission)",
+    "🗓️ **Calendar** — meeting prep, scheduling, find time (needs Calendar permission)",
+    "⏰ **Reminders + habits** — \"remind me to X\", \"every morning ask Y\"",
+    "🧠 **Knowledge brain** — \"save this\", \"what did X say about Y\"",
+    "📄 **Research + summaries** — PDFs, articles, YouTube, X threads",
+    "📝 **Notes + lists** — \"add to my reading list\", \"track my water intake\"",
+    "🔍 **Web search** — \"google X for me\"",
+    "🎙️ **Voice in / out** — send me a voice note, I'll transcribe + reply",
+    "",
+    "Just talk to me — I'll figure out which one you mean.",
   ].join("\n");
 }
 
@@ -89,7 +191,7 @@ async function handleOnboarding(
     }
 
     case "awaiting_country": {
-      // This message IS the country. Save it, send welcome, mark complete.
+      // This message IS the country. Save it, ask occupation.
       const country = trimField(messageText);
       if (!country) {
         await sendPlainReply(
@@ -98,8 +200,42 @@ async function handleOnboarding(
         );
         return true;
       }
-      await setOnboarding(tenant.id, "complete", { country });
-      await sendPlainReply(chatId, onboardingComplete(tenant.name ?? "there"));
+      await setOnboarding(tenant.id, "awaiting_occupation", { country });
+      await sendPlainReply(chatId, onboardingAskOccupation());
+      return true;
+    }
+
+    case "awaiting_occupation": {
+      // This message IS the occupation. Save, ask use case.
+      const occupation = trimField(messageText, 200);
+      if (!occupation) {
+        await sendPlainReply(
+          chatId,
+          "Didn't catch that — one quick line about what you do?",
+        );
+        return true;
+      }
+      await setOnboarding(tenant.id, "awaiting_use_case", { occupation });
+      await sendPlainReply(chatId, onboardingAskUseCase());
+      return true;
+    }
+
+    case "awaiting_use_case": {
+      // This message IS the use case. Save, mark complete, send welcome
+      // with a starter-journey nudge tailored to the use case.
+      const useCase = trimField(messageText, 500);
+      if (!useCase) {
+        await sendPlainReply(
+          chatId,
+          "Didn't catch that — what would you most like to use me for? You can pick a number from 1-7 or describe it.",
+        );
+        return true;
+      }
+      await setOnboarding(tenant.id, "complete", { use_case: useCase });
+      await sendPlainReply(
+        chatId,
+        onboardingComplete(tenant.name ?? "there", useCase),
+      );
       return true;
     }
   }
