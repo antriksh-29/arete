@@ -75,38 +75,69 @@ export async function stopContainer(name: string): Promise<void> {
 
 export async function waitHealthy(
   tenant: Tenant,
-  timeoutMs = 60_000,
+  timeoutMs = 90_000,
 ): Promise<void> {
-  // Use docker CLI (via child_process) for the health probe instead of dockerode.
-  // PR #23 tried to make dockerode work and failed: local reproduction showed
-  // dockerode-mediated `c.exec({...}).start({hijack:true})` consistently times
-  // out at 5s even though the underlying command completes in 1.5-2s. We
-  // tested both with and without AttachStdout — neither was reliable.
-  // docker CLI is what works (manually tested on the VPS) so we use that.
+  // Two-tier readiness check:
+  //   1. Cheap: docker inspect — container must be Running and not Restarting.
+  //      If exited / restarting, the agent call will definitely fail, so we
+  //      throw early.
+  //   2. Probe: `openclaw gateway health` via docker CLI. If it passes within
+  //      the deadline, the gateway is fully ready (best case).
   //
-  // Per-probe timeout: 12s (worst-case observed locally: 7.2s when the gateway
-  // is in early startup; typical is <2s). Outer deadline: 60s (room for ~5
-  // probe attempts including 1s sleep between).
+  // BUT: even when `openclaw gateway health` keeps timing out (the device
+  // scope-upgrade pending-approval issue tracked in v2 backlog), the actual
+  // `openclaw agent` calls work because they fall back to embedded mode.
+  // So if the container is Running, we proceed anyway after a brief grace,
+  // letting the agent call deal with whatever mode is available.
+  //
+  // This is intentionally lenient. See memory: arete-v2-backlog-openclaw-scopes
+  // for the proper fix (pre-grant scopes via paired.json hot-patch).
   if (!tenant.container_name) {
     throw new Error(`tenant ${tenant.id} has no container_name`);
   }
+  const c = docker.getContainer(tenant.container_name);
   const deadline = Date.now() + timeoutMs;
+  const gracePeriodMs = 15_000; // ample for cold-start gateway init
+  const startMs = Date.now();
 
   while (Date.now() < deadline) {
+    // Cheap inspect — fail fast if container is in a bad state
+    let info: Dockerode.ContainerInspectInfo;
+    try {
+      info = await c.inspect();
+    } catch (err) {
+      throw new Error(`tenant ${tenant.id} container inspect failed: ${String(err)}`);
+    }
+    if (!info.State.Running) {
+      throw new Error(
+        `tenant ${tenant.id} container not Running (state=${info.State.Status})`,
+      );
+    }
+    // Probe gateway via docker CLI (5s budget per probe). If 0 → great, return.
     const r = await dockerCliExec(
       tenant.container_name,
       ["openclaw", "gateway", "health"],
-      12_000,
+      5_000,
     );
-    if (r.exitCode === 0) return;
-    log.debug(
-      { tenant: tenant.id, exit: r.exitCode, stderr: r.stderr.slice(0, 200) },
-      "gateway health probe non-zero — will retry",
-    );
+    if (r.exitCode === 0) {
+      log.debug({ tenant: tenant.id }, "gateway health probe ok");
+      return;
+    }
+    // Probe failed. If we've waited at least gracePeriodMs and container is
+    // Running, assume gateway is responsive-enough-via-embedded-fallback and
+    // let the agent call try. This is the workaround for the device scope
+    // issue documented in memory: arete-v2-backlog-openclaw-scopes.
+    if (Date.now() - startMs >= gracePeriodMs) {
+      log.warn(
+        { tenant: tenant.id, elapsed: Date.now() - startMs },
+        "gateway health failing but container is Running — proceeding (agent may use embedded fallback)",
+      );
+      return;
+    }
     await new Promise((r) => setTimeout(r, 1000));
   }
   throw new Error(
-    `tenant ${tenant.id} did not become healthy within ${timeoutMs}ms (gateway health probe failed)`,
+    `tenant ${tenant.id} did not become healthy within ${timeoutMs}ms (container not running)`,
   );
 }
 
