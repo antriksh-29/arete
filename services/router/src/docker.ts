@@ -163,10 +163,20 @@ export async function runAgentTurn(
   // --model at all — let OpenClaw use the configured primary + fallback chain.
   // Operators can still override per-call via ARETE_AGENT_MODEL.
   const explicitModel = process.env.ARETE_AGENT_MODEL;
+  // CRITICAL: `--agent main` is what makes OpenClaw apply the
+  // agents.list[0].identity = {name: "Arete"} from openclaw.json. Without
+  // it, the CLI falls back to a generic default that prepends "You are a
+  // personal assistant running inside OpenClaw" to the systemPrompt, and
+  // the model identifies itself as "an AI assistant" instead of as Arete.
+  //
+  // Verified live 2026-05-28: identical message gets "I'm an AI assistant
+  // running on OpenClaw" without --agent, and "Arete." with --agent main.
   const cmd = [
     "openclaw",
     "agent",
     "--json",
+    "--agent",
+    "main",
     "--message",
     messageText,
     "--session-key",
