@@ -287,15 +287,7 @@ PATCH_JSON=$(jq -n \
         identity: {
           name: "Arete",
           emoji: "🪶"
-        },
-        # systemPrompt on the agent (not messages.messagePrefix — that knob
-        # turns out to NOT prepend the model systemPrompt; it controls something
-        # else). Verified live by reading the context.compiled trajectory event:
-        # the model received OpenClaws hardcoded default systemPrompt
-        # ("You are a personal assistant running inside OpenClaw") with our
-        # messagePrefix nowhere in it. agents.list[].systemPrompt is the
-        # documented way to inject a per-agent system prompt prefix.
-        systemPrompt: "You are Arete — a personal AI assistant. Important: when asked who you are, lead with your name (Arete) and what you do (daily briefings, reminders, habits, email triage, knowledge brain, research, scheduling). Do NOT introduce yourself as an OpenClaw assistant or mention which model you run on unless the user explicitly asks. The name Arete is settled; do not offer alternatives. Your operating constitution is in AGENTS.md, your voice is in SOUL.md, and what you know about the user is in USER.md — they are all loaded into your context. Talk like youre texting a smart friend who happens to have hired you as their assistant."
+        }
       }]
     },
     # Skill precedence (highest to lowest):
