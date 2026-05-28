@@ -127,25 +127,27 @@ export async function runAgentTurn(
   // Per-user session key so memory is continuous across turns.
   const sessionKey = `agent:arete:tg-${telegramUserId}`;
 
-  // Pin to Haiku for cost. The "anthropic/" prefix IS required — without it,
-  // OpenClaw defaults to the configured gateway provider ("openai/" on a fresh
-  // install) and routes "claude-haiku-4-5" as "openai/claude-haiku-4-5", which
-  // fails: `FailoverError: Unknown model: openai/claude-haiku-4-5`.
-  const model = process.env.ARETE_AGENT_MODEL || "anthropic/claude-haiku-4-5";
+  // Model selection: container's openclaw.json is configured with a primary
+  // (DeepSeek V4 Pro by default per entrypoint.sh) plus fallbacks. Don't pass
+  // --model at all — let OpenClaw use the configured primary + fallback chain.
+  // Operators can still override per-call via ARETE_AGENT_MODEL.
+  const explicitModel = process.env.ARETE_AGENT_MODEL;
+  const cmd = [
+    "openclaw",
+    "agent",
+    "--json",
+    "--message",
+    messageText,
+    "--session-key",
+    sessionKey,
+    "--timeout",
+    "90",
+  ];
+  if (explicitModel) {
+    cmd.push("--model", explicitModel);
+  }
   const exec = await c.exec({
-    Cmd: [
-      "openclaw",
-      "agent",
-      "--json",
-      "--message",
-      messageText,
-      "--session-key",
-      sessionKey,
-      "--model",
-      model,
-      "--timeout",
-      "90",
-    ],
+    Cmd: cmd,
     AttachStdout: true,
     AttachStderr: true,
   });
