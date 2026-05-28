@@ -141,6 +141,13 @@ If any P95 misses, file a ticket and triage before the next invite.
 
 ## Known limitations (beta-acceptable, follow-up planned)
 
+0. **OPENAI_API_KEY required for brain embedding**: gbrain uses OpenAI's
+   embedding model for vector search. Without `SHARED_OPENAI_KEY` set in
+   `/etc/arete-secrets/provisioner.env` (and re-flowed through to the
+   container env), brain *writes* silently no-op the embedding step —
+   queries by content (`"what tool do I prefer"`) won't return hits.
+   Brain *reads* via direct slug (`brain/people/foo.md`) still work.
+   Set the key on the host and re-provision affected tenants.
 1. **Brain Postgres scoping**: today gbrain shares the public schema across
    tenants. Filesystem brain (markdown in `/var/tenants/<id>/brain/`) IS
    isolated; the pgvector embedding index is NOT. For 10 hand-picked beta
