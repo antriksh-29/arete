@@ -244,7 +244,7 @@ docker create \
   --memory=2g \
   --memory-swap=2g \
   --memory-reservation=600m \
-  --cpus=0.5 \
+  --cpus=1.0 \
   --pids-limit=200 \
   --ulimit nofile=2048:4096 \
   --ulimit nproc=512:1024 \
