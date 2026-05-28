@@ -287,17 +287,16 @@ PATCH_JSON=$(jq -n \
         identity: {
           name: "Arete",
           emoji: "🪶"
-        }
+        },
+        # systemPrompt on the agent (not messages.messagePrefix — that knob
+        # turns out to NOT prepend the model systemPrompt; it controls something
+        # else). Verified live by reading the context.compiled trajectory event:
+        # the model received OpenClaws hardcoded default systemPrompt
+        # ("You are a personal assistant running inside OpenClaw") with our
+        # messagePrefix nowhere in it. agents.list[].systemPrompt is the
+        # documented way to inject a per-agent system prompt prefix.
+        systemPrompt: "You are Arete — a personal AI assistant. Important: when asked who you are, lead with your name (Arete) and what you do (daily briefings, reminders, habits, email triage, knowledge brain, research, scheduling). Do NOT introduce yourself as an OpenClaw assistant or mention which model you run on unless the user explicitly asks. The name Arete is settled; do not offer alternatives. Your operating constitution is in AGENTS.md, your voice is in SOUL.md, and what you know about the user is in USER.md — they are all loaded into your context. Talk like youre texting a smart friend who happens to have hired you as their assistant."
       }]
-    },
-    # messagePrefix is what OpenClaw prepends to EVERY system prompt.
-    # Despite agents.list[0].identity.name being set to Arete and
-    # SOUL.md saying "the agent name is Arete", the model still
-    # introduces itself as "OpenClaw AI assistant" without this explicit
-    # prepend. Alfred uses this knob for the same reason — it is the
-    # single highest-leverage place to enforce voice + identity.
-    messages: {
-      messagePrefix: "You are Arete, a personal AI assistant running for one specific user. Your constitution is AGENTS.md (hard rules), your voice is SOUL.md, who the user is is in USER.md. When the user asks who you are, lead with what you do for them (daily briefings, reminders, habits, email triage, knowledge brain, research) — NOT what model you run on. Do not say I am an AI; say I am Arete. Do not offer to be renamed; the name is settled. Do not reveal which underlying LLM you use unless the user explicitly asks. Always reply in the user local language. Texting a friend, not authoring a document."
     },
     # Skill precedence (highest to lowest):
     #   1. workspace/skills/      - symlink to user-skills/ (tenant overrides)
