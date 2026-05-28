@@ -36,9 +36,13 @@ RUN git config --system --add safe.directory '*'
 ARG OPENCLAW_VERSION=2026.5.22
 RUN npm install -g openclaw@${OPENCLAW_VERSION}
 
-# GBrain (pinned via tools/.gbrain-pin in the platform repo)
+# GBrain (pinned via tools/.gbrain-pin in the platform repo).
+# Bun install goes to /root/.bun by default — symlink the binary onto a
+# system path so the non-root `agent` user (created below) can invoke it.
 ARG GBRAIN_SHA=0fb0c83
-RUN bun add -g github:garrytan/gbrain#${GBRAIN_SHA}
+RUN bun add -g github:garrytan/gbrain#${GBRAIN_SHA} \
+    && ln -sf /root/.bun/bin/gbrain /usr/local/bin/gbrain \
+    && chmod -R a+rX /root/.bun
 
 # Non-root agent user
 RUN useradd --create-home --shell /bin/bash --uid 1001 agent \
