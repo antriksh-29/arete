@@ -123,9 +123,11 @@ export MOONSHOT_API_KEY="${MOONSHOT_API_KEY:-${SHARED_MOONSHOT_KEY:-}}"
 # locations. Critical for the OPENCLAW_HOME leak fix (issue #37457).
 mkdir -p "${OPENCLAW_HOME}" "${OPENCLAW_STATE_DIR}"
 
-# Create baseline OpenClaw config if it doesn't exist yet. Idempotent.
-openclaw onboard --non-interactive --accept-risk --workspace "${STATE_HOME}" || \
-  echo "[arete] openclaw onboard returned non-zero (continuing — gateway runs with --allow-unconfigured)"
+# Skip `openclaw onboard` — it requires a running gateway to validate, which
+# we don't have yet (chicken-and-egg). Per docs/architecture-research-2026-05-27.md
+# the direct-write path (openclaw config patch) is faster and more
+# reproducible than going through onboard's interactive validation.
+# We write a minimal openclaw.json via config patch below.
 
 # --- Configure model routing: DeepSeek primary, Kimi/Haiku/GPT-nano fallbacks ---
 # Per architecture-research-2026-05-27.md:
@@ -168,8 +170,14 @@ PATCH_JSON=$(jq -n \
     agents: { defaults: { workspace: $ws, model: { primary: $p, fallbacks: $fb } } },
     gateway: { mode: "local", port: 18789, bind: "loopback", auth: { mode: "none" } }
   }')
-echo "$PATCH_JSON" | openclaw config patch --stdin --strict-json 2>&1 | head -5 || \
-  echo "[arete] openclaw config patch failed (continuing — defaults may apply)"
+# `openclaw config patch --stdin` reads JSON5 from stdin and writes openclaw.json
+# atomically with schema validation. Note: the --strict-json flag from the
+# 2026-05-27 research doc DOES NOT EXIST in openclaw@2026.5.22 — real syntax
+# is just --stdin. Confirmed via `openclaw config patch --help`.
+if ! echo "$PATCH_JSON" | openclaw config patch --stdin 2>&1 | head -5; then
+  echo "[arete] FATAL: openclaw config patch failed; gateway would use default OpenAI model with no API key." >&2
+  exit 1
+fi
 
 # Leak check: if despite our env config, openclaw wrote to /root/.openclaw
 # or /home/agent/.openclaw, that's the known main-agent bug. Fail-loud here
