@@ -13,6 +13,8 @@ export type OnboardingStage =
   | "awaiting_name"
   | "greeted"
   | "awaiting_country"
+  | "awaiting_occupation"
+  | "awaiting_use_case"
   | "complete";
 
 export interface Tenant {
@@ -21,6 +23,8 @@ export interface Tenant {
   telegram_username: string | null;
   name: string | null;
   country: string | null;
+  occupation: string | null;
+  use_case: string | null;
   timezone: string;
   state_repo_url: string;
   volume_path: string;
@@ -102,7 +106,12 @@ export async function listAllTenants(): Promise<Tenant[]> {
 export async function setOnboarding(
   tenantId: string,
   stage: OnboardingStage,
-  fields: { name?: string; country?: string } = {},
+  fields: {
+    name?: string;
+    country?: string;
+    occupation?: string;
+    use_case?: string;
+  } = {},
 ): Promise<void> {
   // Build the SET clause dynamically so we only touch the columns provided.
   const sets: string[] = ["onboarding_stage = $2"];
@@ -114,6 +123,14 @@ export async function setOnboarding(
   if (fields.country !== undefined) {
     params.push(fields.country);
     sets.push(`country = $${params.length}`);
+  }
+  if (fields.occupation !== undefined) {
+    params.push(fields.occupation);
+    sets.push(`occupation = $${params.length}`);
+  }
+  if (fields.use_case !== undefined) {
+    params.push(fields.use_case);
+    sets.push(`use_case = $${params.length}`);
   }
   await pool.query(
     `update tenants set ${sets.join(", ")} where id = $1`,
