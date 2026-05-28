@@ -37,87 +37,92 @@ function onboardingAskUseCase(): string {
     "Last one: what would you most like to use me for? Pick the closest, or describe in your own words:",
     "",
     "1. Daily briefings — morning pull-together of calendar, inbox, open tasks",
-    "2. Email triage — read, draft, schedule replies",
-    "3. Reminders + habits — natural-language scheduling, recurring nudges",
-    "4. Knowledge brain — save anything I tell you, ask about it later",
-    "5. Meeting prep + scheduling",
-    "6. Research + summaries — articles, PDFs, YouTube, X threads",
-    "7. Something else (just describe it)",
+    "2. Reminders — natural-language nudging and notifications",
+    "3. Create skills — define what I can do for you, in plain English",
+    "4. Knowledge brain — save anything you tell me, ask about it later",
+    "5. Something else (just describe it)",
   ].join("\n");
 }
 
-// Map a free-text use-case response to a starter-journey nudge. Best-effort
-// substring detection — if nothing matches, we fall back to the full catalog.
+// For a chosen use case, render a focused "Inputs + Outputs" explainer so the
+// user immediately knows what to send AND what they'll get back. Avoids
+// dumping the full capabilities catalog on the welcome turn — that surfaces
+// only when the user asks ("what else can you do?", "help", etc.).
 function pickStarterJourney(useCase: string): string {
   const t = useCase.toLowerCase();
+
   if (/\b(1|brief|morning|daily)/.test(t)) {
     return [
-      "Perfect — let's set up your daily morning briefing.",
+      "Daily briefings. A morning pull-together of what matters that day.",
       "",
-      "I'll need a couple of things to make this work:",
-      "• What time should I send it? (e.g. \"7am\")",
-      "• Should I pull from Gmail + Google Calendar? (I'll ask for permission separately)",
+      "Inputs — what you give me",
+      "• What time you want it (e.g. \"send it at 7am\")",
+      "• Permission to peek at your calendar + inbox when you connect them",
+      "• Anything ad-hoc you want included (\"also include my reading list\")",
       "",
-      "Just answer those two and I'll wire it up.",
+      "Outputs — what I send back",
+      "• One Telegram message every morning at your chosen time",
+      "• Top calendar events, important unread emails, open tasks, anything you flagged the night before",
+      "",
+      "Want to set it up now? Just tell me a time.",
     ].join("\n");
   }
-  if (/\b(2|email|triage|inbox)/.test(t)) {
+
+  if (/\b(2|remind|nudg|notif)/.test(t)) {
     return [
-      "Great choice — email triage is one of the most impactful things I can do.",
+      "Reminders. Tell me what to remember and when, in plain English.",
       "",
-      "First step: I'll need permission to connect to your Gmail. When you're ready, just say \"connect Gmail\" and I'll walk you through it.",
-      "",
-      "Once connected, you can ask me things like:",
-      "• \"What's unread that matters?\"",
-      "• \"Draft a reply to <person>\"",
-      "• \"Mark everything from <newsletter> as read\"",
-    ].join("\n");
-  }
-  if (/\b(3|remind|habit|nudge)/.test(t)) {
-    return [
-      "Awesome — reminders and habits are easy. Try these right now:",
-      "",
-      "• \"Remind me to call Dad at 7pm\"",
-      "• \"Every weekday at 9am, ask if I drank water\"",
+      "Inputs — what you give me",
+      "• Anything like \"remind me to call Dad at 7pm\"",
       "• \"Remind me Monday morning to send the weekly update\"",
+      "• \"Nudge me in 2 hours about the doctor's appointment\"",
       "",
-      "I'll set them up and check in at the right time.",
+      "Outputs — what I send back",
+      "• A confirmation when I set it up (\"got it, I'll ping you at 7pm\")",
+      "• A Telegram message at the right time with the reminder text",
+      "",
+      "Try one now — just type a reminder.",
     ].join("\n");
   }
+
+  if (/\b(3|skill|create|build|capab)/.test(t)) {
+    return [
+      "Create skills. Teach me a new capability by describing it.",
+      "",
+      "Inputs — what you give me",
+      "• A plain-English description of what you want me to be able to do",
+      "  (e.g. \"every Sunday evening, review my week and ask what to focus on\")",
+      "• Any details about timing, inputs, or where the data lives",
+      "",
+      "Outputs — what I do with it",
+      "• I write the skill into your workspace, configure any schedule",
+      "• I confirm what I set up and when it'll first fire",
+      "• You can ask me to tweak or remove the skill anytime",
+      "",
+      "Tell me a skill you'd like me to build.",
+    ].join("\n");
+  }
+
   if (/\b(4|brain|memory|save|remember|knowledge)/.test(t)) {
     return [
-      "Got it — let's make the brain useful right away. Try one of these:",
+      "Knowledge brain. A growing memory of anything you tell me.",
       "",
-      "• Forward me any message and say \"save this\" — I'll file it.",
-      "• \"Note: <person> prefers Notion over Linear\" — I'll remember.",
-      "• \"What did <person> say about pricing last week?\" — I'll look it up.",
+      "Inputs — what you give me",
+      "• Any thought, fact, preference, or note (\"Note: <person> prefers Notion over Linear\")",
+      "• Forwarded messages or links + \"save this\"",
+      "• Questions about anything you've told me before",
       "",
-      "The more you tell me, the sharper I get at resurfacing it later.",
+      "Outputs — what I send back",
+      "• Confirmation that I've filed it",
+      "• When you ask, I resurface the right note with context",
+      "",
+      "Try it — tell me one thing you'd like me to remember.",
     ].join("\n");
   }
-  if (/\b(5|meeting|schedul|calendar)/.test(t)) {
-    return [
-      "Meeting prep is a great fit. First, I'll need permission to connect to Google Calendar — say \"connect Calendar\" when you're ready.",
-      "",
-      "Once connected, you can ask:",
-      "• \"What's on for tomorrow?\"",
-      "• \"Prep me for the 3pm with <person>\" — I'll pull recent emails + notes",
-      "• \"Find 30 min next week with <person>\"",
-    ].join("\n");
-  }
-  if (/\b(6|research|summar|article|pdf|youtube|x[\s-]?thread)/.test(t)) {
-    return [
-      "Research is one of my favourites. Try:",
-      "",
-      "• Send me a YouTube link — \"summarise this\"",
-      "• Forward an article URL — I'll pull the gist + file it to your brain",
-      "• Send a PDF — I'll extract the key takeaways",
-      "• Send an X (Twitter) thread link — I'll save it as a single page",
-    ].join("\n");
-  }
-  // 7 / unmatched — let the user explore.
+
+  // 5 / unmatched — open-ended.
   return [
-    "Got it. Whatever it is, I'll try to make it work. Tell me more about how you'd like to use me, or just start asking — I'll figure it out.",
+    "Got it. Tell me a little more about what you'd want — even one example helps. Or just start using me and I'll figure out what you need over time.",
   ].join("\n");
 }
 
@@ -126,21 +131,6 @@ function onboardingComplete(name: string, useCase: string): string {
     `Welcome aboard, ${name}. 🪶`,
     "",
     pickStarterJourney(useCase),
-    "",
-    "─────────",
-    "**Everything else I can do** — for whenever you want to explore:",
-    "",
-    "📅 **Daily briefings** — \"brief me on my day\"",
-    "✉️ **Email** — read, draft, schedule replies (needs Gmail permission)",
-    "🗓️ **Calendar** — meeting prep, scheduling, find time (needs Calendar permission)",
-    "⏰ **Reminders + habits** — \"remind me to X\", \"every morning ask Y\"",
-    "🧠 **Knowledge brain** — \"save this\", \"what did X say about Y\"",
-    "📄 **Research + summaries** — PDFs, articles, YouTube, X threads",
-    "📝 **Notes + lists** — \"add to my reading list\", \"track my water intake\"",
-    "🔍 **Web search** — \"google X for me\"",
-    "🎙️ **Voice in / out** — send me a voice note, I'll transcribe + reply",
-    "",
-    "Just talk to me — I'll figure out which one you mean.",
   ].join("\n");
 }
 
