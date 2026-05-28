@@ -93,22 +93,56 @@ SQL
 [ -n "$INTERNAL_PORT" ] && [ "$INTERNAL_PORT" != "" ] || die "no free port in 9000-9999"
 log "internal_port=${INTERNAL_PORT}"
 
-# ── 2. Create the GitHub repo from template ──────────────────────────────────
-log "creating github repo ${REPO_NAME} from template"
-HTTP_CODE=$(curl -sS -o /tmp/repo.json -w '%{http_code}' \
-  -X POST \
-  -H "Authorization: Bearer ${GITHUB_PAT}" \
-  -H "Accept: application/vnd.github+json" \
-  -H "X-GitHub-Api-Version: 2022-11-28" \
-  "https://api.github.com/repos/${GHCR_USER}/arete-state-template/generate" \
-  -d "{\"owner\":\"${GHCR_USER}\",\"name\":\"${REPO_NAME}\",\"private\":true,\"description\":\"Arete tenant state for ${NAME}\"}")
+# ── 2. Acquire the GitHub state repo ─────────────────────────────────────────
+# Strategy (Q-I from architecture-research): try claiming a pre-created pool
+# repo first (rename = ~1s); fall back to template-generate (5-8s) if pool is
+# empty. The pool is filled by infra/scripts/refill-repo-pool.sh.
+#
+# We need a placeholder UUID for claim_repo_from_pool's claimed_by_tenant_id —
+# the real TENANT_UUID is generated below in step 4. Use a sentinel that we
+# update after the INSERT.
 
-if [ "$HTTP_CODE" = "201" ]; then
-  log "repo created"
-elif [ "$HTTP_CODE" = "422" ] && grep -qi 'name already exists' /tmp/repo.json; then
-  warn "repo already exists — reusing"
-else
-  die "github repo create failed (HTTP ${HTTP_CODE}): $(cat /tmp/repo.json)"
+log "trying state-repo pool first"
+# Pass NULL — we don't have TENANT_UUID yet (generated in step 4). The
+# mark_repo_claimed call later backfills the FK once tenants row is inserted.
+POOL_NAME=$(psql "$DATABASE_URL" -At -c "select claim_repo_from_pool(null)" 2>&1 | tail -1)
+
+if [ -n "$POOL_NAME" ] && [ "$POOL_NAME" != "" ]; then
+  log "claimed pool repo: ${POOL_NAME} — renaming to ${REPO_NAME}"
+  RENAME_HTTP=$(curl -sS -o /tmp/rename.json -w '%{http_code}' \
+    -X PATCH \
+    -H "Authorization: Bearer ${GITHUB_PAT}" \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    "https://api.github.com/repos/${GHCR_USER}/${POOL_NAME}" \
+    -d "{\"name\":\"${REPO_NAME}\",\"description\":\"Arete tenant state for ${NAME}\"}")
+  if [ "$RENAME_HTTP" = "200" ]; then
+    log "rename succeeded (pool path; ~1s)"
+    psql "$DATABASE_URL" -c "update state_repo_pool set renamed_to = '${REPO_NAME}' where name = '${POOL_NAME}'" > /dev/null 2>&1 || true
+  else
+    warn "rename failed (HTTP ${RENAME_HTTP}); marking pool repo broken; falling back to template-generate"
+    psql "$DATABASE_URL" -c "update state_repo_pool set state = 'broken', notes = 'rename failed HTTP ${RENAME_HTTP}' where name = '${POOL_NAME}'" > /dev/null 2>&1 || true
+    POOL_NAME=""
+  fi
+fi
+
+if [ -z "$POOL_NAME" ] || [ "$POOL_NAME" = "" ]; then
+  log "pool empty — falling back to template-generate (slower)"
+  HTTP_CODE=$(curl -sS -o /tmp/repo.json -w '%{http_code}' \
+    -X POST \
+    -H "Authorization: Bearer ${GITHUB_PAT}" \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    "https://api.github.com/repos/${GHCR_USER}/arete-state-template/generate" \
+    -d "{\"owner\":\"${GHCR_USER}\",\"name\":\"${REPO_NAME}\",\"private\":true,\"description\":\"Arete tenant state for ${NAME}\"}")
+
+  if [ "$HTTP_CODE" = "201" ]; then
+    log "repo created via template-generate"
+  elif [ "$HTTP_CODE" = "422" ] && grep -qi 'name already exists' /tmp/repo.json; then
+    warn "repo already exists — reusing"
+  else
+    die "github repo create failed (HTTP ${HTTP_CODE}): $(cat /tmp/repo.json)"
+  fi
 fi
 
 # Wait a beat for GitHub to actually materialize the repo
@@ -194,6 +228,12 @@ on conflict (telegram_user_id) do update set
   status           = 'active',
   last_active_at   = now();
 SQL
+
+# If we claimed a pool repo, backfill the FK now that tenants row exists.
+if [ -n "${POOL_NAME:-}" ] && [ "$POOL_NAME" != "" ]; then
+  psql "$DATABASE_URL" -c "select mark_repo_claimed('${POOL_NAME}', '${TENANT_UUID}'::uuid)" > /dev/null 2>&1 || \
+    warn "mark_repo_claimed failed for ${POOL_NAME}"
+fi
 
 # ── 6. Create the container (don't start; router will) ──────────────────────
 log "creating docker container ${CONTAINER_NAME}"
