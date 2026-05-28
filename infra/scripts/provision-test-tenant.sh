@@ -49,8 +49,24 @@ die()  { echo "${red}[provision]${rst} $*" >&2; exit 1; }
 
 [ -n "$TELEGRAM_USER_ID" ] || die "--telegram-user-id is required"
 [ -n "$NAME" ]             || die "--name is required"
-: "${GITHUB_PAT:?GITHUB_PAT required (read:packages + repo scope)}"
+
+# Source persistent provisioner secrets if env vars aren't already set.
+# /etc/arete-secrets/provisioner.env is the durable place for keys that
+# would otherwise have to be passed on the command line every time.
+# CLI env overrides the file (deliberate: easy to test with a different key).
+if [ -f /etc/arete-secrets/provisioner.env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  : "${GITHUB_PAT:=$(grep -E '^GITHUB_PAT=' /etc/arete-secrets/provisioner.env | cut -d= -f2-)}"
+  : "${SHARED_ANTHROPIC_KEY:=$(grep -E '^SHARED_ANTHROPIC_KEY=' /etc/arete-secrets/provisioner.env | cut -d= -f2-)}"
+  : "${SHARED_DEEPSEEK_KEY:=$(grep -E '^SHARED_DEEPSEEK_KEY=' /etc/arete-secrets/provisioner.env | cut -d= -f2-)}"
+  : "${SHARED_MOONSHOT_KEY:=$(grep -E '^SHARED_MOONSHOT_KEY=' /etc/arete-secrets/provisioner.env | cut -d= -f2-)}"
+  set +a
+fi
+
+: "${GITHUB_PAT:?GITHUB_PAT required (read:packages + repo scope) — set in env OR /etc/arete-secrets/provisioner.env}"
 : "${DATABASE_URL:?DATABASE_URL required}"
+[ "${GITHUB_PAT}" = "PLACEHOLDER_set_me" ] && die "GITHUB_PAT in provisioner.env is still the placeholder — set the real value"
 GHCR_USER="${GHCR_USER:-antriksh-29}"
 IMAGE_TAG="${IMAGE_TAG:-ghcr.io/antriksh-29/arete:latest}"
 
