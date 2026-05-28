@@ -111,6 +111,7 @@ export async function setOnboarding(
     country?: string;
     occupation?: string;
     use_case?: string;
+    timezone?: string;
   } = {},
 ): Promise<void> {
   // Build the SET clause dynamically so we only touch the columns provided.
@@ -131,6 +132,10 @@ export async function setOnboarding(
   if (fields.use_case !== undefined) {
     params.push(fields.use_case);
     sets.push(`use_case = $${params.length}`);
+  }
+  if (fields.timezone !== undefined) {
+    params.push(fields.timezone);
+    sets.push(`timezone = $${params.length}`);
   }
   await pool.query(
     `update tenants set ${sets.join(", ")} where id = $1`,
