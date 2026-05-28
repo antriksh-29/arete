@@ -28,7 +28,8 @@ update tenants
   where internal_key is null;
 
 alter table tenants
-  alter column internal_key set not null;
+  alter column internal_key set not null,
+  alter column internal_key set default encode(gen_random_bytes(32), 'hex');
 
 create unique index if not exists tenants_internal_key_idx on tenants(internal_key);
 
