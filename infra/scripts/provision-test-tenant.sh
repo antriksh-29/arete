@@ -248,9 +248,17 @@ if [ -n "${POOL_NAME:-}" ] && [ "$POOL_NAME" != "" ]; then
     warn "mark_repo_claimed failed for ${POOL_NAME}"
 fi
 
-# Fetch the auto-generated internal_key for container env injection (set
-# by the 0006_reminders.sql DEFAULT — gen_random_bytes(32) hex).
-INTERNAL_KEY=$(psql "$DATABASE_URL" -tAc "select internal_key from tenants where id = '${TENANT_UUID}'")
+# Fetch the CANONICAL tenant id (by telegram_user_id) and internal_key
+# AFTER the ON CONFLICT INSERT. The locally-generated $TENANT_UUID is only
+# correct for first-time provisioning; on re-provision (same
+# telegram_user_id), the row's id is the original UUID, NOT the
+# fresh-uuidgen we just generated. Using the wrong id in the container env
+# would point gbrain + reminders at a non-existent tenant.
+TENANT_UUID=$(psql "$DATABASE_URL" -tAc "select id from tenants where telegram_user_id = ${TELEGRAM_USER_ID}")
+INTERNAL_KEY=$(psql "$DATABASE_URL" -tAc "select internal_key from tenants where telegram_user_id = ${TELEGRAM_USER_ID}")
+if [ -z "$TENANT_UUID" ]; then
+  die "tenant row missing after INSERT — provisioning failed"
+fi
 if [ -z "$INTERNAL_KEY" ]; then
   warn "internal_key missing for tenant ${TENANT_UUID}; reminders will not work until migrated"
 fi
