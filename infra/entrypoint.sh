@@ -161,6 +161,26 @@ fi
 
 echo "[arete] identity wired: $(ls -la "${STATE_HOME}"/AGENTS.md "${STATE_HOME}"/SOUL.md 2>/dev/null | wc -l) symlinks"
 
+# --- 4.7. Per-tenant secrets store ---
+# Q-E from architecture-research: per-tenant secrets (user's Google/X/Notion
+# OAuth tokens, etc.) live in creds/secrets.json on the volume, NEVER
+# committed to git (creds/ is in state-template .gitignore). openclaw.json
+# references via {source: file, provider: tenant_file}. mode 0600 enforced
+# by openclaw's file provider — fails closed if world-readable.
+#
+# At provision time we just create an empty store. Skills + OAuth flows
+# (v2) write to it via openclaw secrets set <key> <value>.
+SECRETS_DIR="${STATE_HOME}/creds"
+SECRETS_FILE="${SECRETS_DIR}/secrets.json"
+if [ ! -d "$SECRETS_DIR" ]; then
+  mkdir -p "$SECRETS_DIR"
+  chmod 0700 "$SECRETS_DIR"
+fi
+if [ ! -f "$SECRETS_FILE" ]; then
+  echo '{}' > "$SECRETS_FILE"
+  chmod 0600 "$SECRETS_FILE"
+fi
+
 # --- 4.6. Wire user-skills/ as workspace skills/ ---
 # OpenClaw discovers tenant skills at <workspace>/skills/ (highest precedence).
 # State-template uses user-skills/ for tenant-authored skills (the convention
@@ -278,6 +298,18 @@ PATCH_JSON=$(jq -n \
     # the 36-skill bundle from the reference Alfred build (now baked into
     # /opt/arete/skills/ via the image).
     skills: { load: { extraDirs: ["/opt/arete/skills"] } },
+    # Per-tenant secrets store (Q-E from architecture-research). The file
+    # provider enforces mode <= 0600; fails closed if world-readable.
+    # Skills reference secrets via {source: file, provider: tenant_file, id: "/path/in/json"}.
+    secrets: {
+      providers: {
+        tenant_file: {
+          source: "file",
+          path: "/home/agent/state/creds/secrets.json",
+          mode: "json"
+        }
+      }
+    },
     gateway: { mode: "local", port: 18789, bind: "loopback", auth: { mode: "none" } }
   }')
 # `openclaw config patch --stdin` reads JSON5 from stdin and writes openclaw.json
