@@ -201,6 +201,16 @@ docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
 docker create \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
+  --memory=1g \
+  --memory-swap=1g \
+  --memory-reservation=400m \
+  --cpus=0.5 \
+  --pids-limit=200 \
+  --ulimit nofile=2048:4096 \
+  --ulimit nproc=512:1024 \
+  --security-opt no-new-privileges \
+  --log-opt max-size=10m \
+  --log-opt max-file=3 \
   -p "127.0.0.1:${INTERNAL_PORT}:8787" \
   -v "${VOLUME_PATH}:/home/agent/state" \
   -e TENANT_ID="$TENANT_UUID" \
