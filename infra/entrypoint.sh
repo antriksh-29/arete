@@ -122,12 +122,53 @@ export MOONSHOT_API_KEY="${MOONSHOT_API_KEY:-${SHARED_MOONSHOT_KEY:-}}"
 # locations. Critical for the OPENCLAW_HOME leak fix (issue #37457).
 mkdir -p "${OPENCLAW_HOME}" "${OPENCLAW_STATE_DIR}"
 
-# Create baseline OpenClaw config if it doesn't exist yet. The real command
-# is `openclaw onboard --non-interactive --accept-risk` (not `setup`); `setup`
-# bails with "Non-interactive setup requires explicit risk acknowledgement."
-# Idempotent so it safely re-runs on every container start.
+# Create baseline OpenClaw config if it doesn't exist yet. Idempotent.
 openclaw onboard --non-interactive --accept-risk --workspace "${STATE_HOME}" || \
   echo "[arete] openclaw onboard returned non-zero (continuing — gateway runs with --allow-unconfigured)"
+
+# --- Configure model routing: DeepSeek primary, Kimi/Haiku/GPT-nano fallbacks ---
+# Per architecture-research-2026-05-27.md:
+#   - DeepSeek V4 Pro native provider added in openclaw 2026.5.x (no proxy needed)
+#   - Pricing $0.435/M input, $0.87/M output (permanent since 2026-05-22)
+#   - OpenClaw's native model.fallbacks auto-retries on 429/503/network errors
+#   - ~7x cheaper than Haiku 4.5 for the same workload
+#
+# Only configure providers we have keys for. The fallbacks chain is filtered
+# at the OpenClaw layer to skip providers without auth.
+if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
+  PRIMARY_MODEL="deepseek/deepseek-v4-pro"
+elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+  PRIMARY_MODEL="anthropic/claude-haiku-4-5"
+else
+  echo "[arete] FATAL: no model-provider API key set (DEEPSEEK_API_KEY or ANTHROPIC_API_KEY required)" >&2
+  exit 1
+fi
+
+# Build fallback list — only providers we have keys for.
+FALLBACKS_JSON='[]'
+for entry in 'MOONSHOT_API_KEY|moonshotai/kimi-k2.6' \
+             'ANTHROPIC_API_KEY|anthropic/claude-haiku-4-5' \
+             'OPENAI_API_KEY|openai/gpt-5.4-nano'; do
+  key="${entry%%|*}"
+  model="${entry##*|}"
+  if [ -n "$(eval echo \$$key)" ] && [ "$model" != "$PRIMARY_MODEL" ]; then
+    FALLBACKS_JSON=$(echo "$FALLBACKS_JSON" | jq --arg m "$model" '. + [$m]')
+  fi
+done
+echo "[arete] model routing: primary=$PRIMARY_MODEL fallbacks=$FALLBACKS_JSON"
+
+# Apply via openclaw config patch (atomic, schema-validated, idempotent).
+# Per research: this is the canonical way to mutate openclaw.json.
+PATCH_JSON=$(jq -n \
+  --arg p "$PRIMARY_MODEL" \
+  --argjson fb "$FALLBACKS_JSON" \
+  --arg ws "$STATE_HOME" \
+  '{
+    agents: { defaults: { workspace: $ws, model: { primary: $p, fallbacks: $fb } } },
+    gateway: { mode: "local", port: 18789, bind: "loopback", auth: { mode: "none" } }
+  }')
+echo "$PATCH_JSON" | openclaw config patch --stdin --strict-json 2>&1 | head -5 || \
+  echo "[arete] openclaw config patch failed (continuing — defaults may apply)"
 
 # Leak check: if despite our env config, openclaw wrote to /root/.openclaw
 # or /home/agent/.openclaw, that's the known main-agent bug. Fail-loud here
