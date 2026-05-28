@@ -270,17 +270,16 @@ function extractFromUser(u: TelegramUpdate): TelegramFromUser | null {
   );
 }
 
+import { sendChunkedMessage } from "./telegram.js";
+
 async function sendPlainReply(chatId: number, text: string): Promise<void> {
-  const url = `https://api.telegram.org/bot${config.TELEGRAM_BOT_TOKEN}/sendMessage`;
+  // Delegate to telegram.ts which handles 4096-char chunking + rate limit +
+  // 429 retry. Wrapped in try/catch so a failed Telegram send doesn't crash
+  // the webhook handler.
   try {
-    await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text }),
-      signal: AbortSignal.timeout(10_000),
-    });
+    await sendChunkedMessage(chatId, text);
   } catch (err) {
-    log.warn({ err, chatId }, "failed to send plain reply via Telegram");
+    log.warn({ err, chatId }, "failed to send chunked reply via Telegram");
   }
 }
 
