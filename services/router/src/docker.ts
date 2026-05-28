@@ -177,29 +177,19 @@ export async function runAgentTurn(
   if (explicitModel) {
     cmd.push("--model", explicitModel);
   }
-  const exec = await c.exec({
-    Cmd: cmd,
-    AttachStdout: true,
-    AttachStderr: true,
-  });
-
-  const stream = await exec.start({ Detach: false, hijack: true });
-
-  let stdout = "";
-  let stderr = "";
-  await new Promise<void>((resolve, reject) => {
-    // dockerode multiplexes stdout/stderr on a single stream; we use docker's
-    // demuxStream helper to split them into two Writable buffers.
-    const outBuf = new PassThrough();
-    const errBuf = new PassThrough();
-    outBuf.on("data", (d: Buffer) => (stdout += d.toString("utf8")));
-    errBuf.on("data", (d: Buffer) => (stderr += d.toString("utf8")));
-    docker.modem.demuxStream(stream, outBuf, errBuf);
-    stream.on("end", () => resolve());
-    stream.on("error", reject);
-  });
-
-  const info = await exec.inspect();
+  // Use docker CLI (not dockerode) to avoid the same stream-hang bug that
+  // forced waitHealthy off dockerode in PR #26. Live test 2026-05-28 proved
+  // that manual `docker exec arete-... openclaw agent ...` returns in ~34s
+  // with full usage data, but the dockerode-mediated version hangs > 60s
+  // without ever resolving. Same exec primitive, completely different
+  // reliability. We use spawn + 120s budget (covers worst-case DeepSeek
+  // first-call init).
+  const r = await dockerCliExec(tenant.container_name!, cmd, 120_000);
+  const stdout = r.stdout;
+  const stderr = r.stderr;
+  // Synthesize an info-like object for downstream code that expected
+  // dockerode's exec.inspect() return.
+  const info = { ExitCode: r.exitCode };
   if (info.ExitCode !== 0) {
     log.error(
       { tenant: tenant.id, exit: info.ExitCode, stderr: stderr.slice(0, 500) },
