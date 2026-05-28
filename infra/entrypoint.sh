@@ -126,19 +126,36 @@ if ! grep -q "^# Platform-identity symlinks" "$GITIGNORE"; then
   } >> "$GITIGNORE"
 fi
 
-# Create workspace-root symlinks. Don't overwrite tenant files / existing
-# symlinks; `ln -s` (no -f) only creates if target doesn't exist.
+# Create workspace-root symlinks. AGGRESSIVE override mode: platform owns
+# the identity surface; if a tenant repo has a stale AGENTS.md / SOUL.md
+# committed (from old OpenClaw bootstrap stubs), we git-rm it and replace
+# with our symlink. Tenant overrides live in identity/AGENTS-overrides.md
+# etc. and will be merged in v2 (Q-C BEGIN PLATFORM block).
 for f in AGENTS.md SOUL.md HEARTBEAT.md ACCESS_POLICY.md CONFIRMATION_FLOW.md \
          CONTENT_INGESTION.md MCP_FIRST.md MODEL_ROUTING.md BRAIN_FILING.md \
          BRAIN_PROPAGATION.md PAGE_SCHEMA.md; do
   src="/opt/arete/identity/${f}"
   dst="${STATE_HOME}/${f}"
-  if [ -f "$src" ] && [ ! -e "$dst" ]; then
-    ln -s "$src" "$dst"
+  if [ ! -f "$src" ]; then continue; fi
+  # If file exists and isn't our symlink, blow it away. Also git-rm if tracked.
+  if [ -e "$dst" ] && [ ! -L "$dst" ]; then
+    git -C "${STATE_HOME}" -c "safe.directory=*" rm -f --quiet "${f}" 2>/dev/null || rm -f "$dst"
+  elif [ -L "$dst" ]; then
+    # Existing symlink — refresh in case the source path moved.
+    rm -f "$dst"
   fi
+  ln -s "$src" "$dst"
 done
-# Tenant USER.md (rendered by provisioner) → workspace root.
-if [ -f "${STATE_HOME}/identity/USER.md" ] && [ ! -e "${STATE_HOME}/USER.md" ]; then
+# Tenant USER.md (rendered by provisioner at identity/USER.md) → workspace
+# root. Same aggressive override — workspace-root USER.md is platform-managed
+# (the symlink target), so any stale committed copy gets git-rm'd.
+if [ -f "${STATE_HOME}/identity/USER.md" ]; then
+  if [ -e "${STATE_HOME}/USER.md" ] && [ ! -L "${STATE_HOME}/USER.md" ]; then
+    git -C "${STATE_HOME}" -c "safe.directory=*" rm -f --quiet "USER.md" 2>/dev/null || \
+      rm -f "${STATE_HOME}/USER.md"
+  elif [ -L "${STATE_HOME}/USER.md" ]; then
+    rm -f "${STATE_HOME}/USER.md"
+  fi
   ln -s "${STATE_HOME}/identity/USER.md" "${STATE_HOME}/USER.md"
 fi
 
