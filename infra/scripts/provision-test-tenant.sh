@@ -241,9 +241,9 @@ docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
 docker create \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
-  --memory=1g \
-  --memory-swap=1g \
-  --memory-reservation=400m \
+  --memory=2g \
+  --memory-swap=2g \
+  --memory-reservation=600m \
   --cpus=0.5 \
   --pids-limit=200 \
   --ulimit nofile=2048:4096 \
