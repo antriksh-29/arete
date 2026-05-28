@@ -175,41 +175,40 @@ export async function runAgentTurn(
     throw new Error(`openclaw agent exited ${info.ExitCode}: ${stderr.slice(0, 200)}`);
   }
 
-  // openclaw agent --json shape (observed from openclaw@2026.5.22):
-  //   {
-  //     "runId": "...",
-  //     "status": "ok",
-  //     "summary": "completed",
-  //     "result": {
-  //       "payloads": [{ "text": "...the reply...", "mediaUrl": null }],
-  //       "meta": { "sessionId": "...", "provider": "anthropic", "model": "...",
-  //                 "durationMs": 5716, ... }
-  //     }
-  //   }
-  // The reply text lives at result.payloads[0].text. There may be multiple
-  // payloads for multi-part responses; we join them with newlines.
+  // openclaw agent --json envelope (per docs.openclaw.ai/cli/agent + observed):
+  //   Without --deliver (our case):
+  //     { "payloads": [{ "text": "...", "mediaUrl": null }], "meta": { "durationMs": 1200 } }
+  //   With --deliver (we don't use): adds deliveryStatus, result.deliveryStatus
+  //   Observed in 2026-05-27 manual test against arete:local:
+  //     { "runId", "status", "summary", "result": { "payloads": [...], "meta": {...} } }
+  //
+  // Both shapes can occur — handle both. Reply text lives at
+  //   payloads[0].text          (documented, no --deliver)
+  // OR
+  //   result.payloads[0].text   (observed, fuller envelope)
+  // Multi-part responses get joined with double-newline.
   let reply: string | undefined;
+  let durationMs: unknown;
   let agentMeta: Record<string, unknown> | undefined;
   try {
     const obj = JSON.parse(stdout.trim());
-    const payloads = obj?.result?.payloads;
+    const payloads = obj?.payloads ?? obj?.result?.payloads;
     if (Array.isArray(payloads) && payloads.length > 0) {
       reply = payloads
         .map((p: { text?: string }) => p?.text)
         .filter((t): t is string => typeof t === "string" && t.length > 0)
         .join("\n\n");
     }
-    agentMeta = obj?.result?.meta?.agentMeta;
-    // Surface useful diagnostics in the journal: session id + duration + token
-    // accounting if the agent reported them.
-    if (agentMeta) {
+    durationMs = obj?.meta?.durationMs ?? obj?.result?.meta?.durationMs;
+    agentMeta = obj?.result?.meta?.agentMeta ?? obj?.meta?.agentMeta;
+    if (agentMeta || durationMs) {
       log.debug(
         {
           tenant: tenant.id,
-          sessionId: agentMeta.sessionId,
-          provider: agentMeta.provider,
-          model: agentMeta.model,
-          durationMs: obj?.result?.meta?.durationMs,
+          sessionId: agentMeta?.sessionId,
+          provider: agentMeta?.provider,
+          model: agentMeta?.model,
+          durationMs,
         },
         "agent meta",
       );
