@@ -37,12 +37,17 @@ ARG OPENCLAW_VERSION=2026.5.22
 RUN npm install -g openclaw@${OPENCLAW_VERSION}
 
 # GBrain (pinned via tools/.gbrain-pin in the platform repo).
-# Bun install goes to /root/.bun by default — symlink the binary onto a
-# system path so the non-root `agent` user (created below) can invoke it.
+# Bun install goes to /root/.bun by default. /root has mode 700 — the agent
+# user can't traverse into it even with read perms on contents. Two options:
+# (a) chmod /root o+x (uncomfortable), or (b) move the install to /opt/bun.
+# Going with (b): cleaner, no surprise perm bits on root's homedir, gbrain
+# globally invokable as /usr/local/bin/gbrain (symlinked).
 ARG GBRAIN_SHA=0fb0c83
-RUN bun add -g github:garrytan/gbrain#${GBRAIN_SHA} \
-    && ln -sf /root/.bun/bin/gbrain /usr/local/bin/gbrain \
-    && chmod -R a+rX /root/.bun
+ENV BUN_INSTALL=/opt/bun
+RUN mkdir -p /opt/bun \
+    && bun add -g github:garrytan/gbrain#${GBRAIN_SHA} \
+    && ln -sf /opt/bun/bin/gbrain /usr/local/bin/gbrain \
+    && chmod -R a+rX /opt/bun
 
 # Non-root agent user
 RUN useradd --create-home --shell /bin/bash --uid 1001 agent \
