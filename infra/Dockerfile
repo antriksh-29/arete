@@ -36,9 +36,13 @@ RUN git config --system --add safe.directory '*'
 ARG OPENCLAW_VERSION=2026.5.22
 RUN npm install -g openclaw@${OPENCLAW_VERSION}
 
-# GBrain (pinned via tools/.gbrain-pin in the platform repo)
+# GBrain (pinned via tools/.gbrain-pin in the platform repo).
+# Bun install goes to /root/.bun by default — symlink the binary onto a
+# system path so the non-root `agent` user (created below) can invoke it.
 ARG GBRAIN_SHA=0fb0c83
-RUN bun add -g github:garrytan/gbrain#${GBRAIN_SHA}
+RUN bun add -g github:garrytan/gbrain#${GBRAIN_SHA} \
+    && ln -sf /root/.bun/bin/gbrain /usr/local/bin/gbrain \
+    && chmod -R a+rX /root/.bun
 
 # Non-root agent user
 RUN useradd --create-home --shell /bin/bash --uid 1001 agent \
@@ -57,6 +61,12 @@ COPY --chown=agent:agent openclaw/ ./openclaw/
 
 # Per-skill / per-eval Python deps (skills + eval runners declare in requirements.txt)
 RUN find /opt/arete/skills /opt/arete/infra /opt/arete/eval -name 'requirements.txt' -exec uv pip install --system -r {} \; 2>/dev/null || true
+
+# Symlink CLI tools onto PATH so skills can call them by short name.
+# /opt/arete/tools is already on PATH (set later in ENV), but the .mjs
+# extension trips bash up; expose as plain names without extension.
+RUN ln -sf /opt/arete/tools/arete-remind.mjs /usr/local/bin/arete-remind \
+    && chmod +x /opt/arete/tools/arete-remind.mjs
 
 USER agent
 WORKDIR /home/agent
@@ -84,6 +94,8 @@ ENV STATE_HOME=/home/agent/state \
 # - SHARED_ANTHROPIC_KEY, SHARED_OPENAI_KEY (platform LLM keys)
 # - SUPABASE_DB_URL (shared, but every query scoped by tenant_id)
 # - TELEGRAM_INTERNAL_PORT (router proxies inbound to this port)
+# - INTERNAL_KEY (per-tenant secret for container → router internal calls)
+# - ROUTER_INTERNAL_URL (e.g. http://172.17.0.1:8080 — docker bridge gw)
 
 # Container healthcheck — uses the OpenClaw CLI to query the local Gateway.
 # Note: the gateway speaks WebSocket on port 8787, NOT HTTP. The previous

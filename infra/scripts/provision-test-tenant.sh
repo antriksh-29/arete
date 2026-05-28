@@ -248,6 +248,13 @@ if [ -n "${POOL_NAME:-}" ] && [ "$POOL_NAME" != "" ]; then
     warn "mark_repo_claimed failed for ${POOL_NAME}"
 fi
 
+# Fetch the auto-generated internal_key for container env injection (set
+# by the 0006_reminders.sql DEFAULT — gen_random_bytes(32) hex).
+INTERNAL_KEY=$(psql "$DATABASE_URL" -tAc "select internal_key from tenants where id = '${TENANT_UUID}'")
+if [ -z "$INTERNAL_KEY" ]; then
+  warn "internal_key missing for tenant ${TENANT_UUID}; reminders will not work until migrated"
+fi
+
 # ── 6. Create the container (don't start; router will) ──────────────────────
 log "creating docker container ${CONTAINER_NAME}"
 docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
@@ -281,6 +288,8 @@ docker create \
   -e FIXTURE_SYSTEM_PROMPT_CAP="${FIXTURE_SYSTEM_PROMPT_CAP:-2048}" \
   -e SUPABASE_DB_URL="$DATABASE_URL" \
   -e TELEGRAM_INTERNAL_PORT=8787 \
+  -e INTERNAL_KEY="$INTERNAL_KEY" \
+  -e ROUTER_INTERNAL_URL="${ROUTER_INTERNAL_URL:-http://172.17.0.1:8080}" \
   "$IMAGE_TAG" > /dev/null
 
 log "provisioned. tenant_id=${TENANT_UUID}"

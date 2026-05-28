@@ -199,6 +199,27 @@ if [ -d "${STATE_HOME}/user-skills" ] && [ ! -e "${STATE_HOME}/skills" ]; then
   fi
 fi
 
+# --- 4.8. Per-tenant brain (GBrain) initialization ---
+# Per-tenant brain lives at $BRAIN_PATH (under the volume — survives container
+# restarts AND ships back to GitHub via the syncer). On first boot we run
+# `gbrain init` to scaffold the brain dir; on subsequent boots we skip.
+#
+# Postgres scoping (PR4): for now gbrain uses the shared SUPABASE_DB_URL.
+# Per-tenant schema isolation lands in the next PR — gbrain will get a
+# DATABASE_URL with search_path pinned to brain_<short_id>.
+mkdir -p "${BRAIN_PATH}"
+INIT_SENTINEL="${BRAIN_PATH}/.gbrain-initialized"
+if [ ! -f "$INIT_SENTINEL" ]; then
+  echo "[arete] initializing brain at ${BRAIN_PATH}"
+  # gbrain init creates: brain.config.json + initial dir scaffolding.
+  # If init fails (e.g. gbrain version mismatch), don't block the gateway —
+  # the brain is degraded but the rest of the assistant works.
+  (cd "${BRAIN_PATH}" && /usr/local/bin/gbrain init --tenant "${TENANT_ID}" 2>&1) \
+    | sed 's/^/[gbrain-init] /' || \
+    echo "[arete] WARN: gbrain init failed; brain queries will return empty until fixed"
+  touch "$INIT_SENTINEL"
+fi
+
 # --- 5. Start the syncer in background ---
 # Watches $STATE_HOME for changes; debounces per Telegram turn; commits + pushes.
 nohup /opt/arete/infra/syncer.sh > /tmp/syncer.log 2>&1 &
@@ -272,6 +293,11 @@ PATCH_JSON=$(jq -n \
   --arg p "$PRIMARY_MODEL" \
   --argjson fb "$FALLBACKS_JSON" \
   --arg ws "$STATE_HOME" \
+  --arg tid "$TENANT_ID" \
+  --arg bp "$BRAIN_PATH" \
+  --arg oai "${OPENAI_API_KEY:-}" \
+  --arg ant "${ANTHROPIC_API_KEY:-}" \
+  --arg dburl "${SUPABASE_DB_URL:-}" \
   '{
     agents: {
       defaults: {
@@ -307,6 +333,26 @@ PATCH_JSON=$(jq -n \
           source: "file",
           path: "/home/agent/state/creds/secrets.json",
           mode: "json"
+        }
+      }
+    },
+    # GBrain as MCP child. Per-tenant brain at $BRAIN_PATH; env-stripping
+    # mitigated by gbrain-mcp-wrapper.sh which re-exports the OPENAI/DB env
+    # OpenClaw filters out. Same wrapper pattern as Alfred.
+    mcp: {
+      servers: {
+        gbrain: {
+          command: "/opt/arete/infra/gbrain-mcp-wrapper.sh",
+          args: [],
+          # OpenClaw will pass these env vars to the wrapper; the wrapper
+          # then re-exports them to the gbrain subprocess.
+          env: {
+            TENANT_ID: $tid,
+            BRAIN_PATH: $bp,
+            OPENAI_API_KEY: $oai,
+            ANTHROPIC_API_KEY: $ant,
+            DATABASE_URL: $dburl
+          }
         }
       }
     },
