@@ -253,12 +253,13 @@ PATCH_JSON=$(jq -n \
         }
       }]
     },
-    # Skill precedence (highest → lowest):
-    #   1. <workspace>/skills/      ← symlink to user-skills/ (tenant overrides)
-    #   2. ...                      ← OpenClaw built-in paths
-    #   6. skills.load.extraDirs    ← platform skills from the image
+    # Skill precedence (highest to lowest):
+    #   1. workspace/skills/      - symlink to user-skills/ (tenant overrides)
+    #   2. ...                    - OpenClaw built-in paths
+    #   6. skills.load.extraDirs  - platform skills from the image
     # A user-skill with the same slug as a platform skill wins. Inspired by
-    # Alfred's 36-skill bundle (now baked into /opt/arete/skills/ via the image).
+    # the 36-skill bundle from the reference Alfred build (now baked into
+    # /opt/arete/skills/ via the image).
     skills: { load: { extraDirs: ["/opt/arete/skills"] } },
     gateway: { mode: "local", port: 18789, bind: "loopback", auth: { mode: "none" } }
   }')
