@@ -27,9 +27,11 @@ set -euo pipefail
 
 TELEGRAM_USER_ID=""
 NAME=""
-COUNTRY="US"
+TELEGRAM_USER_ID=""
+NAME=""
+COUNTRY=""
 USERNAME=""
-TIMEZONE="Etc/UTC"
+TIMEZONE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -47,8 +49,14 @@ log()  { echo "${green}[provision]${rst} $*"; }
 warn() { echo "${yellow}[provision]${rst} $*"; }
 die()  { echo "${red}[provision]${rst} $*" >&2; exit 1; }
 
+# Two modes:
+# 1. Operator mode: --name + --country provided. Backfills tenants row,
+#    marks onboarding_stage=complete (legacy code path; useful for testing).
+# 2. Production mode (router-invoked): no --name / --country. Tenant row is
+#    inserted with NULL name/country and onboarding_stage=awaiting_name; the
+#    onboarding FSM (services/router/src/webhook.ts) captures these from
+#    the user over Telegram.
 [ -n "$TELEGRAM_USER_ID" ] || die "--telegram-user-id is required"
-[ -n "$NAME" ]             || die "--name is required"
 
 # Source persistent provisioner secrets if env vars aren't already set.
 # /etc/arete-secrets/provisioner.env is the durable place for keys that
@@ -180,9 +188,10 @@ cat > "${VOLUME_PATH}/meta.json" <<META
 }
 META
 
-# Lightly fill USER.md with the known fields. The First-Time-Conversation flow
-# inside the container will collect the rest.
-if [ -f "${VOLUME_PATH}/identity/USER.md" ]; then
+# Lightly fill USER.md with the known fields IF the operator provided them.
+# In production (router-invoked) mode NAME is empty — the onboarding FSM
+# captures it from the user and re-renders USER.md after onboarding.
+if [ -n "$NAME" ] && [ -f "${VOLUME_PATH}/identity/USER.md" ]; then
   perl -i -pe "s|_to be set during onboarding_|${NAME}|" "${VOLUME_PATH}/identity/USER.md"
 fi
 
@@ -208,6 +217,10 @@ chown -R 1001:1001 "$VOLUME_PATH"
 
 # ── 5. INSERT into Postgres ─────────────────────────────────────────────────
 log "inserting tenants row"
+# Empty fields → NULL in DB. Empty TIMEZONE defaults to UTC (column NOT NULL).
+NAME_SQL="$([ -n "$NAME" ]    && printf "'%s'" "$NAME"    || printf "NULL")"
+COUNTRY_SQL="$([ -n "$COUNTRY" ] && printf "'%s'" "$COUNTRY" || printf "NULL")"
+TZ_SQL="${TIMEZONE:-Etc/UTC}"
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<SQL
 insert into tenants (
   id, telegram_user_id, telegram_username, name, country, timezone,
@@ -215,7 +228,7 @@ insert into tenants (
   container_name, status
 ) values (
   '${TENANT_UUID}', ${TELEGRAM_USER_ID}, $(printf "'%s'" "${USERNAME:-NULL}" | sed "s/'NULL'/NULL/"),
-  '${NAME}', '${COUNTRY}', '${TIMEZONE}',
+  ${NAME_SQL}, ${COUNTRY_SQL}, '${TZ_SQL}',
   '${REPO_URL}', '${VOLUME_PATH}', '${IMAGE_TAG}', ${INTERNAL_PORT},
   '${CONTAINER_NAME}', 'active'
 )

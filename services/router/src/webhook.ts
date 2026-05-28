@@ -9,6 +9,12 @@ import {
 import { ensureRunning, waitHealthy, runAgentTurn } from "./docker.js";
 import { config } from "./config.js";
 import { log } from "./log.js";
+import { provisionNewTenant } from "./provision.js";
+import {
+  inferTimezoneFromCountry,
+  renderUserMd,
+  writeUserMdToContainer,
+} from "./onboarding.js";
 
 // --- First-time conversation (Q-K) ----------------------------------------
 // We bypass the agent for the first 3 inbound messages so the user gets a
@@ -181,7 +187,7 @@ async function handleOnboarding(
     }
 
     case "awaiting_country": {
-      // This message IS the country. Save it, ask occupation.
+      // This message IS the country. Save it + infer timezone, ask occupation.
       const country = trimField(messageText);
       if (!country) {
         await sendPlainReply(
@@ -190,7 +196,11 @@ async function handleOnboarding(
         );
         return true;
       }
-      await setOnboarding(tenant.id, "awaiting_occupation", { country });
+      const timezone = inferTimezoneFromCountry(country);
+      await setOnboarding(tenant.id, "awaiting_occupation", {
+        country,
+        timezone,
+      });
       await sendPlainReply(chatId, onboardingAskOccupation());
       return true;
     }
@@ -211,13 +221,14 @@ async function handleOnboarding(
     }
 
     case "awaiting_use_case": {
-      // This message IS the use case. Save, mark complete, send welcome
-      // with a starter-journey nudge tailored to the use case.
+      // This message IS the use case. Save, mark complete, send welcome,
+      // and render USER.md into the container so the agent has full
+      // context from turn-1 after onboarding.
       const useCase = trimField(messageText, 500);
       if (!useCase) {
         await sendPlainReply(
           chatId,
-          "Didn't catch that — what would you most like to use me for? You can pick a number from 1-7 or describe it.",
+          "Didn't catch that — what would you most like to use me for? You can pick a number from 1-5 or describe it.",
         );
         return true;
       }
@@ -226,6 +237,35 @@ async function handleOnboarding(
         chatId,
         onboardingComplete(tenant.name ?? "there", useCase),
       );
+      // Write USER.md to the volume. Container needs to be running for
+      // docker exec. Best-effort: if it fails (container hibernated,
+      // exec hang), don't block the user — the file can be re-rendered
+      // on the next inbound by checking onboarding_stage='complete' +
+      // a sentinel marker. v2 cleanup.
+      try {
+        const userMd = renderUserMd({
+          name: tenant.name,
+          country: tenant.country,
+          occupation: tenant.occupation,
+          use_case: useCase,
+          timezone: tenant.timezone,
+        });
+        // Ensure container is running before exec
+        if (tenant.container_name) {
+          await ensureRunning(tenant);
+          await waitHealthy(tenant);
+          await writeUserMdToContainer(tenant.container_name, userMd);
+          log.info(
+            { tenant: tenant.id },
+            "wrote USER.md to volume",
+          );
+        }
+      } catch (err) {
+        log.warn(
+          { err, tenant: tenant.id },
+          "USER.md write failed — agent will use stub until next manual update",
+        );
+      }
       return true;
     }
   }
@@ -298,19 +338,53 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
   }
 
   try {
-    const tenant = await findTenantByTelegramId(from.id);
+    let tenant = await findTenantByTelegramId(from.id);
 
     if (!tenant) {
-      // Unknown user — friendly response, no provisioning yet (Phase D).
+      // Unknown user — production signup flow. Send a "warming up" message
+      // within ~3s so the user knows we received the request, then run the
+      // provisioner (claims pool repo → clones to volume → docker create →
+      // INSERT tenants row with onboarding_stage='awaiting_name'). After
+      // provision, refetch the tenant and fall through to the onboarding
+      // FSM, which sends the actual greeting + walks them through it.
       log.info(
         { telegram_user_id: from.id, username: from.username },
-        "unknown user — sending beta-gate reply",
+        "unknown user — auto-provisioning",
       );
       await sendPlainReply(
         chatId,
-        "👋 You're not on the Arete beta yet. Ping @antriksh_29 if you'd like access.",
+        "Setting up your assistant — give me ~30 seconds. I'll say hi properly once we're ready.",
       );
-      return;
+      try {
+        tenant = await provisionNewTenant({
+          telegramUserId: from.id,
+          telegramUsername: from.username ?? null,
+        });
+      } catch (err) {
+        log.error(
+          { err, telegram_user_id: from.id },
+          "auto-provision failed",
+        );
+        await sendPlainReply(
+          chatId,
+          "Hit a snag setting up your account. Try sending another message in a minute or two.",
+        );
+        return;
+      }
+      if (!tenant) {
+        log.error(
+          { telegram_user_id: from.id },
+          "auto-provision returned no tenant row",
+        );
+        await sendPlainReply(
+          chatId,
+          "Hit a snag setting up your account. Try sending another message in a minute or two.",
+        );
+        return;
+      }
+      // Fall through to the FSM. The new tenant has onboarding_stage =
+      // 'awaiting_name' so the FSM will send the greeting on this same
+      // message turn (no second prompt needed).
     }
 
     if (tenant.status === "suspended") {

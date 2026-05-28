@@ -64,6 +64,32 @@ chown -R arete:arete /opt/arete/services
 log "npm install + build"
 sudo -u arete bash -c "cd ${INSTALL_DIR} && npm install --omit=dev --no-audit --no-fund && npm install --no-audit --no-fund && npm run build"
 
+# ── 3.5. Install provisioner script + sudoers entry ──────────────────────────
+# Router runs as 'arete' user. The provisioner needs root for chown to UID
+# 1001, docker create, etc. Sudoers grants ONLY this exact path with
+# controlled args, no other sudo capability for the arete user.
+log "installing provisioner at /opt/arete/scripts/provision-tenant.sh"
+install -d -m 0755 -o root -g root /opt/arete/scripts
+install -m 0755 -o root -g root \
+  "${REPO_ROOT}/infra/scripts/provision-test-tenant.sh" \
+  /opt/arete/scripts/provision-tenant.sh
+
+SUDOERS_FILE=/etc/sudoers.d/arete-router
+log "writing sudoers entry at ${SUDOERS_FILE}"
+cat > "$SUDOERS_FILE" <<'SUDOERS'
+# Allow the arete-router systemd service to run the provisioner without
+# password. The path is fixed (/opt/arete/scripts/provision-tenant.sh)
+# and the args are controlled by router code (telegram_user_id + optional
+# --username). No other sudo capability is granted.
+arete ALL=(root) NOPASSWD: /usr/bin/bash /opt/arete/scripts/provision-tenant.sh *
+SUDOERS
+chmod 0440 "$SUDOERS_FILE"
+chown root:root "$SUDOERS_FILE"
+# Validate (sudoers syntax errors lock you out — visudo -c catches them)
+if ! visudo -cf "$SUDOERS_FILE" > /dev/null; then
+  die "sudoers file failed validation: $SUDOERS_FILE"
+fi
+
 # ── 4. Systemd unit ──────────────────────────────────────────────────────────
 log "installing systemd unit"
 cp "${REPO_ROOT}/infra/services/arete-router.service" "$UNIT_FILE"
@@ -92,9 +118,14 @@ EOF
 fi
 chmod 0600 "$ENV_FILE"
 
-# ── 6. Enable + start ────────────────────────────────────────────────────────
-log "enabling + starting arete-router"
-systemctl enable --now arete-router
+# ── 6. Enable + restart ──────────────────────────────────────────────────────
+# `enable --now` only starts if not already running; we need to RESTART so
+# new compiled dist/ is loaded into the live process (bit us a few times
+# in earlier deploys when fix PRs landed but the running router still had
+# the old code in memory).
+log "enabling + restarting arete-router"
+systemctl enable arete-router
+systemctl restart arete-router
 sleep 2
 systemctl status arete-router --no-pager -l | head -20 || true
 echo ""
