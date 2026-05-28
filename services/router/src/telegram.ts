@@ -29,6 +29,26 @@ const PER_CHAT_RATE = 1; // messages/sec per chat_id
  * end > word > hard cut. Keeps code fences (```...```) intact when
  * possible — splits at fence boundaries instead of mid-block.
  */
+// Telegram plain-text mode doesn't render Markdown. Agent replies often emit
+// `**bold**` which shows as literal asterisks. Two cheap normalizations before
+// chunking:
+//   - **text** → text          (strip bold markers; keep the word)
+//   - *text*   → text          (italic, same)
+//   - leave `inline code` alone (no markers visible without parse_mode)
+// HTML / MarkdownV2 parse modes would render properly but require escaping
+// every <, >, &, *, _, etc. in the agent's reply, which is brittle. Stripping
+// is the conservative move.
+export function stripMarkdownMarkers(text: string): string {
+  return text
+    // Bold + italic combinations
+    .replace(/\*\*\*(.+?)\*\*\*/g, "$1")
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    // Single-asterisk italic — avoid catching list bullets at line start
+    .replace(/(?<!\n|^)\*([^\s*][^*\n]*[^\s*]|\S)\*/g, "$1")
+    // Underscore emphasis (avoid eating snake_case_identifiers)
+    .replace(/\b_([^\s_][^_\n]*[^\s_]|[^_\s])_\b/g, "$1");
+}
+
 export function chunkAtBoundaries(text: string, max = TG_MAX_LEN): string[] {
   if (text.length <= max) return [text];
   const chunks: string[] = [];
@@ -134,7 +154,7 @@ export async function sendChunkedMessage(
   opts: SendOptions = {},
 ): Promise<void> {
   if (!text || !text.trim()) return;
-  const chunks = chunkAtBoundaries(text);
+  const chunks = chunkAtBoundaries(stripMarkdownMarkers(text));
   const url = `https://api.telegram.org/bot${config.TELEGRAM_BOT_TOKEN}/sendMessage`;
 
   for (let i = 0; i < chunks.length; i++) {
