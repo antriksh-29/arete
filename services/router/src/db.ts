@@ -138,6 +138,51 @@ export async function setOnboarding(
   );
 }
 
+export interface UsageEventInput {
+  tenant_id: string;
+  source?: string;
+  provider?: string | null;
+  model?: string | null;
+  duration_ms?: number | null;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  cached_tokens?: number | null;
+  ok?: boolean;
+  session_id?: string | null;
+  raw?: unknown;
+}
+
+/**
+ * Record a usage event (per-agent-turn). Best-effort: failures are
+ * logged but never thrown — we don't want telemetry write failures
+ * to crash the webhook handler.
+ */
+export async function recordUsage(input: UsageEventInput): Promise<void> {
+  try {
+    await pool.query(
+      `insert into usage_events (
+         tenant_id, source, provider, model, duration_ms,
+         input_tokens, output_tokens, cached_tokens, ok, session_id, raw
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        input.tenant_id,
+        input.source ?? "agent_turn",
+        input.provider ?? null,
+        input.model ?? null,
+        input.duration_ms ?? null,
+        input.input_tokens ?? null,
+        input.output_tokens ?? null,
+        input.cached_tokens ?? null,
+        input.ok ?? true,
+        input.session_id ?? null,
+        input.raw ? JSON.stringify(input.raw) : null,
+      ],
+    );
+  } catch (err) {
+    log.warn({ err, tenant_id: input.tenant_id }, "usage event write failed");
+  }
+}
+
 export async function closeDb(): Promise<void> {
   await pool.end();
 }

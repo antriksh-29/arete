@@ -3,7 +3,7 @@ import { spawn } from "child_process";
 import { PassThrough } from "stream";
 import { config } from "./config.js";
 import { log } from "./log.js";
-import type { Tenant } from "./db.js";
+import { recordUsage, type Tenant } from "./db.js";
 
 const docker = new Dockerode({ socketPath: config.DOCKER_SOCKET });
 
@@ -174,6 +174,14 @@ export async function runAgentTurn(
       { tenant: tenant.id, exit: info.ExitCode, stderr: stderr.slice(0, 500) },
       "openclaw agent exited non-zero",
     );
+    // Record the failed turn so we have observability into agent error rates
+    // per tenant. Best-effort; if recordUsage throws, log + continue.
+    void recordUsage({
+      tenant_id: tenant.id,
+      ok: false,
+      model: explicitModel ?? null,
+      raw: { exit: info.ExitCode, stderr: stderr.slice(0, 500) },
+    });
     throw new Error(`openclaw agent exited ${info.ExitCode}: ${stderr.slice(0, 200)}`);
   }
 
@@ -203,6 +211,25 @@ export async function runAgentTurn(
     }
     durationMs = obj?.meta?.durationMs ?? obj?.result?.meta?.durationMs;
     agentMeta = obj?.result?.meta?.agentMeta ?? obj?.meta?.agentMeta;
+    // Q-Q: write a usage event per agent turn. Best-effort (recordUsage
+    // catches its own errors). Token counts come from agentMeta.tokens if
+    // populated (varies by model/openclaw version); model + provider always
+    // populated when the call succeeded.
+    const tokens = (agentMeta?.tokens ?? obj?.result?.meta?.tokens) as
+      | { input?: number; output?: number; cached?: number }
+      | undefined;
+    void recordUsage({
+      tenant_id: tenant.id,
+      ok: true,
+      provider: (agentMeta?.provider as string) ?? null,
+      model: (agentMeta?.model as string) ?? explicitModel ?? null,
+      duration_ms: typeof durationMs === "number" ? durationMs : null,
+      input_tokens: typeof tokens?.input === "number" ? tokens.input : null,
+      output_tokens: typeof tokens?.output === "number" ? tokens.output : null,
+      cached_tokens: typeof tokens?.cached === "number" ? tokens.cached : null,
+      session_id: (agentMeta?.sessionId as string) ?? null,
+      raw: agentMeta,
+    });
     if (agentMeta || durationMs) {
       log.debug(
         {
