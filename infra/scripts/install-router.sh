@@ -90,6 +90,18 @@ if ! visudo -cf "$SUDOERS_FILE" > /dev/null; then
   die "sudoers file failed validation: $SUDOERS_FILE"
 fi
 
+# ── 3.7. UFW: allow docker bridge → router ──────────────────────────────────
+# Tenant containers reach the router via the docker bridge gateway
+# (172.17.0.1:8080) to call /internal/reminders/schedule etc.
+# Default UFW posture is deny-incoming; without this rule, every
+# container→router call times out (silent failure mode — found 2026-05-28).
+# Idempotent: ufw allow returns "Skipping adding existing rule" on re-run.
+if command -v ufw > /dev/null 2>&1 && ufw status | grep -q "Status: active"; then
+  log "adding UFW rule: 172.17.0.0/16 → :8080 (docker bridge → router internal API)"
+  ufw allow from 172.17.0.0/16 to any port 8080 proto tcp \
+    comment "docker→router internal API" > /dev/null
+fi
+
 # ── 4. Systemd unit ──────────────────────────────────────────────────────────
 log "installing systemd unit"
 cp "${REPO_ROOT}/infra/services/arete-router.service" "$UNIT_FILE"
