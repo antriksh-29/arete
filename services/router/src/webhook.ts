@@ -1,8 +1,109 @@
 import type { Request, Response } from "express";
-import { findTenantByTelegramId, touchLastActive, markStatus } from "./db.js";
+import {
+  findTenantByTelegramId,
+  touchLastActive,
+  markStatus,
+  setOnboarding,
+  type Tenant,
+} from "./db.js";
 import { ensureRunning, waitHealthy, runAgentTurn } from "./docker.js";
 import { config } from "./config.js";
 import { log } from "./log.js";
+
+// --- First-time conversation (Q-K) ----------------------------------------
+// We bypass the agent for the first 3 inbound messages so the user gets a
+// fast scripted onboarding (no LLM cost, no cold-start) and we capture
+// name + country into the DB before any model call. After 'complete', every
+// message routes through openclaw agent normally.
+
+function onboardingGreeting(): string {
+  return [
+    "👋 Hey! I'm Arete — your own personal AI assistant living right here in Telegram.",
+    "",
+    "Before we dive in, what's your first name?",
+  ].join("\n");
+}
+
+function onboardingAskCountry(name: string): string {
+  return `Nice to meet you, ${name}. Which country are you based in? (so I can get your timezone right for reminders + briefings.)`;
+}
+
+function onboardingComplete(name: string): string {
+  return [
+    `Great, all set ${name}. Here are a few things you can ask me right away:`,
+    "",
+    "• \"Brief me on my day\" — pulls your calendar + inbox + open tasks.",
+    "• \"Remind me to call Dad at 7pm\" — natural-language scheduling.",
+    "• \"Add water-log to my habits\" — I track recurring habits + nudge you.",
+    "• \"Save this thread\" — I remember anything you tell me; ask me about it any time.",
+    "• \"What's on for tomorrow?\" — calendar-aware planning.",
+    "",
+    "Try anything — I'll figure it out. Ask me a question?",
+  ].join("\n");
+}
+
+// Sanitize a free-text reply into a short field value. Telegram messages can
+// be long; first-name should be short. Country same. Keeps DB tidy.
+function trimField(s: string, max = 64): string {
+  return s.trim().replace(/\s+/g, " ").slice(0, max);
+}
+
+/**
+ * Handle one inbound message under the onboarding FSM. Returns true if the
+ * router consumed the message (sent its own reply, no agent call needed).
+ * Returns false if the message should be routed to the agent.
+ *
+ * State transitions are triggered by the USER's message, not the bot's reply.
+ * The 4-state FSM is documented in db/migrations/0002_onboarding.sql.
+ */
+async function handleOnboarding(
+  tenant: Tenant,
+  messageText: string,
+  chatId: number,
+): Promise<boolean> {
+  switch (tenant.onboarding_stage) {
+    case "complete":
+      return false;
+
+    case "awaiting_name": {
+      // First inbound from this tenant. Greet + ask name. Advance to 'greeted'
+      // so the next message is interpreted as their name.
+      await setOnboarding(tenant.id, "greeted");
+      await sendPlainReply(chatId, onboardingGreeting());
+      return true;
+    }
+
+    case "greeted": {
+      // This message IS the user's name. Save it, ask country.
+      const name = trimField(messageText);
+      if (!name) {
+        await sendPlainReply(
+          chatId,
+          "Didn't catch that — what should I call you?",
+        );
+        return true;
+      }
+      await setOnboarding(tenant.id, "awaiting_country", { name });
+      await sendPlainReply(chatId, onboardingAskCountry(name));
+      return true;
+    }
+
+    case "awaiting_country": {
+      // This message IS the country. Save it, send welcome, mark complete.
+      const country = trimField(messageText);
+      if (!country) {
+        await sendPlainReply(
+          chatId,
+          "Didn't catch that — which country are you based in?",
+        );
+        return true;
+      }
+      await setOnboarding(tenant.id, "complete", { country });
+      await sendPlainReply(chatId, onboardingComplete(tenant.name ?? "there"));
+      return true;
+    }
+  }
+}
 
 interface TelegramFromUser {
   id: number;
@@ -105,25 +206,37 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
 
     // Touch last_active_at IMMEDIATELY so the hibernation tick doesn't decide
     // this tenant is idle and kill the container while an agent turn is still
-    // in flight. (Previously we only touched at the end of the handler — for
-    // a 30-90s agent turn, the 60s hibernation tick would fire mid-turn and
-    // docker-stop the container, returning silent failure to Telegram.)
+    // in flight.
     await touchLastActive(tenant.id);
 
-    // Ensure container is up + healthy
-    await ensureRunning(tenant);
-    if (tenant.status === "hibernated") {
-      await markStatus(tenant.id, "active");
-    }
-    await waitHealthy(tenant);
-
-    // No message text? Nothing to send to the agent (e.g. callback_query, edit
-    // without text). Acknowledge but skip the turn. Telegram already got 200.
+    // No message text? Skip agent turn. Telegram already got 200.
     const messageText = update.message?.text;
     if (!messageText) {
       log.debug({ update_id: update.update_id }, "non-text update — skipping agent turn");
       return;
     }
+
+    // First-time conversation: bypass the agent for the scripted onboarding
+    // (Q-K in docs/architecture-research-2026-05-27.md). Saves cold-start
+    // latency + LLM cost on the first 3 turns.
+    if (tenant.onboarding_stage !== "complete") {
+      log.info(
+        { tenant: tenant.id, stage: tenant.onboarding_stage },
+        "router-side onboarding turn",
+      );
+      const consumed = await handleOnboarding(tenant, messageText, chatId);
+      if (consumed) return;
+      // If consumed=false somehow (shouldn't happen unless stage=complete and
+      // we missed the early return) fall through to agent.
+    }
+
+    // Ensure container is up + healthy (only for non-onboarding turns; saves
+    // the cold-start cost during onboarding).
+    await ensureRunning(tenant);
+    if (tenant.status === "hibernated") {
+      await markStatus(tenant.id, "active");
+    }
+    await waitHealthy(tenant);
 
     log.info(
       { tenant: tenant.id, telegram_user_id: from.id, msg_len: messageText.length },

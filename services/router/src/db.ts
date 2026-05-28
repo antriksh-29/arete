@@ -9,6 +9,12 @@ export type TenantStatus =
   | "failed"
   | "suspended";
 
+export type OnboardingStage =
+  | "awaiting_name"
+  | "greeted"
+  | "awaiting_country"
+  | "complete";
+
 export interface Tenant {
   id: string;
   telegram_user_id: number;
@@ -22,6 +28,7 @@ export interface Tenant {
   internal_port: number | null;
   container_name: string | null;
   status: TenantStatus;
+  onboarding_stage: OnboardingStage;
   last_active_at: Date;
   last_error: string | null;
   hibernated_at: Date | null;
@@ -90,6 +97,28 @@ export async function listAllTenants(): Promise<Tenant[]> {
     `select * from tenants order by created_at desc`,
   );
   return rows;
+}
+
+export async function setOnboarding(
+  tenantId: string,
+  stage: OnboardingStage,
+  fields: { name?: string; country?: string } = {},
+): Promise<void> {
+  // Build the SET clause dynamically so we only touch the columns provided.
+  const sets: string[] = ["onboarding_stage = $2"];
+  const params: (string | number)[] = [tenantId, stage];
+  if (fields.name !== undefined) {
+    params.push(fields.name);
+    sets.push(`name = $${params.length}`);
+  }
+  if (fields.country !== undefined) {
+    params.push(fields.country);
+    sets.push(`country = $${params.length}`);
+  }
+  await pool.query(
+    `update tenants set ${sets.join(", ")} where id = $1`,
+    params,
+  );
 }
 
 export async function closeDb(): Promise<void> {
