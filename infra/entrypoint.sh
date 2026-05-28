@@ -144,6 +144,24 @@ fi
 
 echo "[arete] identity wired: $(ls -la "${STATE_HOME}"/AGENTS.md "${STATE_HOME}"/SOUL.md 2>/dev/null | wc -l) symlinks"
 
+# --- 4.6. Wire user-skills/ as workspace skills/ ---
+# OpenClaw discovers tenant skills at <workspace>/skills/ (highest precedence).
+# State-template uses user-skills/ for tenant-authored skills (the convention
+# the spec settled on). Symlink so OpenClaw finds them at the canonical path.
+# Platform skills come in via skills.load.extraDirs (set below via openclaw
+# config patch); user-skill with same name wins.
+if [ -d "${STATE_HOME}/user-skills" ] && [ ! -e "${STATE_HOME}/skills" ]; then
+  ln -s "${STATE_HOME}/user-skills" "${STATE_HOME}/skills"
+  # Ensure the symlink isn't committed (syncer would otherwise track it).
+  if ! grep -q "^/skills$" "$GITIGNORE"; then
+    {
+      echo ""
+      echo "# Workspace skills/ is a symlink to user-skills/ — created at boot."
+      echo "/skills"
+    } >> "$GITIGNORE"
+  fi
+fi
+
 # --- 5. Start the syncer in background ---
 # Watches $STATE_HOME for changes; debounces per Telegram turn; commits + pushes.
 nohup /opt/arete/infra/syncer.sh > /tmp/syncer.log 2>&1 &
@@ -235,6 +253,13 @@ PATCH_JSON=$(jq -n \
         }
       }]
     },
+    # Skill precedence (highest → lowest):
+    #   1. <workspace>/skills/      ← symlink to user-skills/ (tenant overrides)
+    #   2. ...                      ← OpenClaw built-in paths
+    #   6. skills.load.extraDirs    ← platform skills from the image
+    # A user-skill with the same slug as a platform skill wins. Inspired by
+    # Alfred's 36-skill bundle (now baked into /opt/arete/skills/ via the image).
+    skills: { load: { extraDirs: ["/opt/arete/skills"] } },
     gateway: { mode: "local", port: 18789, bind: "loopback", auth: { mode: "none" } }
   }')
 # `openclaw config patch --stdin` reads JSON5 from stdin and writes openclaw.json
