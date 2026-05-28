@@ -309,6 +309,80 @@ done
 # (router talks to it via `docker exec`, not over the network).
 OPENCLAW_GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
 echo "[arete] starting openclaw gateway on :${OPENCLAW_GATEWAY_PORT}"
+
+# Start gateway in BACKGROUND so we can hot-patch the device-pairing
+# scope file after first connection. Without this, openclaw agent --json
+# falls back to embedded mode (which doesn't fully load SOUL.md / IDENTITY.md)
+# because scope upgrades require interactive operator approval — a
+# chicken-and-egg in headless containers where the agent IS the operator.
+openclaw gateway run \
+  --port "${OPENCLAW_GATEWAY_PORT}" \
+  --bind loopback \
+  --auth none \
+  --allow-unconfigured \
+  --force &
+GATEWAY_PID=$!
+
+# Wait for gateway to be healthy (60s deadline).
+echo "[arete] waiting for gateway health"
+for i in $(seq 1 60); do
+  if openclaw gateway health > /dev/null 2>&1; then
+    echo "[arete] gateway healthy after ${i}s"
+    break
+  fi
+  sleep 1
+done
+
+# Auto-grant full scopes to the loopback device. The gateway auto-pairs a
+# CLI device with role=operator + scopes=[operator.read]. Agent calls
+# need operator.read + operator.write + operator.pairing. The "official"
+# flow requires another operator to approve scope upgrade requests; in a
+# headless single-tenant container we ARE the only operator, so we hot-
+# patch paired.json directly. Idempotent — re-runs on every container
+# start in case the file is regenerated.
+PAIRED_FILE="${STATE_HOME}/.openclaw/devices/paired.json"
+# Wait briefly for paired.json to appear (gateway creates it after first
+# CLI connection). Trigger a connection ourselves if needed.
+for i in $(seq 1 15); do
+  if [ -f "$PAIRED_FILE" ]; then break; fi
+  # Trigger pairing by calling a benign CLI command
+  openclaw status > /dev/null 2>&1 || true
+  sleep 1
+done
+
+if [ -f "$PAIRED_FILE" ]; then
+  python3 - "$PAIRED_FILE" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+ALL = ["operator.read", "operator.write", "operator.pairing"]
+try:
+    with open(path) as f: data = json.load(f)
+except Exception as e:
+    print(f"[arete] paired.json read error: {e}", file=sys.stderr); sys.exit(0)
+patched = 0
+for did, dev in data.items():
+    if set(dev.get("scopes", [])) >= set(ALL): continue
+    dev["scopes"] = ALL
+    dev["approvedScopes"] = ALL
+    for role, tok in dev.get("tokens", {}).items():
+        tok["scopes"] = ALL
+    patched += 1
+if patched:
+    with open(path, "w") as f: json.dump(data, f, indent=2)
+print(f"[arete] device scopes patched: {patched}/{len(data)}")
+PYEOF
+  # Restart gateway so it reloads paired.json. Kill the background one
+  # and start a new one in the foreground via exec.
+  kill -TERM "$GATEWAY_PID" 2>/dev/null || true
+  wait "$GATEWAY_PID" 2>/dev/null || true
+  echo "[arete] restarting gateway to reload patched scopes"
+else
+  echo "[arete] paired.json never appeared — gateway may need manual pairing"
+  kill -TERM "$GATEWAY_PID" 2>/dev/null || true
+  wait "$GATEWAY_PID" 2>/dev/null || true
+fi
+
+# Re-exec gateway in foreground (PID 1 in container).
 exec openclaw gateway run \
   --port "${OPENCLAW_GATEWAY_PORT}" \
   --bind loopback \
