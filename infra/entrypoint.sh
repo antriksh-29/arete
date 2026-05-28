@@ -111,7 +111,7 @@ fi
 # Ensure .gitignore excludes the workspace-root symlinks so syncer doesn't
 # commit them. Append only if not already present (idempotent).
 PLATFORM_IDENTITY_FILES=(
-  AGENTS.md SOUL.md HEARTBEAT.md ACCESS_POLICY.md CONFIRMATION_FLOW.md
+  AGENTS.md SOUL.md IDENTITY.md HEARTBEAT.md ACCESS_POLICY.md CONFIRMATION_FLOW.md
   CONTENT_INGESTION.md MCP_FIRST.md MODEL_ROUTING.md BRAIN_FILING.md
   BRAIN_PROPAGATION.md PAGE_SCHEMA.md USER.md
 )
@@ -131,9 +131,9 @@ fi
 # committed (from old OpenClaw bootstrap stubs), we git-rm it and replace
 # with our symlink. Tenant overrides live in identity/AGENTS-overrides.md
 # etc. and will be merged in v2 (Q-C BEGIN PLATFORM block).
-for f in AGENTS.md SOUL.md HEARTBEAT.md ACCESS_POLICY.md CONFIRMATION_FLOW.md \
-         CONTENT_INGESTION.md MCP_FIRST.md MODEL_ROUTING.md BRAIN_FILING.md \
-         BRAIN_PROPAGATION.md PAGE_SCHEMA.md; do
+for f in AGENTS.md SOUL.md IDENTITY.md HEARTBEAT.md ACCESS_POLICY.md \
+         CONFIRMATION_FLOW.md CONTENT_INGESTION.md MCP_FIRST.md MODEL_ROUTING.md \
+         BRAIN_FILING.md BRAIN_PROPAGATION.md PAGE_SCHEMA.md; do
   src="/opt/arete/identity/${f}"
   dst="${STATE_HOME}/${f}"
   if [ ! -f "$src" ]; then continue; fi
