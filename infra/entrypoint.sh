@@ -111,8 +111,16 @@ echo "[arete] syncer started (pid $!)"
 #     the container's gateway only needs to accept loopback connections.
 #
 # OpenClaw expects ANTHROPIC_API_KEY (standard) — alias from our SHARED_ANTHROPIC_KEY.
-export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${SHARED_ANTHROPIC_KEY}}"
+export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${SHARED_ANTHROPIC_KEY:-}}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-${SHARED_OPENAI_KEY:-}}"
+# DeepSeek + Moonshot keys (we route DeepSeek primary, Kimi fallback per
+# the OpenClaw native fallback chain — see docs/architecture-research-2026-05-27.md).
+export DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-${SHARED_DEEPSEEK_KEY:-}}"
+export MOONSHOT_API_KEY="${MOONSHOT_API_KEY:-${SHARED_MOONSHOT_KEY:-}}"
+
+# Pre-create the state-dir tree so OpenClaw doesn't create it in legacy
+# locations. Critical for the OPENCLAW_HOME leak fix (issue #37457).
+mkdir -p "${OPENCLAW_HOME}" "${OPENCLAW_STATE_DIR}"
 
 # Create baseline OpenClaw config if it doesn't exist yet. The real command
 # is `openclaw onboard --non-interactive --accept-risk` (not `setup`); `setup`
@@ -120,6 +128,19 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-${SHARED_OPENAI_KEY:-}}"
 # Idempotent so it safely re-runs on every container start.
 openclaw onboard --non-interactive --accept-risk --workspace "${STATE_HOME}" || \
   echo "[arete] openclaw onboard returned non-zero (continuing — gateway runs with --allow-unconfigured)"
+
+# Leak check: if despite our env config, openclaw wrote to /root/.openclaw
+# or /home/agent/.openclaw, that's the known main-agent bug. Fail-loud here
+# rather than running with leaked secrets. Per architecture-research-2026-05-27.md
+# (issue #37457).
+for legacy in /root/.openclaw /home/agent/.openclaw; do
+  if [ -d "$legacy" ]; then
+    echo "[arete] FATAL: openclaw wrote to legacy path $legacy despite OPENCLAW_HOME override." >&2
+    echo "[arete]   This is the known main-agent leak. Container will NOT start." >&2
+    echo "[arete]   Investigate the openclaw version + OPENCLAW_HOME env." >&2
+    exit 1
+  fi
+done
 
 # OpenClaw defaults the gateway port to 18789. The `openclaw gateway health` /
 # `openclaw agent` clients also default to that port when reading config — so

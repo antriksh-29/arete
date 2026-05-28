@@ -62,9 +62,18 @@ USER agent
 WORKDIR /home/agent
 
 # Env contract
+# IMPORTANT — OPENCLAW_HOME is set explicitly. Known issue #37457 (per
+# 2026-05-27 research dump): without OPENCLAW_HOME, OpenClaw's auto-created
+# internal `main` agent ignores OPENCLAW_STATE_DIR and writes plaintext
+# API keys to /root/.openclaw/agents/main/agent/ (the legacy home path).
+# Setting OPENCLAW_HOME forces all writes under the bind-mounted state dir.
+# Precedence: OPENCLAW_HOME > $HOME for OpenClaw's path resolution.
 ENV STATE_HOME=/home/agent/state \
     BRAIN_PATH=/home/agent/state/brain \
     PLATFORM_HOME=/opt/arete \
+    OPENCLAW_HOME=/home/agent/state/.openclaw-home \
+    OPENCLAW_STATE_DIR=/home/agent/state/.openclaw \
+    OPENCLAW_CONFIG_PATH=/home/agent/state/.openclaw/openclaw.json \
     OPENCLAW_WORKSPACE=/home/agent/state \
     PATH="/opt/arete/tools:/home/agent/.local/bin:${PATH}"
 
