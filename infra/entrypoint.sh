@@ -93,6 +93,57 @@ else
   fi
 fi
 
+# --- 4.5. Wire platform identity into workspace root ---
+# OpenClaw auto-loads AGENTS.md, SOUL.md, USER.md, HEARTBEAT.md, ACCESS_POLICY.md,
+# CONFIRMATION_FLOW.md, CONTENT_INGESTION.md, MCP_FIRST.md, MODEL_ROUTING.md,
+# BRAIN_FILING.md, BRAIN_PROPAGATION.md, PAGE_SCHEMA.md from workspace root.
+# Per docs/architecture-research-2026-05-27.md (Q-C). Files live in the image
+# at /opt/arete/identity/. We symlink to workspace root so OpenClaw finds them.
+#
+# Tenant-rendered USER.md lives at state/identity/USER.md (per provisioner).
+# Symlink that to workspace root too, with HIGHER precedence — tenant's USER
+# wins over the (empty) platform USER.md template.
+#
+# v1 doesn't implement the BEGIN PLATFORM block overlay yet; tenant can
+# override platform identity files only by replacing them entirely in their
+# state repo (rare). See Q-C v2 in research doc.
+
+# Ensure .gitignore excludes the workspace-root symlinks so syncer doesn't
+# commit them. Append only if not already present (idempotent).
+PLATFORM_IDENTITY_FILES=(
+  AGENTS.md SOUL.md HEARTBEAT.md ACCESS_POLICY.md CONFIRMATION_FLOW.md
+  CONTENT_INGESTION.md MCP_FIRST.md MODEL_ROUTING.md BRAIN_FILING.md
+  BRAIN_PROPAGATION.md PAGE_SCHEMA.md USER.md
+)
+GITIGNORE="${STATE_HOME}/.gitignore"
+touch "$GITIGNORE"
+if ! grep -q "^# Platform-identity symlinks" "$GITIGNORE"; then
+  {
+    echo ""
+    echo "# Platform-identity symlinks — wired at boot, follow image /opt/arete/identity/."
+    echo "# Tenant identity overrides live at identity/AGENTS-overrides.md etc."
+    for f in "${PLATFORM_IDENTITY_FILES[@]}"; do echo "/${f}"; done
+  } >> "$GITIGNORE"
+fi
+
+# Create workspace-root symlinks. Don't overwrite tenant files / existing
+# symlinks; `ln -s` (no -f) only creates if target doesn't exist.
+for f in AGENTS.md SOUL.md HEARTBEAT.md ACCESS_POLICY.md CONFIRMATION_FLOW.md \
+         CONTENT_INGESTION.md MCP_FIRST.md MODEL_ROUTING.md BRAIN_FILING.md \
+         BRAIN_PROPAGATION.md PAGE_SCHEMA.md; do
+  src="/opt/arete/identity/${f}"
+  dst="${STATE_HOME}/${f}"
+  if [ -f "$src" ] && [ ! -e "$dst" ]; then
+    ln -s "$src" "$dst"
+  fi
+done
+# Tenant USER.md (rendered by provisioner) → workspace root.
+if [ -f "${STATE_HOME}/identity/USER.md" ] && [ ! -e "${STATE_HOME}/USER.md" ]; then
+  ln -s "${STATE_HOME}/identity/USER.md" "${STATE_HOME}/USER.md"
+fi
+
+echo "[arete] identity wired: $(ls -la "${STATE_HOME}"/AGENTS.md "${STATE_HOME}"/SOUL.md 2>/dev/null | wc -l) symlinks"
+
 # --- 5. Start the syncer in background ---
 # Watches $STATE_HOME for changes; debounces per Telegram turn; commits + pushes.
 nohup /opt/arete/infra/syncer.sh > /tmp/syncer.log 2>&1 &
@@ -167,7 +218,23 @@ PATCH_JSON=$(jq -n \
   --argjson fb "$FALLBACKS_JSON" \
   --arg ws "$STATE_HOME" \
   '{
-    agents: { defaults: { workspace: $ws, model: { primary: $p, fallbacks: $fb } } },
+    agents: {
+      defaults: {
+        workspace: $ws,
+        model: { primary: $p, fallbacks: $fb },
+        # AGENTS.md is ~67KB; per-file cap raised from default 12K to 80K
+        # to fit it. Total bumped to 120K to fit AGENTS + SOUL + USER + others.
+        bootstrapMaxChars: 80000,
+        bootstrapTotalMaxChars: 120000
+      },
+      list: [{
+        id: "main",
+        identity: {
+          name: "Arete",
+          emoji: "🪶"
+        }
+      }]
+    },
     gateway: { mode: "local", port: 18789, bind: "loopback", auth: { mode: "none" } }
   }')
 # `openclaw config patch --stdin` reads JSON5 from stdin and writes openclaw.json
