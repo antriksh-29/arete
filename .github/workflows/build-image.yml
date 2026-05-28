@@ -72,16 +72,66 @@ jobs:
             # PRs → ephemeral pr-N tag (only pushed when authorized, currently not)
             type=ref,event=pr
 
-      - name: Build (and push if not a PR)
+      # Build the image and ALSO load it into the local docker daemon so the
+      # boot-gate step below can `docker run` it. Build is fast on cache hits.
+      - name: Build (load to local daemon for gate testing)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: infra/Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
+          load: true
+          tags: arete:gate-candidate
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      # Boot-gate live check: docker run the just-built image with
+      # ARETE_SKIP_BOOT_GATE=0 + the injection fixture; assert the gate
+      # passes (all 30 patterns refused). Moves the gate from per-container
+      # startup (catastrophic cost) to per-release (amortized). Per
+      # docs/architecture-research-2026-05-27.md Q-F.
+      #
+      # Soft-skip when ANTHROPIC_API_KEY secret isn't configured (PR builds
+      # from forks, or before secret is added). Hard-fail on main pushes
+      # where the secret should be present.
+      - name: Boot-gate live check
+        id: boot_gate
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -eo pipefail
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo "::warning::ANTHROPIC_API_KEY secret not available — skipping live boot-gate."
+              exit 0
+            else
+              echo "::error::ANTHROPIC_API_KEY secret missing on main push — CI cannot validate boot gate."
+              exit 1
+            fi
+          fi
+          # Mount the fixture from the workspace into a throwaway state dir
+          # and run the runner directly. Avoids a full container startup
+          # (which would clone state + start gateway — neither relevant here).
+          docker run --rm \
+            -e ANTHROPIC_API_KEY \
+            -e INJECTION_MODEL=claude-haiku-4-5 \
+            -e FIXTURE_SYSTEM_PROMPT_CAP=2048 \
+            --entrypoint python3 \
+            arete:gate-candidate \
+            /opt/arete/eval/run-injection-fixture.py \
+            --fixture /opt/arete/eval/injection-fixture.yaml
+
+      - name: Push image (if not a PR)
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # No cache-to here — keep the cache from the first build step
           platforms: linux/amd64
 
       - name: Summary
