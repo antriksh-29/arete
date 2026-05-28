@@ -75,7 +75,11 @@ PROVISION_OUT=$(sudo env DATABASE_URL="$DATABASE_URL" \
   fail "provisioner exited non-zero"
   exit 1
 }
-echo "$PROVISION_OUT" | grep -E '^\[provision\] (tenant_id|provisioned)' | sed 's/^/  /'
+# Strip ANSI color codes from provisioner output before grepping — without
+# this, `^\[provision\]` doesn't match the color-prefixed lines and grep's
+# exit 1 + pipefail killed the script silently (found 2026-05-28).
+PROVISION_CLEAN=$(printf '%s' "$PROVISION_OUT" | sed 's/\x1b\[[0-9;]*m//g')
+echo "$PROVISION_CLEAN" | grep -E '^\[provision\] (tenant_id|provisioned)' | sed 's/^/  /' || true
 ok "provisioner completed"
 
 # Pull the new tenant row.
