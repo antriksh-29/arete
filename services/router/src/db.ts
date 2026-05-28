@@ -33,6 +33,7 @@ export interface Tenant {
   container_name: string | null;
   status: TenantStatus;
   onboarding_stage: OnboardingStage;
+  internal_key: string;
   last_active_at: Date;
   last_error: string | null;
   hibernated_at: Date | null;
@@ -58,6 +59,28 @@ export async function findTenantByTelegramId(
     [telegramUserId],
   );
   return rows[0] ?? null;
+}
+
+export async function findTenantByInternalKey(
+  key: string,
+): Promise<Tenant | null> {
+  const { rows } = await pool.query<Tenant>(
+    `select * from tenants where internal_key = $1 limit 1`,
+    [key],
+  );
+  return rows[0] ?? null;
+}
+
+export async function findTenantById(id: string): Promise<Tenant | null> {
+  const { rows } = await pool.query<Tenant>(
+    `select * from tenants where id = $1 limit 1`,
+    [id],
+  );
+  return rows[0] ?? null;
+}
+
+export function getPool(): pg.Pool {
+  return pool;
 }
 
 export async function touchLastActive(tenantId: string): Promise<void> {

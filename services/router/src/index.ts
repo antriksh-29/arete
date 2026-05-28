@@ -6,6 +6,12 @@ import { handleWebhook } from "./webhook.js";
 import { getTenants, requireAdmin } from "./admin.js";
 import { startHibernationTick } from "./lifecycle.js";
 import { closeDb } from "./db.js";
+import {
+  scheduleReminder,
+  listPendingReminders,
+  cancelReminder,
+  startReminderPoller,
+} from "./reminders.js";
 
 const app = express();
 
@@ -19,6 +25,13 @@ app.get("/health", (_req, res) => {
 
 // Telegram webhook — single endpoint, the platform's only public surface
 app.post("/telegram/webhook", handleWebhook);
+
+// Internal API — called by tenant containers. Auth via X-Tenant-Key header.
+// Bound to 0.0.0.0 because containers reach the router via the docker bridge
+// gateway; protect ONLY by the per-tenant key (and Caddy doesn't expose /internal).
+app.post("/internal/reminders/schedule", scheduleReminder);
+app.get("/internal/reminders", listPendingReminders);
+app.post("/internal/reminders/:id/cancel", cancelReminder);
 
 // Admin (auth-gated; disabled if ADMIN_API_KEY not set)
 app.get("/admin/tenants", requireAdmin, getTenants);
@@ -34,6 +47,7 @@ const server = app.listen(config.PORT, "0.0.0.0", () => {
 });
 
 const hibernationTimer = startHibernationTick();
+const reminderTimer = startReminderPoller();
 
 // Graceful shutdown
 let shuttingDown = false;
@@ -42,6 +56,7 @@ async function shutdown(signal: string): Promise<void> {
   shuttingDown = true;
   log.info({ signal }, "shutting down");
   clearInterval(hibernationTimer);
+  clearInterval(reminderTimer);
   server.close();
   await closeDb();
   process.exit(0);
