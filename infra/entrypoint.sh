@@ -78,14 +78,15 @@ if grep -q "{{TENANT_ID}}" "${STATE_HOME}/meta.json" 2>/dev/null; then
 fi
 
 # --- 4. Injection-fixture smoke test (boot gate) ---
-# Mirrors Alfred's pattern: refuse to start if any prompt-injection pattern would succeed.
-# COST: each run = 30 LLM calls × ~2-20KB context per call. Default-skipped because the
-# fixture+model+identity tuple is identical across container starts — the gate's value
-# is at image-build/release time, not per-container-cold-start. Set ARETE_SKIP_BOOT_GATE=0
-# in /etc/arete-secrets/router.env (router-side, propagated via docker create) to enable.
+# AUTHORITATIVE GATE: .github/workflows/build-image.yml runs the same fixture
+# against every release before tagging :latest. The runtime gate here is a
+# defense-in-depth opt-in for paranoid operators. By default skipped — running
+# 30 LLM calls per container cold-start costs ~$0.30/tenant/wakeup with no
+# safety value beyond what CI already proved.
 if [ "${ARETE_SKIP_BOOT_GATE:-1}" = "1" ]; then
-  echo "[arete] boot gate SKIPPED (ARETE_SKIP_BOOT_GATE=1). Set =0 to enable."
+  echo "[arete] boot gate SKIPPED (default — CI validates the release). Set ARETE_SKIP_BOOT_GATE=0 to opt-in to runtime gate."
 else
+  echo "[arete] boot gate RUNTIME enabled (ARETE_SKIP_BOOT_GATE=0). 30 LLM calls per container start."
   if ! python3 /opt/arete/eval/run-injection-fixture.py --fixture /opt/arete/eval/injection-fixture.yaml; then
     echo "[arete] FATAL: injection fixture refused — container will NOT start" >&2
     exit 1
